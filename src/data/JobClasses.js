@@ -19,6 +19,48 @@ export const JobClasses = {
         color: 0x00ff00
     },
     
+    assassin: {
+        name: '어쌔신',
+        description: '은신과 기습 공격에 특화된 직업입니다.',
+        baseStats: {
+            hp: 80,
+            attack: 25,
+            defense: 5,
+            speed: 250,
+            visionRange: 300
+        },
+        skills: [
+            {
+                name: '은신',
+                description: '잠시 투명해져서 추가 데미지를 입힙니다.',
+                cooldown: 10000
+            }
+        ],
+        color: 0x800080,
+        stealthBonus: 50
+    },
+    
+    ninja: {
+        name: '닌자',
+        description: '은신과 기습 공격에 특화된 직업입니다.',
+        baseStats: {
+            hp: 75,
+            attack: 28,
+            defense: 3,
+            speed: 260,
+            visionRange: 320
+        },
+        skills: [
+            {
+                name: '은신',
+                description: '잠시 투명해져서 추가 데미지를 입힙니다.',
+                cooldown: 8000
+            }
+        ],
+        color: 0x800080,
+        stealthBonus: 60
+    },
+    
     thief: {
         name: '도적',
         description: '은신과 기습 공격에 특화된 직업입니다.',

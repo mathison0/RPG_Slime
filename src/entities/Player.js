@@ -48,11 +48,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.stealthDuration = 0;
         this.stealthBonusDamage = 0;
         
+        // 테스트용 무적 모드
+        this.isInvincible = false;
+        
         // 시야 범위
         this.visionRange = 300;
         
-        // 크기 및 물리 속성 초기화
-        this.updateSize();
+        // 애니메이션 설정 - 모든 직업이 레벨에 따라 크기 조정
+        this.updateCharacterSize();
         
         // 물리 속성
         this.setCollideWorldBounds(true);
@@ -62,6 +65,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.wasd = this.scene.input.keyboard.addKeys('W,S,A,D');
         this.spaceKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         this.qKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
+        this.iKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I); // 무적 모드 토글
+        this.lKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.L); // 레벨업 테스트
         
         // 디버깅용 크기 조절 키
         this.key1 = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
@@ -192,7 +197,16 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (Phaser.Input.Keyboard.JustDown(this.qKey)) {
             this.showJobSelection();
         }
+      
+        if (Phaser.Input.Keyboard.JustDown(this.iKey)) {
+            this.toggleInvincible();
+        }
         
+        // L키로 레벨업 테스트
+        if (Phaser.Input.Keyboard.JustDown(this.lKey)) {
+            this.testLevelUp();
+        }
+      
         // 디버깅용 크기 조절
         if (Phaser.Input.Keyboard.JustDown(this.key1)) {
             this.decreaseSize();
@@ -203,7 +217,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         }
     }
     
-    // 크기 축소 (10% 감소, 최소 16까지)
     decreaseSize() {
         const newSize = Math.max(16, Math.round(this.size * 0.99));
         this.setSize(newSize);
@@ -327,11 +340,19 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.defense += 2;
         this.speed += 10;
         
+        // 모든 직업이 레벨에 따라 크기 증가
+        this.updateCharacterSize();
+        
         // 레벨업 효과
-        this.scene.add.text(this.x, this.y - 50, 'LEVEL UP!', {
+        const levelUpText = this.scene.add.text(this.x, this.y - 50, 'LEVEL UP!', {
             fontSize: '24px',
             fill: '#ffff00'
         }).setOrigin(0.5);
+        
+        // 2초 후 레벨업 메시지 제거
+        this.scene.time.delayedCall(2000, () => {
+            levelUpText.destroy();
+        });
         
         this.updateUI();
     }
@@ -348,7 +369,75 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
         this.setTexture(spriteKey);
         
+        // 스프라이트 변경 후 크기 재조정
+        this.updateCharacterSize();
+        
         // 애니메이션 재생은 제거 (스프라이트만 업데이트)
+    }
+    
+    // 무적 모드 토글
+    toggleInvincible() {
+        this.isInvincible = !this.isInvincible;
+        
+        if (this.isInvincible) {
+            // 무적 모드 ON - 색상 변경 없이 메시지만 표시
+            const invincibleText = this.scene.add.text(this.x, this.y - 80, '무적 모드 ON', {
+                fontSize: '16px',
+                fill: '#00ff00'
+            }).setOrigin(0.5);
+            
+            // 1초 후 메시지 제거
+            this.scene.time.delayedCall(1000, () => {
+                invincibleText.destroy();
+            });
+        } else {
+            // 무적 모드 OFF - 메시지만 표시
+            this.updateJobSprite(); // 원래 스프라이트로 복원
+            const invincibleText = this.scene.add.text(this.x, this.y - 80, '무적 모드 OFF', {
+                fontSize: '16px',
+                fill: '#ff0000'
+            }).setOrigin(0.5);
+            
+            // 2초 후 메시지 제거
+            this.scene.time.delayedCall(2000, () => {
+                invincibleText.destroy();
+            });
+        }
+        
+        this.updateUI();
+    }
+    
+    // 레벨업 테스트
+    testLevelUp() {
+        this.gainExp(this.expToNext); // 바로 레벨업할 수 있는 경험치 추가
+        const testText = this.scene.add.text(this.x, this.y - 100, '레벨업 테스트!', {
+            fontSize: '20px',
+            fill: '#ffff00'
+        }).setOrigin(0.5);
+        
+        // 1초 후 메시지 제거
+        this.scene.time.delayedCall(1000, () => {
+            testText.destroy();
+        });
+    }
+    
+    // 캐릭터 크기를 레벨에 따라 업데이트하는 메서드
+    updateCharacterSize() {
+        // 모든 직업이 동일한 성장률과 최대 크기를 가짐
+        const baseSize = 32;        // 기본 크기 (레벨 1)
+        const growthRate = 4;       // 레벨당 증가 크기
+        const maxSize = 120;        // 최대 크기
+        
+        // 레벨에 따른 크기 계산
+        const targetSize = baseSize + (this.level - 1) * growthRate;
+        const finalSize = Math.min(targetSize, maxSize);
+        
+        // 캐릭터 크기 조정 (정사각형 유지)
+        AssetLoader.adjustSpriteSize(this, finalSize, finalSize);
+        
+        // 충돌 박스도 크기에 맞게 조정
+        const collisionSize = Math.max(32, finalSize * 0.75);
+        this.body.setSize(collisionSize, collisionSize);
     }
     
     showJobSelection() {
@@ -360,14 +449,33 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     takeDamage(damage) {
+        // 무적 모드일 때는 데미지를 받지 않음
+        if (this.isInvincible) {
+            const invincibleText = this.scene.add.text(this.x, this.y - 30, '무적!', {
+                fontSize: '16px',
+                fill: '#00ff00'
+            }).setOrigin(0.5);
+            
+            // 1초 후 메시지 제거
+            this.scene.time.delayedCall(1000, () => {
+                invincibleText.destroy();
+            });
+            return;
+        }
+        
         const actualDamage = Math.max(1, damage - this.defense);
         this.hp = Math.max(0, this.hp - actualDamage);
         
         // 데미지 표시
-        this.scene.add.text(this.x, this.y - 30, `-${actualDamage}`, {
+        const damageText = this.scene.add.text(this.x, this.y - 30, `-${actualDamage}`, {
             fontSize: '16px',
             fill: '#ff0000'
         }).setOrigin(0.5);
+        
+        // 1초 후 데미지 메시지 제거
+        this.scene.time.delayedCall(1000, () => {
+            damageText.destroy();
+        });
         
         this.updateUI();
         
