@@ -69,6 +69,14 @@ export default class NetworkManager {
         this.socket.on('enemy-damaged', (data) => {
             this.emit('enemy-damaged', data);
         });
+
+        this.socket.on('enemies-update', (data) => {
+            this.emit('enemies-update', data);
+        });
+
+        this.socket.on('player-job-changed', (data) => {
+            this.emit('player-job-changed', data);
+        });
     }
 
     // 게임 입장
@@ -108,6 +116,15 @@ export default class NetworkManager {
         if (this.isConnected) {
             this.socket.emit('enemy-hit', {
                 enemyId: enemyId
+            });
+        }
+    }
+
+    // 직업 변경
+    changeJob(jobClass) {
+        if (this.isConnected) {
+            this.socket.emit('player-job-change', {
+                jobClass: jobClass
             });
         }
     }

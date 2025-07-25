@@ -76,7 +76,10 @@ class ServerPlayer {
       jobClass: this.jobClass,
       direction: this.direction,
       isJumping: this.isJumping,
-      size: this.size
+      size: this.size,
+      attack: this.attack,
+      defense: this.defense,
+      speed: this.speed
     };
   }
 }
@@ -93,17 +96,156 @@ class ServerEnemy {
     this.attack = 15;
     this.speed = 50;
     this.lastUpdate = Date.now();
+    
+    // AI 관련
+    this.target = null; // 타겟 플레이어
+    this.aggroRange = 200; // 어그로 범위
+    this.attackRange = 60; // 공격 범위
+    this.lastAttack = 0;
+    this.attackCooldown = 1500; // 공격 쿨타임
+    
+    // 이동 관련
+    this.vx = 0;
+    this.vy = 0;
+    this.wanderDirection = Math.random() * Math.PI * 2;
+    this.wanderChangeTime = Date.now() + Math.random() * 3000 + 2000;
+  }
+  
+  update(players, delta) {
+    const now = Date.now();
+    this.lastUpdate = now;
+    
+    // 타겟 찾기
+    this.findTarget(players);
+    
+    if (this.target) {
+      // 타겟이 있으면 추적
+      this.chaseTarget(delta);
+    } else {
+      // 타겟이 없으면 배회
+      this.wander(delta, now);
+    }
+    
+    // 위치 업데이트
+    this.x += this.vx * delta / 1000;
+    this.y += this.vy * delta / 1000;
+    
+    // 맵 경계 체크
+    this.checkBounds();
+  }
+  
+  findTarget(players) {
+    let closestPlayer = null;
+    let closestDistance = this.aggroRange;
+    
+    for (const player of players.values()) {
+      const dx = player.x - this.x;
+      const dy = player.y - this.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance < closestDistance) {
+        closestPlayer = player;
+        closestDistance = distance;
+      }
+    }
+    
+    this.target = closestPlayer;
+  }
+  
+  chaseTarget(delta) {
+    if (!this.target) return;
+    
+    const dx = this.target.x - this.x;
+    const dy = this.target.y - this.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > this.aggroRange) {
+      // 너무 멀면 타겟 해제
+      this.target = null;
+      this.vx = 0;
+      this.vy = 0;
+      return;
+    }
+    
+    if (distance > this.attackRange) {
+      // 추적
+      this.vx = (dx / distance) * this.speed;
+      this.vy = (dy / distance) * this.speed;
+    } else {
+      // 공격 범위 내에서는 정지
+      this.vx = 0;
+      this.vy = 0;
+      
+      // 공격 시도
+      this.tryAttack();
+    }
+  }
+  
+  wander(delta, now) {
+    // 방향을 주기적으로 변경
+    if (now > this.wanderChangeTime) {
+      this.wanderDirection = Math.random() * Math.PI * 2;
+      this.wanderChangeTime = now + Math.random() * 3000 + 2000;
+    }
+    
+    // 배회 이동
+    const wanderSpeed = this.speed * 0.3;
+    this.vx = Math.cos(this.wanderDirection) * wanderSpeed;
+    this.vy = Math.sin(this.wanderDirection) * wanderSpeed;
+  }
+  
+  tryAttack() {
+    const now = Date.now();
+    if (now - this.lastAttack > this.attackCooldown && this.target) {
+      this.lastAttack = now;
+      // 공격 이벤트를 클라이언트에 전송하기 위해 플래그 설정
+      this.isAttacking = true;
+      return true;
+    }
+    return false;
+  }
+  
+  checkBounds() {
+    const MAP_WIDTH = 3000;
+    const MAP_HEIGHT = 3000;
+    
+    if (this.x < 50) {
+      this.x = 50;
+      this.vx = Math.abs(this.vx);
+    }
+    if (this.x > MAP_WIDTH - 50) {
+      this.x = MAP_WIDTH - 50;
+      this.vx = -Math.abs(this.vx);
+    }
+    if (this.y < 50) {
+      this.y = 50;
+      this.vy = Math.abs(this.vy);
+    }
+    if (this.y > MAP_HEIGHT - 50) {
+      this.y = MAP_HEIGHT - 50;
+      this.vy = -Math.abs(this.vy);
+    }
   }
 
   getState() {
-    return {
+    const state = {
       id: this.id,
       x: this.x,
       y: this.y,
       type: this.type,
       hp: this.hp,
-      maxHp: this.maxHp
+      maxHp: this.maxHp,
+      vx: this.vx,
+      vy: this.vy
     };
+    
+    // 공격 상태가 있으면 포함하고 리셋
+    if (this.isAttacking) {
+      state.isAttacking = true;
+      this.isAttacking = false;
+    }
+    
+    return state;
   }
 }
 
@@ -147,7 +289,24 @@ io.on('connection', (socket) => {
         x: player.x,
         y: player.y,
         direction: player.direction,
-        isJumping: player.isJumping
+        isJumping: player.isJumping,
+        jobClass: player.jobClass,
+        level: player.level,
+        size: player.size
+      });
+    }
+  });
+
+  // 플레이어 직업 변경
+  socket.on('player-job-change', (data) => {
+    const player = gameState.players.get(socket.id);
+    if (player) {
+      player.jobClass = data.jobClass;
+      
+      // 모든 플레이어에게 직업 변경 알림
+      io.emit('player-job-changed', {
+        id: socket.id,
+        jobClass: data.jobClass
       });
     }
   });
@@ -280,15 +439,29 @@ function initializeEnemies() {
   }
 }
 
-// 게임 루프 (필요시)
+// 게임 루프
 function gameLoop() {
-  // 비활성 플레이어 정리 (5분 이상 업데이트 없음)
   const now = Date.now();
+  const deltaTime = 50; // 50ms 간격으로 업데이트
+  
+  // 비활성 플레이어 정리 (5분 이상 업데이트 없음)
   for (const [id, player] of gameState.players) {
     if (now - player.lastUpdate > 300000) { // 5분
       gameState.players.delete(id);
       io.emit('player-left', { playerId: id });
     }
+  }
+  
+  // 적 AI 업데이트
+  const enemyUpdates = [];
+  for (const [id, enemy] of gameState.enemies) {
+    enemy.update(gameState.players, deltaTime);
+    enemyUpdates.push(enemy.getState());
+  }
+  
+  // 적 위치 업데이트를 모든 클라이언트에 전송
+  if (enemyUpdates.length > 0) {
+    io.emit('enemies-update', enemyUpdates);
   }
 }
 
@@ -416,8 +589,8 @@ server.listen(PORT, () => {
   // 적 초기화
   initializeEnemies();
   
-  // 게임 루프 시작 (30초마다)
-  setInterval(gameLoop, 30000);
+  // 게임 루프 시작 (50ms마다 - 20 FPS)
+  setInterval(gameLoop, 50);
 });
 
 // 프로덕션에서 클라이언트 서빙

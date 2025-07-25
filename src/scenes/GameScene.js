@@ -680,7 +680,7 @@ export default class GameScene extends Phaser.Scene {
         // 플레이어 이동
         this.networkManager.on('player-moved', (data) => {
             const otherPlayer = this.otherPlayers.getChildren().find(p => p.networkId === data.id);
-            if (otherPlayer) {
+            if (otherPlayer && !otherPlayer.isJumping) { // 점프 중이 아닐 때만 위치 업데이트
                 // 부드러운 이동을 위한 트윈
                 this.tweens.add({
                     targets: otherPlayer,
@@ -690,9 +690,20 @@ export default class GameScene extends Phaser.Scene {
                     ease: 'Linear'
                 });
                 
-                // 방향과 점프 상태 업데이트
+                // 상태 업데이트
                 otherPlayer.direction = data.direction;
-                otherPlayer.isJumping = data.isJumping;
+                if (data.jobClass && data.jobClass !== otherPlayer.jobClass) {
+                    otherPlayer.jobClass = data.jobClass;
+                }
+                if (data.level && data.level !== otherPlayer.level) {
+                    otherPlayer.level = data.level;
+                    otherPlayer.updateCharacterSize();
+                }
+                if (data.size && data.size !== otherPlayer.size) {
+                    otherPlayer.size = data.size;
+                    otherPlayer.updateSize();
+                }
+                
                 otherPlayer.updateJobSprite();
             }
         });
@@ -704,7 +715,10 @@ export default class GameScene extends Phaser.Scene {
                 : this.otherPlayers.getChildren().find(p => p.networkId === data.playerId);
             
             if (player) {
-                this.showSkillEffect(player, data.skillType);
+                // 본인이 아닌 다른 플레이어의 스킬만 실행
+                if (data.playerId !== this.networkManager.playerId) {
+                    this.showSkillEffect(player, data.skillType);
+                }
             }
         });
 
@@ -757,6 +771,42 @@ export default class GameScene extends Phaser.Scene {
                 });
             }
         });
+
+        // 적 위치 업데이트 (서버에서 관리)
+        this.networkManager.on('enemies-update', (enemiesData) => {
+            enemiesData.forEach(enemyData => {
+                const enemy = this.enemies.getChildren().find(e => e.networkId === enemyData.id);
+                if (enemy) {
+                    // 부드러운 이동을 위한 보간
+                    this.tweens.add({
+                        targets: enemy,
+                        x: enemyData.x,
+                        y: enemyData.y,
+                        duration: 50,
+                        ease: 'Linear'
+                    });
+                    
+                    // HP 업데이트
+                    enemy.hp = enemyData.hp;
+                    enemy.maxHp = enemyData.maxHp;
+                    
+                    // 공격 애니메이션
+                    if (enemyData.isAttacking) {
+                        this.showEnemyAttack(enemy);
+                    }
+                }
+                         });
+         });
+
+        // 플레이어 직업 변경
+        this.networkManager.on('player-job-changed', (data) => {
+            const otherPlayer = this.otherPlayers.getChildren().find(p => p.networkId === data.id);
+            if (otherPlayer) {
+                otherPlayer.jobClass = data.jobClass;
+                otherPlayer.updateJobSprite();
+                console.log(`플레이어 ${data.id} 직업 변경: ${data.jobClass}`);
+            }
+        });
     }
 
     // 다른 플레이어 생성
@@ -791,9 +841,25 @@ export default class GameScene extends Phaser.Scene {
         enemy.setNetworkId(enemyData.id);
         enemy.hp = enemyData.hp;
         enemy.maxHp = enemyData.maxHp;
+        enemy.isServerControlled = true; // 서버에서 관리됨을 표시
         
         this.enemies.add(enemy);
         return enemy;
+    }
+
+    // 적 공격 애니메이션 표시
+    showEnemyAttack(enemy) {
+        // 간단한 공격 이펙트
+        enemy.setTint(0xff0000);
+        this.time.delayedCall(200, () => {
+            enemy.clearTint();
+        });
+        
+        // 공격 범위 표시
+        const attackRange = this.add.circle(enemy.x, enemy.y, 60, 0xff0000, 0.3);
+        this.time.delayedCall(300, () => {
+            attackRange.destroy();
+        });
     }
 
     // 스킬 이펙트 표시
@@ -808,13 +874,34 @@ export default class GameScene extends Phaser.Scene {
                 });
                 break;
             case 'jump':
-                this.tweens.add({
-                    targets: player,
-                    y: player.y - 50,
-                    duration: 200,
-                    yoyo: true,
-                    ease: 'Power2'
-                });
+                // 다른 플레이어의 점프 애니메이션 (위치 동기화 없이 시각적 효과만)
+                if (player.isOtherPlayer) {
+                    const originalY = player.y;
+                    const originalNameY = player.nameText ? player.nameText.y : null;
+                    player.isJumping = true;
+                    
+                    // 플레이어와 이름 태그를 함께 애니메이션
+                    const targets = [player];
+                    if (player.nameText) {
+                        targets.push(player.nameText);
+                    }
+                    
+                    this.tweens.add({
+                        targets: targets,
+                        y: '-=50', // 현재 위치에서 50 위로
+                        duration: 200,
+                        yoyo: true,
+                        ease: 'Power2',
+                        onComplete: () => {
+                            // 원래 위치로 정확히 복원
+                            player.y = originalY;
+                            if (player.nameText && originalNameY !== null) {
+                                player.nameText.y = originalNameY;
+                            }
+                            player.isJumping = false;
+                        }
+                    });
+                }
                 break;
             case 'charge':
                 // 돌진 이펙트

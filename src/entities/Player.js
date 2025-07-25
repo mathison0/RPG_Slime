@@ -115,17 +115,17 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.updateStealth(delta);
             this.updateCooldowns(delta);
             
-            // 위치 변화가 있으면 서버에 전송
-            if (this.networkManager && (this.lastNetworkX !== this.x || this.lastNetworkY !== this.y || this.lastNetworkDirection !== this.direction)) {
-                this.networkManager.updatePlayerPosition(this.x, this.y, this.direction, this.isJumping);
+            // 위치 변화가 있으면 서버에 전송 (점프 중이 아닐 때만)
+            if (this.networkManager && !this.isJumping && (this.lastNetworkX !== this.x || this.lastNetworkY !== this.y || this.lastNetworkDirection !== this.direction)) {
+                this.networkManager.updatePlayerPosition(this.x, this.y, this.direction, false);
                 this.lastNetworkX = this.x;
                 this.lastNetworkY = this.y;
                 this.lastNetworkDirection = this.direction;
             }
         }
         
-        // 이름 텍스트 위치 업데이트
-        if (this.nameText) {
+        // 이름 텍스트 위치 업데이트 (점프 중이 아닐 때만)
+        if (this.nameText && !this.isJumping) {
             this.nameText.setPosition(this.x, this.y - 40);
         }
     }
@@ -237,11 +237,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 this.useSlimeSkill();
                 break;
         }
-        
-        // 네트워크로 스킬 사용 알림
-        if (this.networkManager && !this.isOtherPlayer) {
-            this.networkManager.useSkill(skillType);
-        }
     }
     
     useStealth() {
@@ -252,6 +247,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.stealthBonusDamage = 50;
             this.setAlpha(0.3);
             this.setTint(0x888888);
+            if (this.networkManager && !this.isOtherPlayer) {
+                this.networkManager.useSkill('stealth');
+            }
         }
     }
     
@@ -271,6 +269,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 this.checkChargeCollision();
             }
         });
+
+        if (this.networkManager && !this.isOtherPlayer) {
+            this.networkManager.useSkill('charge');
+        }
     }
     
     useWard() {
@@ -283,28 +285,44 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.scene.time.delayedCall(5000, () => {
             ward.destroy();
         });
+
+        if (this.networkManager && !this.isOtherPlayer) {
+            this.networkManager.useSkill('ward');
+        }
     }
     
     useSlimeSkill() {
-        // 이미 점프 중이면 실행하지 않음
-        if (this.isJumping) {
+        // 이미 점프 중이거나 다른 플레이어면 실행하지 않음
+        if (this.isJumping || this.isOtherPlayer) {
             return;
         }
         
-        // 기본 슬라임 스킬 - 점프
+        // 기본 슬라임 스킬 - 점프 (로컬에서만 실행)
+        const originalY = this.y; // 원래 Y 위치 저장
         this.setVelocity(0);
         this.isJumping = true; // 점프 시작
         
         this.scene.tweens.add({
             targets: this,
-            y: this.y - 50,
+            y: originalY - 50,
             duration: 200,
             yoyo: true,
             ease: 'Power2',
             onComplete: () => {
-                this.isJumping = false; // 점프 완료
+                // 점프 완료 후 정확한 위치로 복원
+                this.y = originalY;
+                this.isJumping = false;
+                
+                // 점프 완료 후 서버에 위치 동기화 (점프 상태는 false로)
+                if (this.networkManager) {
+                    this.networkManager.updatePlayerPosition(this.x, this.y, this.direction, false);
+                }
             }
         });
+
+        if (this.networkManager && !this.isOtherPlayer) {
+            this.networkManager.useSkill('jump');
+        }
     }
     
     useMechanicSkill() {
@@ -322,6 +340,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 }
             });
         });
+
+        if (this.networkManager && !this.isOtherPlayer) {
+            this.networkManager.useSkill('mechanic');
+        }
     }
     
     updateStealth(delta) {
@@ -384,6 +406,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.jobLevel = 1;
         this.updateJobSprite();
         this.updateUI();
+        
+        // 네트워크로 직업 변경 알림 (다른 플레이어가 아닐 때만)
+        if (this.networkManager && !this.isOtherPlayer) {
+            this.networkManager.changeJob(jobClass);
+        }
     }
     
     updateJobSprite() {
