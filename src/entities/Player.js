@@ -229,6 +229,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 skillType = 'ward';
                 this.useWard();
                 break;
+            case 'mechanic':
+                this.useMechanicSkill();
+                break;
             default:
                 skillType = 'jump';
                 this.useSlimeSkill();
@@ -301,6 +304,23 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             onComplete: () => {
                 this.isJumping = false; // 점프 완료
             }
+        });
+    }
+    
+    useMechanicSkill() {
+        // 기본 메카닉 스킬 - 아직 구현되지 않음
+        this.scene.add.text(this.x, this.y - 60, '메카닉 스킬!', {
+            fontSize: '16px',
+            fill: '#ff6600'
+        }).setOrigin(0.5);
+        
+        // 1초 후 메시지 제거
+        this.scene.time.delayedCall(1000, () => {
+            this.scene.children.list.forEach(child => {
+                if (child.type === 'Text' && child.text === '메카닉 스킬!') {
+                    child.destroy();
+                }
+            });
         });
     }
     
@@ -477,7 +497,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     
     showJobSelection() {
         // 간단한 전직 UI (실제로는 더 복잡하게 구현)
-        const jobs = ['slime', 'assassin', 'ninja', 'warrior', 'mage'];
+        const jobs = ['slime', 'assassin', 'ninja', 'warrior', 'mage', 'mechanic'];
         const currentIndex = jobs.indexOf(this.jobClass);
         const nextIndex = (currentIndex + 1) % jobs.length;
         this.changeJob(jobs[nextIndex]);

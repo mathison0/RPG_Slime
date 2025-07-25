@@ -60,7 +60,7 @@ export default class AssetLoader {
     }
     
     static createJobSprites(scene) {
-        const jobSprites = ['slime', 'assassin', 'ninja', 'warrior', 'mage'];
+        const jobSprites = ['slime', 'assassin', 'ninja', 'warrior', 'mage', 'mechanic'];
         const directions = ['front', 'back', 'left', 'right'];
         
         // 이미지 파일이 있는 직업들 (ninja는 이미지가 없으므로 제외)
@@ -139,6 +139,11 @@ export default class AssetLoader {
             case 'mage':
                 // mage는 이미지 파일을 사용하므로 생성된 스프라이트는 사용하지 않음
                 // this.createMageSprite(scene, textureKey, direction);
+                break;
+                
+            case 'mechanic':
+                // mechanic는 이미지 파일을 사용하므로 생성된 스프라이트는 사용하지 않음
+                // this.createMechanicSprite(scene, textureKey, direction);
                 break;
         }
     }
@@ -318,6 +323,50 @@ export default class AssetLoader {
         
         graphics.generateTexture(textureKey, 64, 64);
     }
+    
+    // mechanic는 이미지 파일을 사용하므로 생성된 스프라이트 메서드는 주석 처리
+    /*
+    static createMechanicSprite(scene, textureKey, direction) {
+        const graphics = scene.add.graphics();
+        
+        switch (direction) {
+            case 'front':
+                // 앞을 보는 메카닉 (주황색 사각형 + 기계 부품 모양)
+                graphics.fillStyle(0xff6600);
+                graphics.fillRect(16, 16, 32, 32);
+                graphics.fillStyle(0xcc5500);
+                graphics.fillRect(24, 20, 16, 8);
+                graphics.fillStyle(0xffffff);
+                graphics.fillRect(28, 24, 8, 4);
+                break;
+            case 'back':
+                // 뒤를 보는 메카닉 (작은 사각형)
+                graphics.fillStyle(0xff6600);
+                graphics.fillRect(20, 20, 24, 24);
+                break;
+            case 'left':
+                // 왼쪽을 보는 메카닉 (타원형 + 왼쪽 기계 부품)
+                graphics.fillStyle(0xff6600);
+                graphics.fillRoundedRect(16, 16, 32, 32, 4);
+                graphics.fillStyle(0xcc5500);
+                graphics.fillRect(12, 24, 8, 16);
+                graphics.fillStyle(0xffffff);
+                graphics.fillRect(14, 28, 4, 8);
+                break;
+            case 'right':
+                // 오른쪽을 보는 메카닉 (타원형 + 오른쪽 기계 부품)
+                graphics.fillStyle(0xff6600);
+                graphics.fillRoundedRect(16, 16, 32, 32, 4);
+                graphics.fillStyle(0xcc5500);
+                graphics.fillRect(44, 24, 8, 16);
+                graphics.fillStyle(0xffffff);
+                graphics.fillRect(46, 28, 4, 8);
+                break;
+        }
+        
+        graphics.generateTexture(textureKey, 64, 64);
+    }
+    */
     
     static createAnimations(scene) {
         // 직업별 플레이어 애니메이션
