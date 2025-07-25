@@ -51,6 +51,9 @@ export default class GameScene extends Phaser.Scene {
             callbackScope: this,
             loop: true
         });
+        
+        // 초기 UI 스케일 설정
+        this.updateUIScale(this.cameras.main.zoom);
     }
     
     // (createMaze, spawnEnemies 등 다른 함수는 그대로 유지)
@@ -561,5 +564,25 @@ export default class GameScene extends Phaser.Scene {
                 enemy.x = this.blueSpawnRect.x - this.TILE_SIZE;
             }
         });
+    }
+
+    // 카메라 줌 변경 시 UI 스케일 조정 (안개와 미니맵이 영향받지 않도록)
+    updateUIScale(cameraZoom) {
+        const inverseZoom = 1 / cameraZoom;
+        
+        // 안개 스케일 조정
+        if (this.visionTexture) {
+            this.visionTexture.setScale(inverseZoom);
+        }
+        
+        // 미니맵 스케일 조정
+        if (this.minimap) {
+            this.minimap.setScale(inverseZoom);
+        }
+        
+        // 빅맵 스케일 조정
+        if (this.bigMap) {
+            this.bigMap.setScale(inverseZoom);
+        }
     }
 }
