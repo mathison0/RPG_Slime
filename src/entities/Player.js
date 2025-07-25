@@ -26,6 +26,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.jobLevel = 1;
         this.skills = [];
         
+        // 크기 관련 (기본 크기 설정)
+        this.size = 64; // 기본 표시 크기
+        this.baseCameraZoom = 1; // 기본 카메라 줌 레벨
+        this.colliderSize = this.calculateColliderSize(); // 크기에 비례한 충돌체 크기
 
         // 방향 관련
         this.direction = 'front'; // 기본 방향
@@ -55,7 +59,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // 물리 속성
         this.setCollideWorldBounds(true);
-        this.body.setSize(48, 48); // 충돌 박스도 크기에 맞게 조정
         
         // 입력
         this.cursors = this.scene.input.keyboard.createCursorKeys();
@@ -65,8 +68,54 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.iKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I); // 무적 모드 토글
         this.lKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.L); // 레벨업 테스트
         
+        // 디버깅용 크기 조절 키
+        this.key1 = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
+        this.key2 = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+        
         // UI 업데이트
         this.updateUI();
+    }
+    
+    // 충돌체 크기 계산 (현재 비율 유지: 64 -> 500, 즉 약 7.8배)
+    calculateColliderSize() {
+        return Math.round(this.size * 7.8125); // 500/64 = 7.8125
+    }
+    
+    // 카메라 줌 계산 (플레이어가 화면에서 같은 크기로 보이도록)
+    calculateCameraZoom() {
+        return this.baseCameraZoom * (64 / this.size);
+    }
+    
+    // 크기 업데이트 메서드
+    updateSize() {
+        // 표시 크기 설정
+        this.setDisplaySize(this.size, this.size);
+        
+        // 충돌체 크기 동기화
+        this.colliderSize = this.calculateColliderSize();
+        this.body.setSize(this.colliderSize, this.colliderSize);
+        
+        // 카메라 줌 조정
+        const newZoom = this.calculateCameraZoom();
+        if (this.scene.cameras && this.scene.cameras.main) {
+            this.scene.cameras.main.setZoom(newZoom);
+            
+            // GameScene에 줌 변경을 알림 (안개와 미니맵 스케일 조정용)
+            if (this.scene.updateUIScale) {
+                this.scene.updateUIScale(newZoom);
+            }
+        }
+    }
+    
+    // 크기 변경 메서드
+    setSize(newSize) {
+        this.size = newSize;
+        this.updateSize();
+    }
+    
+    // 크기 가져오기
+    getSize() {
+        return this.size;
     }
     
     update(time, delta) {
@@ -148,8 +197,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (Phaser.Input.Keyboard.JustDown(this.qKey)) {
             this.showJobSelection();
         }
-        
-        // I키로 무적 모드 토글
+      
         if (Phaser.Input.Keyboard.JustDown(this.iKey)) {
             this.toggleInvincible();
         }
@@ -158,6 +206,28 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (Phaser.Input.Keyboard.JustDown(this.lKey)) {
             this.testLevelUp();
         }
+      
+        // 디버깅용 크기 조절
+        if (Phaser.Input.Keyboard.JustDown(this.key1)) {
+            this.decreaseSize();
+        }
+        
+        if (Phaser.Input.Keyboard.JustDown(this.key2)) {
+            this.increaseSize();
+        }
+    }
+    
+    decreaseSize() {
+        const newSize = Math.max(16, Math.round(this.size * 0.99));
+        this.setSize(newSize);
+        console.log(`플레이어 크기 축소: ${newSize}`);
+    }
+    
+    // 크기 확대 (10% 증가, 최대 256까지)
+    increaseSize() {
+        const newSize = Math.min(256, Math.round(this.size * 1.01));
+        this.setSize(newSize);
+        console.log(`플레이어 크기 확대: ${newSize}`);
     }
     
     useSkill() {
