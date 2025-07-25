@@ -47,8 +47,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 시야 범위
         this.visionRange = 200;
         
-        // 애니메이션 설정
-        this.setDisplaySize(64, 64); // 크기를 32x32에서 64x64로 증가
+        // 애니메이션 설정 - 모든 직업이 레벨에 따라 크기 조정
+        this.updateCharacterSize();
         
         // 물리 속성
         this.setCollideWorldBounds(true);
@@ -255,6 +255,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.defense += 2;
         this.speed += 10;
         
+        // 모든 직업이 레벨에 따라 크기 증가
+        this.updateCharacterSize();
+        
         // 레벨업 효과
         this.scene.add.text(this.x, this.y - 50, 'LEVEL UP!', {
             fontSize: '24px',
@@ -276,7 +279,29 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
         this.setTexture(spriteKey);
         
+        // 스프라이트 변경 후 크기 재조정
+        this.updateCharacterSize();
+        
         // 애니메이션 재생은 제거 (스프라이트만 업데이트)
+    }
+    
+    // 캐릭터 크기를 레벨에 따라 업데이트하는 메서드
+    updateCharacterSize() {
+        // 모든 직업이 동일한 성장률과 최대 크기를 가짐
+        const baseSize = 32;        // 기본 크기 (레벨 1)
+        const growthRate = 4;       // 레벨당 증가 크기
+        const maxSize = 120;        // 최대 크기
+        
+        // 레벨에 따른 크기 계산
+        const targetSize = baseSize + (this.level - 1) * growthRate;
+        const finalSize = Math.min(targetSize, maxSize);
+        
+        // 캐릭터 크기 조정 (정사각형 유지)
+        AssetLoader.adjustSpriteSize(this, finalSize, finalSize);
+        
+        // 충돌 박스도 크기에 맞게 조정
+        const collisionSize = Math.max(32, finalSize * 0.75);
+        this.body.setSize(collisionSize, collisionSize);
     }
     
     showJobSelection() {
