@@ -39,6 +39,9 @@ export default class GameScene extends Phaser.Scene {
         this.cameras.main.startFollow(this.player);
         this.cameras.main.setZoom(1);
         
+
+
+
         // UI 설정
         this.setupUI();
         
@@ -381,8 +384,10 @@ export default class GameScene extends Phaser.Scene {
             enemy.update(time, delta);
         });
         
+
         // 미니맵 및 시야 업데이트
         this.updateVision();
+
         this.updateMinimap();
 
         // M 키 토글로 빅맵 표시/숨김
