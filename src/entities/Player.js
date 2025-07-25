@@ -45,7 +45,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.stealthBonusDamage = 0;
         
         // 시야 범위
-        this.visionRange = 200;
+        this.visionRange = 300;
         
         // 애니메이션 설정 - 모든 직업이 레벨에 따라 크기 조정
         this.updateCharacterSize();
