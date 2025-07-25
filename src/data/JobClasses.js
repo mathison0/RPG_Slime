@@ -120,6 +120,26 @@ export const JobClasses = {
             }
         ],
         color: 0x0000ff
+    },
+    
+    mechanic: {
+        name: '메카닉',
+        description: '기계와 기술에 특화된 직업입니다.',
+        baseStats: {
+            hp: 90,
+            attack: 22,
+            defense: 8,
+            speed: 190,
+            visionRange: 220
+        },
+        skills: [
+            {
+                name: '기본 스킬',
+                description: '기본 메카닉 스킬입니다.',
+                cooldown: 5000
+            }
+        ],
+        color: 0xff6600
     }
 };
 
