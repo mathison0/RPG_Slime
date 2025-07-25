@@ -6,6 +6,12 @@ export default class MenuScene extends Phaser.Scene {
     }
 
     create() {
+        // 게임 UI 숨기기
+        const gameUI = document.getElementById('game-ui');
+        if (gameUI) {
+            gameUI.style.display = 'none';
+        }
+
         const { width, height } = this.scale;
         
         // 타이틀

@@ -59,8 +59,8 @@ export default class AssetLoader {
         const jobSprites = ['slime', 'assassin', 'ninja', 'warrior', 'mage'];
         const directions = ['front', 'back', 'left', 'right'];
         
-        // 이미지 파일이 있는 직업들 (slime, warrior, mage, assassin)
-        const imageJobs = ['slime', 'warrior', 'mage', 'assassin'];
+        // 이미지 파일이 있는 직업들 (slime, warrior, mage, assassin, mechanic, ninja)
+        const imageJobs = ['slime', 'warrior', 'mage', 'assassin', 'mechanic', 'ninja'];
         
         jobSprites.forEach(job => {
             directions.forEach(direction => {
@@ -107,7 +107,8 @@ export default class AssetLoader {
                 break;
                 
             case 'ninja':
-                this.createNinjaSprite(scene, textureKey, direction);
+                // ninja는 이미지 파일을 사용하므로 생성된 스프라이트는 사용하지 않음
+                // this.createNinjaSprite(scene, textureKey, direction);
                 break;
                 
             case 'warrior':
