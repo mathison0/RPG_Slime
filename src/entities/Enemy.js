@@ -69,6 +69,11 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     update(time, delta) {
         if (this.isDead) return;
         
+        // 서버에서 관리되는 적은 클라이언트에서 AI 실행하지 않음
+        if (this.isServerControlled) {
+            return;
+        }
+        
         const player = this.scene.player;
         if (!player || !player.active) {
             this.setVelocity(0, 0);
