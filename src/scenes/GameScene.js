@@ -39,6 +39,9 @@ export default class GameScene extends Phaser.Scene {
         this.cameras.main.startFollow(this.player);
         this.cameras.main.setZoom(1);
         
+
+
+
         // UI 설정
         this.setupUI();
         

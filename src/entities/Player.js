@@ -1,9 +1,11 @@
 import Phaser from 'phaser';
 import { JobClasses } from '../data/JobClasses.js';
+import AssetLoader from '../utils/AssetLoader.js';
 
 export default class Player extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y, team = 'red') {
         super(scene, x, y, 'player');
+
         
         this.scene = scene;
         this.scene.add.existing(this);
@@ -24,8 +26,19 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.jobLevel = 1;
         this.skills = [];
         
+
+        // 방향 관련
+        this.direction = 'front'; // 기본 방향
+        this.lastDirection = 'front';
+        
+        // 초기 스프라이트 설정
+        this.updateJobSprite();
+        
+        // 상태
+
         // 팀 및 상태
         this.team = team; // 'red' | 'blue'
+
         this.isStealth = false;
         this.stealthCooldown = 0;
         this.stealthDuration = 0;
@@ -35,12 +48,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.visionRange = 200;
         
         // 애니메이션 설정
-        this.setDisplaySize(32, 32);
-        this.setTint(0x00ff00); // 초록색 슬라임
+        this.setDisplaySize(64, 64); // 크기를 32x32에서 64x64로 증가
         
         // 물리 속성
         this.setCollideWorldBounds(true);
-        this.body.setSize(24, 24);
+        this.body.setSize(48, 48); // 충돌 박스도 크기에 맞게 조정
         
         // 입력
         this.cursors = this.scene.input.keyboard.createCursorKeys();
@@ -63,23 +75,61 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const speed = this.speed;
         this.setVelocity(0);
         
+        // 방향 감지
+        let movingUp = false;
+        let movingDown = false;
+        let movingLeft = false;
+        let movingRight = false;
+        
         // WASD 또는 방향키로 이동
         if (this.wasd.W.isDown || this.cursors.up.isDown) {
             this.setVelocityY(-speed);
+            movingUp = true;
         }
         if (this.wasd.S.isDown || this.cursors.down.isDown) {
             this.setVelocityY(speed);
+            movingDown = true;
         }
         if (this.wasd.A.isDown || this.cursors.left.isDown) {
             this.setVelocityX(-speed);
+            movingLeft = true;
         }
         if (this.wasd.D.isDown || this.cursors.right.isDown) {
             this.setVelocityX(speed);
+            movingRight = true;
         }
         
         // 대각선 이동 정규화
         if (this.body.velocity.x !== 0 && this.body.velocity.y !== 0) {
             this.body.velocity.normalize().scale(speed);
+        }
+        
+        // 방향 업데이트
+        this.updateDirection(movingUp, movingDown, movingLeft, movingRight);
+    }
+    
+    updateDirection(movingUp, movingDown, movingLeft, movingRight) {
+        // 움직이고 있는지 확인
+        const isMoving = movingUp || movingDown || movingLeft || movingRight;
+        
+        if (isMoving) {
+            // 우선순위: 위 > 아래 > 왼쪽 > 오른쪽
+            if (movingUp) {
+                this.direction = 'back';
+            } else if (movingDown) {
+                this.direction = 'front';
+            } else if (movingLeft) {
+                this.direction = 'left';
+            } else if (movingRight) {
+                this.direction = 'right';
+            }
+        }
+        // 움직이지 않을 때는 마지막 방향을 유지 (스프라이트 변경하지 않음)
+        
+        // 방향이 바뀌었으면 스프라이트 업데이트
+        if (this.direction !== this.lastDirection) {
+            this.updateJobSprite();
+            this.lastDirection = this.direction;
         }
     }
     
@@ -97,7 +147,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     
     useSkill() {
         switch (this.jobClass) {
-            case 'thief':
+            case 'assassin':
+                this.useStealth();
+                break;
+            case 'ninja':
                 this.useStealth();
                 break;
             case 'warrior':
@@ -171,7 +224,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 this.isStealth = false;
                 this.stealthBonusDamage = 0;
                 this.setAlpha(1);
-                this.updateJobTint();
+                this.updateJobSprite();
             }
         }
     }
@@ -214,23 +267,21 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     changeJob(jobClass) {
         this.jobClass = jobClass;
         this.jobLevel = 1;
-        this.updateJobTint();
+        this.updateJobSprite();
         this.updateUI();
     }
     
-    updateJobTint() {
-        const jobColors = {
-            'slime': 0x00ff00,
-            'thief': 0x800080,
-            'warrior': 0xff0000,
-            'mage': 0x0000ff
-        };
-        this.setTint(jobColors[this.jobClass] || 0x00ff00);
+    updateJobSprite() {
+        // 직업과 방향에 따른 스프라이트 변경
+        const spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
+        this.setTexture(spriteKey);
+        
+        // 애니메이션 재생은 제거 (스프라이트만 업데이트)
     }
     
     showJobSelection() {
         // 간단한 전직 UI (실제로는 더 복잡하게 구현)
-        const jobs = ['slime', 'thief', 'warrior', 'mage'];
+        const jobs = ['slime', 'assassin', 'ninja', 'warrior', 'mage'];
         const currentIndex = jobs.indexOf(this.jobClass);
         const nextIndex = (currentIndex + 1) % jobs.length;
         this.changeJob(jobs[nextIndex]);
