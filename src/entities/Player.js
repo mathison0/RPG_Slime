@@ -5,6 +5,10 @@ import AssetLoader from '../utils/AssetLoader.js';
 export default class Player extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y) {
         super(scene, x, y, 'player_slime_front');
+
+    constructor(scene, x, y, team = 'red') {
+        super(scene, x, y, 'player');
+
         
         this.scene = scene;
         this.scene.add.existing(this);
@@ -25,6 +29,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.jobLevel = 1;
         this.skills = [];
         
+
         // 방향 관련
         this.direction = 'front'; // 기본 방향
         this.lastDirection = 'front';
@@ -33,6 +38,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.updateJobSprite();
         
         // 상태
+
+        // 팀 및 상태
+        this.team = team; // 'red' | 'blue'
+
         this.isStealth = false;
         this.stealthCooldown = 0;
         this.stealthDuration = 0;
