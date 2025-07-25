@@ -274,4 +274,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
             default: return 10;
         }
     }
+
+    // 네트워크 ID 설정
+    setNetworkId(id) {
+        this.networkId = id;
+    }
 }

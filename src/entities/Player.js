@@ -11,6 +11,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.scene.add.existing(this);
         this.scene.physics.add.existing(this);
         
+        // 네트워크 관련
+        this.networkId = null;
+        this.networkManager = null;
+        this.isOtherPlayer = false; // 다른 플레이어인지 여부
+        this.nameText = null; // 이름 텍스트
+        
         // 기본 스탯
         this.level = 1;
         this.exp = 0;
@@ -27,18 +33,19 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.skills = [];
         
         // 크기 관련 (기본 크기 설정)
-        this.size = 64; // 기본 표시 크기
+        this.size = 64; // 기본 표시 크기 (updateCharacterSize에서 레벨에 따라 재계산됨)
         this.baseCameraZoom = 1; // 기본 카메라 줌 레벨
-        this.colliderSize = this.calculateColliderSize(); // 크기에 비례한 충돌체 크기
+        this.colliderSize = 0; // updateCharacterSize에서 계산됨
 
         // 방향 관련
         this.direction = 'front'; // 기본 방향
         this.lastDirection = 'front';
         
-        // 초기 스프라이트 설정
+        // 초기 스프라이트 설정 (updateCharacterSize도 포함)
         this.updateJobSprite();
         
         // 상태
+        this.isJumping = false; // 점프 중인지 확인하는 상태
 
         // 팀 및 상태
         this.team = team; // 'red' | 'blue'
@@ -54,13 +61,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 시야 범위
         this.visionRange = 300;
         
-        // 애니메이션 설정 - 모든 직업이 레벨에 따라 크기 조정
-        this.updateCharacterSize();
-        
         // 물리 속성
         this.setCollideWorldBounds(true);
         
-        // 입력
+        // 입력 (본인 플레이어만)
         this.cursors = this.scene.input.keyboard.createCursorKeys();
         this.wasd = this.scene.input.keyboard.addKeys('W,S,A,D');
         this.spaceKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -68,22 +72,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.iKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I); // 무적 모드 토글
         this.lKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.L); // 레벨업 테스트
         
-        // 디버깅용 크기 조절 키
-        this.key1 = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
-        this.key2 = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
-        
         // UI 업데이트
         this.updateUI();
+        
+        console.log('Player 생성 완료:', this.x, this.y, this.team, this.jobClass);
     }
     
-    // 충돌체 크기 계산 (현재 비율 유지: 64 -> 500, 즉 약 7.8배)
     calculateColliderSize() {
-        return Math.round(this.size * 7.8125); // 500/64 = 7.8125
-    }
-    
-    // 카메라 줌 계산 (플레이어가 화면에서 같은 크기로 보이도록)
-    calculateCameraZoom() {
-        return this.baseCameraZoom * (64 / this.size);
+        return this.size + 450;
     }
     
     // 크기 업데이트 메서드
@@ -93,17 +89,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // 충돌체 크기 동기화
         this.colliderSize = this.calculateColliderSize();
-        this.body.setSize(this.colliderSize, this.colliderSize);
-        
-        // 카메라 줌 조정
-        const newZoom = this.calculateCameraZoom();
-        if (this.scene.cameras && this.scene.cameras.main) {
-            this.scene.cameras.main.setZoom(newZoom);
-            
-            // GameScene에 줌 변경을 알림 (안개와 미니맵 스케일 조정용)
-            if (this.scene.updateUIScale) {
-                this.scene.updateUIScale(newZoom);
-            }
+        if (this.body) {
+            this.body.setSize(this.colliderSize, this.colliderSize);
         }
     }
     
@@ -119,10 +106,28 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     update(time, delta) {
-        this.handleMovement();
-        this.handleSkills();
-        this.updateStealth(delta);
-        this.updateCooldowns(delta);
+        // 다른 플레이어는 입력 처리하지 않음
+        if (!this.isOtherPlayer) {
+            if(!this.isJumping) {
+                this.handleMovement();
+            }
+            this.handleSkills();
+            this.updateStealth(delta);
+            this.updateCooldowns(delta);
+            
+            // 위치 변화가 있으면 서버에 전송
+            if (this.networkManager && (this.lastNetworkX !== this.x || this.lastNetworkY !== this.y || this.lastNetworkDirection !== this.direction)) {
+                this.networkManager.updatePlayerPosition(this.x, this.y, this.direction, this.isJumping);
+                this.lastNetworkX = this.x;
+                this.lastNetworkY = this.y;
+                this.lastNetworkDirection = this.direction;
+            }
+        }
+        
+        // 이름 텍스트 위치 업데이트
+        if (this.nameText) {
+            this.nameText.setPosition(this.x, this.y - 40);
+        }
     }
     
     handleMovement() {
@@ -206,47 +211,33 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (Phaser.Input.Keyboard.JustDown(this.lKey)) {
             this.testLevelUp();
         }
-      
-        // 디버깅용 크기 조절
-        if (Phaser.Input.Keyboard.JustDown(this.key1)) {
-            this.decreaseSize();
-        }
-        
-        if (Phaser.Input.Keyboard.JustDown(this.key2)) {
-            this.increaseSize();
-        }
-    }
-    
-    decreaseSize() {
-        const newSize = Math.max(16, Math.round(this.size * 0.99));
-        this.setSize(newSize);
-        console.log(`플레이어 크기 축소: ${newSize}`);
-    }
-    
-    // 크기 확대 (10% 증가, 최대 256까지)
-    increaseSize() {
-        const newSize = Math.min(256, Math.round(this.size * 1.01));
-        this.setSize(newSize);
-        console.log(`플레이어 크기 확대: ${newSize}`);
     }
     
     useSkill() {
+        let skillType;
         switch (this.jobClass) {
             case 'assassin':
-                this.useStealth();
-                break;
             case 'ninja':
+                skillType = 'stealth';
                 this.useStealth();
                 break;
             case 'warrior':
+                skillType = 'charge';
                 this.useCharge();
                 break;
             case 'mage':
+                skillType = 'ward';
                 this.useWard();
                 break;
             default:
+                skillType = 'jump';
                 this.useSlimeSkill();
                 break;
+        }
+        
+        // 네트워크로 스킬 사용 알림
+        if (this.networkManager && !this.isOtherPlayer) {
+            this.networkManager.useSkill(skillType);
         }
     }
     
@@ -292,13 +283,24 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     useSlimeSkill() {
+        // 이미 점프 중이면 실행하지 않음
+        if (this.isJumping) {
+            return;
+        }
+        
         // 기본 슬라임 스킬 - 점프
+        this.setVelocity(0);
+        this.isJumping = true; // 점프 시작
+        
         this.scene.tweens.add({
             targets: this,
             y: this.y - 50,
             duration: 200,
             yoyo: true,
-            ease: 'Power2'
+            ease: 'Power2',
+            onComplete: () => {
+                this.isJumping = false; // 점프 완료
+            }
         });
     }
     
@@ -367,12 +369,43 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     updateJobSprite() {
         // 직업과 방향에 따른 스프라이트 변경
         const spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
-        this.setTexture(spriteKey);
         
-        // 스프라이트 변경 후 크기 재조정
+        // 텍스처 존재 여부 확인
+        if (this.scene.textures.exists(spriteKey)) {
+            console.log(`텍스처 설정: ${spriteKey}`);
+            this.setTexture(spriteKey);
+        } else {
+            console.warn(`텍스처가 존재하지 않음: ${spriteKey}`);
+            // 폴백: 기본 슬라임 텍스처 사용
+            const fallbackKey = 'player_slime_front';
+            if (this.scene.textures.exists(fallbackKey)) {
+                console.log(`폴백 텍스처 사용: ${fallbackKey}`);
+                this.setTexture(fallbackKey);
+            } else {
+                console.error('폴백 텍스처도 없음! 기본 텍스처 생성 필요');
+                // 마지막 폴백: 기본 사각형 생성
+                this.createFallbackTexture();
+            }
+        }
+        
+        // 스프라이트 변경 후 크기 재조정 (레벨에 따른 크기도 함께 적용)
         this.updateCharacterSize();
         
         // 애니메이션 재생은 제거 (스프라이트만 업데이트)
+    }
+    
+    // 긴급 폴백 텍스처 생성
+    createFallbackTexture() {
+        const fallbackKey = 'player_fallback';
+        if (!this.scene.textures.exists(fallbackKey)) {
+            const graphics = this.scene.add.graphics();
+            graphics.fillStyle(0x00ff00); // 초록색 사각형
+            graphics.fillRect(0, 0, 64, 64);
+            graphics.generateTexture(fallbackKey, 64, 64);
+            graphics.destroy();
+        }
+        this.setTexture(fallbackKey);
+        console.log('긴급 폴백 텍스처 생성 및 설정 완료');
     }
     
     // 무적 모드 토글
@@ -424,20 +457,22 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     // 캐릭터 크기를 레벨에 따라 업데이트하는 메서드
     updateCharacterSize() {
         // 모든 직업이 동일한 성장률과 최대 크기를 가짐
-        const baseSize = 32;        // 기본 크기 (레벨 1)
-        const growthRate = 4;       // 레벨당 증가 크기
-        const maxSize = 120;        // 최대 크기
+        const baseSize = 16;        // 기본 크기 (레벨 1)
+        const growthRate = 1;       // 레벨당 증가 크기
+        const maxSize = 40;        // 최대 크기
         
         // 레벨에 따른 크기 계산
         const targetSize = baseSize + (this.level - 1) * growthRate;
         const finalSize = Math.min(targetSize, maxSize);
         
+        // this.size 속성 업데이트 (다른 메서드들과 동기화)
+        this.size = finalSize;
+        
         // 캐릭터 크기 조정 (정사각형 유지)
         AssetLoader.adjustSpriteSize(this, finalSize, finalSize);
         
-        // 충돌 박스도 크기에 맞게 조정
-        const collisionSize = Math.max(32, finalSize * 0.75);
-        this.body.setSize(collisionSize, collisionSize);
+        // 충돌 박스는 updateSize() 메서드에서 통합 관리
+        this.updateSize();
     }
     
     showJobSelection() {
@@ -502,5 +537,43 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.stealthBonusDamage = 0; // 한 번만 적용
         }
         return damage;
+    }
+
+    // 네트워크 ID 설정
+    setNetworkId(id) {
+        this.networkId = id;
+    }
+
+    // 네트워크 매니저 설정
+    setNetworkManager(networkManager) {
+        this.networkManager = networkManager;
+        this.lastNetworkX = this.x;
+        this.lastNetworkY = this.y;
+        this.lastNetworkDirection = this.direction;
+    }
+
+    // 다른 플레이어 여부 설정
+    setIsOtherPlayer(isOther) {
+        this.isOtherPlayer = isOther;
+        
+        // 다른 플레이어의 경우 입력 비활성화 (객체는 유지)
+        // 이렇게 하면 null 체크 없이도 안전하게 처리할 수 있음
+    }
+
+    // 다른 플레이어 위치 업데이트 (네트워크에서 받은 데이터)
+    updateFromNetwork(data) {
+        this.x = data.x;
+        this.y = data.y;
+        this.direction = data.direction;
+        this.isJumping = data.isJumping;
+        this.updateJobSprite();
+    }
+
+    // 이름 텍스트 제거
+    destroy() {
+        if (this.nameText) {
+            this.nameText.destroy();
+        }
+        super.destroy();
     }
 } 

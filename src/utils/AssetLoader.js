@@ -1,7 +1,11 @@
 export default class AssetLoader {
     static preload(scene) {
+        console.log('AssetLoader.preload() 시작');
+        
         // 직업별 플레이어 스프라이트 생성
         this.createJobSprites(scene);
+        
+        console.log('createJobSprites() 완료');
         
         // 적 스프라이트 (원형으로 생성)
         scene.add.graphics()
@@ -59,7 +63,7 @@ export default class AssetLoader {
         const jobSprites = ['slime', 'assassin', 'ninja', 'warrior', 'mage'];
         const directions = ['front', 'back', 'left', 'right'];
         
-        // 이미지 파일이 있는 직업들 (slime, warrior, mage, assassin)
+        // 이미지 파일이 있는 직업들 (ninja는 이미지가 없으므로 제외)
         const imageJobs = ['slime', 'warrior', 'mage', 'assassin'];
         
         jobSprites.forEach(job => {
@@ -68,9 +72,11 @@ export default class AssetLoader {
                 
                 if (imageJobs.includes(job)) {
                     // 이미지 파일 로드
-                    scene.load.image(textureKey, `assets/${job}_${direction}.png`);
+                    const imagePath = `assets/${job}_${direction}.png`;
+                    console.log(`이미지 로드: ${textureKey} <- ${imagePath}`);
+                    scene.load.image(textureKey, imagePath);
                 } else {
-                    // 코드로 생성된 스프라이트 사용
+                    // 코드로 생성된 스프라이트 사용 (ninja만)
                     this.createGeneratedSprite(scene, job, direction);
                 }
             });
@@ -78,11 +84,15 @@ export default class AssetLoader {
         
         // 이미지 로딩이 완료되면 생성된 스프라이트를 대체하고 크기 정보 저장
         scene.load.on('complete', () => {
+            console.log('이미지 로딩 완료!');
+            
+            // ninja만 코드로 생성
             jobSprites.forEach(job => {
                 if (!imageJobs.includes(job)) {
                     directions.forEach(direction => {
                         const textureKey = `player_${job}_${direction}`;
                         if (!scene.textures.exists(textureKey)) {
+                            console.log(`${textureKey} 코드로 생성`);
                             this.createGeneratedSprite(scene, job, direction);
                         }
                     });
@@ -91,6 +101,18 @@ export default class AssetLoader {
             
             // 이미지 크기 정보 저장 (나중에 스프라이트 크기 조정에 사용)
             this.storeImageSizes(scene, imageJobs, directions);
+            
+            console.log('모든 스프라이트 로딩 완료!');
+        });
+        
+        // 로딩 에러 처리
+        scene.load.on('loaderror', (file) => {
+            console.error(`파일 로딩 실패: ${file.src}`);
+        });
+        
+        // 개별 파일 로딩 완료
+        scene.load.on('filecomplete', (key, type, data) => {
+            console.log(`파일 로딩 완료: ${key} (${type})`);
         });
     }
     
@@ -252,8 +274,6 @@ export default class AssetLoader {
         graphics.generateTexture(textureKey, 64, 64);
     }
     
-    // mage는 이미지 파일을 사용하므로 생성된 스프라이트 메서드는 주석 처리
-    /*
     static createMageSprite(scene, textureKey, direction) {
         const graphics = scene.add.graphics();
         
@@ -298,7 +318,6 @@ export default class AssetLoader {
         
         graphics.generateTexture(textureKey, 64, 64);
     }
-    */
     
     static createAnimations(scene) {
         // 직업별 플레이어 애니메이션
@@ -367,6 +386,9 @@ export default class AssetLoader {
                         width: source.width,
                         height: source.height
                     });
+                    console.log(`이미지 크기 저장: ${textureKey} - ${source.width}x${source.height}`);
+                } else {
+                    console.warn(`텍스처가 존재하지 않음: ${textureKey}`);
                 }
             });
         });
@@ -393,7 +415,7 @@ export default class AssetLoader {
                 sprite.setDisplaySize(newWidth, newHeight);
             }
         } else {
-            // 원본 크기 정보가 없으면 기본 크기로 설정
+            // 원본 크기 정보가 없으면 기본 크기로 설정 (ninja 등)
             sprite.setDisplaySize(targetWidth, targetHeight);
         }
     }
