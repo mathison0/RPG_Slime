@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { JobClasses } from '../data/JobClasses.js';
 
 export default class Player extends Phaser.Physics.Arcade.Sprite {
-    constructor(scene, x, y) {
+    constructor(scene, x, y, team = 'red') {
         super(scene, x, y, 'player');
         
         this.scene = scene;
@@ -24,7 +24,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.jobLevel = 1;
         this.skills = [];
         
-        // 상태
+        // 팀 및 상태
+        this.team = team; // 'red' | 'blue'
         this.isStealth = false;
         this.stealthCooldown = 0;
         this.stealthDuration = 0;
