@@ -45,7 +45,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.stealthBonusDamage = 0;
         
         // 시야 범위
-        this.visionRange = 200;
+        this.visionRange = 300;
         
         // 애니메이션 설정
         this.setDisplaySize(64, 64); // 크기를 32x32에서 64x64로 증가
