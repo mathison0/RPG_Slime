@@ -313,6 +313,12 @@ export default class GameScene extends Phaser.Scene {
     }
     
     setupUI() {
+        // 게임 UI 표시
+        const gameUI = document.getElementById('game-ui');
+        if (gameUI) {
+            gameUI.style.display = 'block';
+        }
+
         // 게임 제목 텍스트
         this.add.text(16, 16, 'RPG Slime', {
             fontSize: '32px',
