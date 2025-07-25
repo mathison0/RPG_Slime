@@ -80,12 +80,12 @@ export default class GameScene extends Phaser.Scene {
 
         // 1) 외벽 생성
         for (let x = 0; x < MAP_WIDTH; x += TILE_SIZE) {
-            this.walls.create(x, 0, 'wall');
-            this.walls.create(x, MAP_HEIGHT - TILE_SIZE, 'wall');
+            this.walls.create(x + TILE_SIZE / 2, TILE_SIZE / 2, 'wall');
+            this.walls.create(x + TILE_SIZE / 2, MAP_HEIGHT - TILE_SIZE / 2, 'wall');
         }
         for (let y = 0; y < MAP_HEIGHT; y += TILE_SIZE) {
-            this.walls.create(0, y, 'wall');
-            this.walls.create(MAP_WIDTH - TILE_SIZE, y, 'wall');
+            this.walls.create(TILE_SIZE / 2, y + TILE_SIZE / 2, 'wall');
+            this.walls.create(MAP_WIDTH - TILE_SIZE / 2, y + TILE_SIZE / 2, 'wall');
         }
 
         // 2) 스폰 구역(무적 영역) 시각화
@@ -95,6 +95,7 @@ export default class GameScene extends Phaser.Scene {
         this.add.rectangle(MAP_WIDTH - SPAWN_WIDTH / 2, MAP_HEIGHT / 2, SPAWN_WIDTH, MAP_HEIGHT, 0x0000ff, 0.25).setDepth(-1);
 
         // 3) 중앙 광장 시각화
+        this.plazaRect = new Phaser.Geom.Rectangle(PLAZA_X, PLAZA_Y, PLAZA_SIZE, PLAZA_SIZE); // 광장 영역 저장
         this.add.rectangle(PLAZA_X + PLAZA_SIZE / 2, PLAZA_Y + PLAZA_SIZE / 2, PLAZA_SIZE, PLAZA_SIZE, 0xffff00, 0.15).setDepth(-1);
 
         // 3-1) 광장 테두리 벽 + 10개 출입구
@@ -144,10 +145,6 @@ export default class GameScene extends Phaser.Scene {
                 const nearBlueGate = x > MAP_WIDTH - SPAWN_WIDTH - TILE_SIZE * 3;
                 const nearPlazaHoriz = x >= PLAZA_X - TILE_SIZE * 2 && x <= PLAZA_X + PLAZA_SIZE + TILE_SIZE * 2;
                 const nearPlazaVert = y >= PLAZA_Y - TILE_SIZE * 2 && y <= PLAZA_Y + PLAZA_SIZE + TILE_SIZE * 2;
-
-                if (nearRedGate || nearBlueGate || (nearPlazaHoriz && nearPlazaVert)) {
-                    wallProbability = 0.1; // 경계와 출입구 근처는 벽이 덜 생김
-                }
 
                 if (Math.random() < wallProbability) {
                     const wallSprite = this.add.rectangle(x + TILE_SIZE / 2, y + TILE_SIZE / 2, TILE_SIZE, TILE_SIZE, 0x8b4513);
@@ -236,10 +233,11 @@ export default class GameScene extends Phaser.Scene {
      */
     initMinimap() {
         // ---------- 공통 설정 ----------
-        this.minimapSize = 100; // px
-        this.bigMapSize = 800; // px (화면 중앙에 표시)
-
-        this.minimapScale = this.minimapSize / this.MAP_WIDTH;
+        this.minimapSize = 200; // px
+        this.minimapViewSize = 1000; // 미니맵에 표시할 월드 크기
+        this.minimapScale = this.minimapSize / this.minimapViewSize;
+        
+        this.bigMapSize = 800; // px
         this.bigMapScale = this.bigMapSize / this.MAP_WIDTH;
 
         this.mapCols = Math.ceil(this.MAP_WIDTH / this.TILE_SIZE);
@@ -259,8 +257,6 @@ export default class GameScene extends Phaser.Scene {
         this.minimap = this.add.graphics();
         this.minimap.setScrollFactor(0);
         this.minimap.setDepth(1000);
-        
-        // 최초 위치 설정 (오른쪽 위)
         this.positionMinimap();
 
         // 빅맵 그래픽스 (숨김; 토글용)
@@ -275,22 +271,15 @@ export default class GameScene extends Phaser.Scene {
         this.bigMapVisible = false;
     }
 
-    /**
-     * 현재 화면 크기에 맞추어 미니맵을 화면 오른쪽 위 10px 여백으로 재배치한다.
-     * 카메라 스크롤과 무관하게 고정되도록 scrollFactor(0)를 사용하는 오버레이 방식이다.
-     */
     positionMinimap() {
         if (!this.minimap) return;
         const cam = this.cameras.main;
-        // setScrollFactor(0)이 적용된 UI 요소는 카메라 뷰포트를 기준으로 위치가 결정됩니다.
-        // 따라서 cam.worldView.x/y를 더하지 않고, 카메라의 너비(cam.width)를 기준으로 위치를 잡아야 합니다.
         this.minimap.setPosition(
             cam.width - this.minimapSize - 10,
-            10
+            65
         );
     }
 
-    /** 플레이어 시야에 들어온 타일을 discovered 처리 */
     updateVision() {
         if (!this.player) return;
         const radius = this.player.visionRange;
@@ -313,95 +302,150 @@ export default class GameScene extends Phaser.Scene {
         }
     }
 
-    /** 미니맵(플레이어를 중심) 그리기 */
     updateMinimap() {
         if (!this.player) return;
-        // 매 프레임 현재 뷰포트 기준으로 위치 재조정 (윈도우 리사이즈 등에 대응)
-        this.positionMinimap();
+
         const size = this.minimapSize;
         const scale = this.minimapScale;
-
-        // 플레이어 기준 offset (플레이어를 중앙에 두기 위해)
-        const offsetX = this.player.x - (size / 2) / scale;
-        const offsetY = this.player.y - (size / 2) / scale;
-
+        
+        this.positionMinimap();
         this.minimap.clear();
-        // 배경(어두운 영역)
+        
+        // 1. 기본 배경 (밝혀지지 않은 구역 - 검은색)
         this.minimap.fillStyle(0x000000, 0.8);
         this.minimap.fillRect(0, 0, size, size);
 
-        // 벽들 (밝혀진 셀만)
-        this.minimap.fillStyle(0x8b4513);
+        const offsetX = this.player.x - (size / 2) / scale;
+        const offsetY = this.player.y - (size / 2) / scale;
+
+        // 2. 밝혀진 빈 공간 그리기 (어두운 회색)
+        this.minimap.fillStyle(0x333333, 0.8);
+        const startCol = Math.max(0, Math.floor(offsetX / this.TILE_SIZE));
+        const endCol = Math.min(this.mapCols -1, Math.ceil((offsetX + this.minimapViewSize) / this.TILE_SIZE));
+        const startRow = Math.max(0, Math.floor(offsetY / this.TILE_SIZE));
+        const endRow = Math.min(this.mapRows - 1, Math.ceil((offsetY + this.minimapViewSize) / this.TILE_SIZE));
+
+        for (let y = startRow; y <= endRow; y++) {
+            for (let x = startCol; x <= endCol; x++) {
+                if (this.discovered[y][x]) {
+                    const tileX = (x * this.TILE_SIZE - offsetX) * scale;
+                    const tileY = (y * this.TILE_SIZE - offsetY) * scale;
+                    this.minimap.fillRect(tileX, tileY, this.TILE_SIZE * scale, this.TILE_SIZE * scale);
+                }
+            }
+        }
+
+        // 3. 구역 표시 (클리핑 적용)
+        const minimapBounds = new Phaser.Geom.Rectangle(0, 0, size, size);
+        const drawClippedZone = (rect, color, alpha) => {
+            const zoneInMinimap = new Phaser.Geom.Rectangle(
+                (rect.x - offsetX) * scale,
+                (rect.y - offsetY) * scale,
+                rect.width * scale,
+                rect.height * scale
+            );
+            const intersection = Phaser.Geom.Rectangle.Intersection(minimapBounds, zoneInMinimap);
+            if (!intersection.isEmpty()) {
+                this.minimap.fillStyle(color, alpha);
+                this.minimap.fillRect(intersection.x, intersection.y, intersection.width, intersection.height);
+            }
+        };
+        drawClippedZone(this.redSpawnRect, 0xff0000, 0.25);
+        drawClippedZone(this.blueSpawnRect, 0x0000ff, 0.25);
+        drawClippedZone(this.plazaRect, 0xffff00, 0.15);
+
+        // 4. 벽 그리기
+        this.minimap.fillStyle(0x8b4513); // 벽 색상
         this.walls.getChildren().forEach(wall => {
             const col = Math.floor(wall.x / this.TILE_SIZE);
             const row = Math.floor(wall.y / this.TILE_SIZE);
-            if (!this.discovered[row] || !this.discovered[row][col]) return; // 미발견
-
-            const screenX = (wall.x - offsetX) * scale;
-            const screenY = (wall.y - offsetY) * scale;
-            if (screenX < -this.TILE_SIZE * scale || screenX > size || screenY < -this.TILE_SIZE * scale || screenY > size) return;
-            this.minimap.fillRect(screenX, screenY, this.TILE_SIZE * scale, this.TILE_SIZE * scale);
+            
+            if (this.discovered[row] && this.discovered[row][col]) {
+                const screenX = (wall.x - offsetX - this.TILE_SIZE / 2) * scale;
+                const screenY = (wall.y - offsetY - this.TILE_SIZE / 2) * scale;
+                if (screenX >= -this.TILE_SIZE * scale && screenX < size && screenY >= -this.TILE_SIZE * scale && screenY < size) {
+                     this.minimap.fillRect(screenX, screenY, this.TILE_SIZE * scale, this.TILE_SIZE * scale);
+                }
+            }
         });
 
-        // 플레이어 표시 (항상 중앙)
+        // 5. 플레이어 아이콘 그리기
         this.minimap.fillStyle(0x00ff00);
         this.minimap.fillCircle(size / 2, size / 2, 4);
     }
 
-    /** 빅맵(전체 맵) 다시 그리기 */
     drawBigMap() {
         const size = this.bigMapSize;
         const scale = this.bigMapScale;
         this.bigMap.clear();
-        // 전체 배경
+
+        // 1. 기본 배경 (밝혀지지 않은 구역 - 검은색)
         this.bigMap.fillStyle(0x000000, 0.9);
         this.bigMap.fillRect(0, 0, size, size);
 
-        // 벽들 - 발견된 영역만 표시
-        this.bigMap.fillStyle(0x444444);
+        // 2. 밝혀진 빈 공간 그리기 (어두운 회색)
+        this.bigMap.fillStyle(0x333333, 0.9);
+        const tileW = this.TILE_SIZE * scale;
+        const tileH = this.TILE_SIZE * scale;
+        for (let y = 0; y < this.mapRows; y++) {
+            for (let x = 0; x < this.mapCols; x++) {
+                if (this.discovered[y][x]) {
+                    this.bigMap.fillRect(x * tileW, y * tileH, tileW, tileH);
+                }
+            }
+        }
+        
+        // 3. 구역 표시
+        this.bigMap.fillStyle(0xff0000, 0.25);
+        this.bigMap.fillRect(this.redSpawnRect.x * scale, this.redSpawnRect.y * scale, this.redSpawnRect.width * scale, this.redSpawnRect.height * scale);
+        this.bigMap.fillStyle(0x0000ff, 0.25);
+        this.bigMap.fillRect(this.blueSpawnRect.x * scale, this.blueSpawnRect.y * scale, this.blueSpawnRect.width * scale, this.blueSpawnRect.height * scale);
+        this.bigMap.fillStyle(0xffff00, 0.15);
+        this.bigMap.fillRect(this.plazaRect.x * scale, this.plazaRect.y * scale, this.plazaRect.width * scale, this.plazaRect.height * scale);
+
+        // 4. 벽 그리기
+        this.bigMap.fillStyle(0x8b4513);
         this.walls.getChildren().forEach(wall => {
             const col = Math.floor(wall.x / this.TILE_SIZE);
             const row = Math.floor(wall.y / this.TILE_SIZE);
-            if (!this.discovered[row] || !this.discovered[row][col]) return;
-            const x = wall.x * scale;
-            const y = wall.y * scale;
-            this.bigMap.fillRect(x, y, this.TILE_SIZE * scale, this.TILE_SIZE * scale);
+            if (this.discovered[row] && this.discovered[row][col]) {
+                const x = (wall.x - this.TILE_SIZE / 2) * scale;
+                const y = (wall.y - this.TILE_SIZE / 2) * scale;
+                this.bigMap.fillRect(x, y, this.TILE_SIZE * scale, this.TILE_SIZE * scale);
+            }
         });
 
-        // 플레이어 위치
+        // 5. 플레이어 위치 그리기
         this.bigMap.fillStyle(0x00ff00);
         this.bigMap.fillCircle(this.player.x * scale, this.player.y * scale, 5);
     }
     
     update(time, delta) {
-        // 플레이어 업데이트
         if (this.player) {
             this.player.update(time, delta);
         }
         
-        // 적들 업데이트
         this.enemies.getChildren().forEach(enemy => {
             enemy.update(time, delta);
         });
         
-
-        // 미니맵 및 시야 업데이트
         this.updateVision();
 
-        this.updateMinimap();
-
-        // M 키 토글로 빅맵 표시/숨김
         if (Phaser.Input.Keyboard.JustDown(this.mapToggleKey)) {
             this.bigMapVisible = !this.bigMapVisible;
             this.bigMap.setVisible(this.bigMapVisible);
-            if (this.bigMapVisible) this.drawBigMap();
+            this.minimap.setVisible(!this.bigMapVisible);
         }
 
-        // 스폰구역 진입 제한
+        if (this.bigMapVisible) {
+            this.drawBigMap();
+        } else {
+            this.updateMinimap();
+        }
+
         this.restrictMovement();
     }
 
-    /** 주어진 Phaser.Geom.Rectangle 내부의 임의 좌표 반환 */
     getRandomPointInRect(rect) {
         return {
             x: Phaser.Math.Between(rect.x + this.TILE_SIZE, rect.right - this.TILE_SIZE),
@@ -409,32 +453,21 @@ export default class GameScene extends Phaser.Scene {
         };
     }
 
-    /** 팀 스폰구역 및 적 진입 제한 처리 */
     restrictMovement() {
-        // 플레이어 제한
         if (this.player) {
-            // 레드팀 플레이어가 블루팀 스폰(오른쪽)에 들어갔을 경우
             if (this.player.team === 'red' && this.blueSpawnRect.contains(this.player.x, this.player.y)) {
-                // 블루팀 스폰 구역의 왼쪽 경계로 밀어냄
                 this.player.x = this.blueSpawnRect.x;
             } 
-            // 블루팀 플레이어가 레드팀 스폰(왼쪽)에 들어갔을 경우
             else if (this.player.team === 'blue' && this.redSpawnRect.contains(this.player.x, this.player.y)) {
-                // 레드팀 스폰 구역의 오른쪽 경계로 밀어냄
                 this.player.x = this.redSpawnRect.right;
             }
         }
 
-        // 적 제한
         this.enemies.getChildren().forEach(enemy => {
-            // 레드팀 스폰 구역(왼쪽)에 들어갔을 경우
             if (this.redSpawnRect.contains(enemy.x, enemy.y)) {
-                // 스폰 구역의 오른쪽 바깥으로 밀어냄
                 enemy.x = this.redSpawnRect.right + this.TILE_SIZE;
             } 
-            // 블루팀 스폰 구역(오른쪽)에 들어갔을 경우
             else if (this.blueSpawnRect.contains(enemy.x, enemy.y)) {
-                // 스폰 구역의 왼쪽 바깥으로 밀어냄
                 enemy.x = this.blueSpawnRect.x - this.TILE_SIZE;
             }
         });
