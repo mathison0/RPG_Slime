@@ -3,9 +3,6 @@ import { JobClasses } from '../data/JobClasses.js';
 import AssetLoader from '../utils/AssetLoader.js';
 
 export default class Player extends Phaser.Physics.Arcade.Sprite {
-    constructor(scene, x, y) {
-        super(scene, x, y, 'player_slime_front');
-
     constructor(scene, x, y, team = 'red') {
         super(scene, x, y, 'player');
 
