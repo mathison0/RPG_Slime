@@ -36,8 +36,8 @@ export default class GameScene extends Phaser.Scene {
         this.cameras.main.startFollow(this.player);
         this.cameras.main.setZoom(1);
         
-        // 시야 제한 (미로 효과)
-        this.createFogOfWar();
+        // 시야 제한 (미로 효과) - 비활성화
+        // this.createFogOfWar();
         
         // UI 설정
         this.setupUI();
@@ -212,8 +212,8 @@ export default class GameScene extends Phaser.Scene {
             enemy.update(time, delta);
         });
         
-        // 시야 업데이트
-        this.updateFogOfWar();
+        // 시야 업데이트 - 비활성화
+        // this.updateFogOfWar();
         
         // 미니맵 업데이트
         this.updateMinimap();
