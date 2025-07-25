@@ -59,8 +59,8 @@ export default class AssetLoader {
         const jobSprites = ['slime', 'assassin', 'ninja', 'warrior', 'mage'];
         const directions = ['front', 'back', 'left', 'right'];
         
-        // 이미지 파일이 있는 직업들 (slime, warrior)
-        const imageJobs = ['slime', 'warrior'];
+        // 이미지 파일이 있는 직업들 (slime, warrior, mage, assassin)
+        const imageJobs = ['slime', 'warrior', 'mage', 'assassin'];
         
         jobSprites.forEach(job => {
             directions.forEach(direction => {
@@ -76,7 +76,7 @@ export default class AssetLoader {
             });
         });
         
-        // 이미지 로딩이 완료되면 생성된 스프라이트를 대체
+        // 이미지 로딩이 완료되면 생성된 스프라이트를 대체하고 크기 정보 저장
         scene.load.on('complete', () => {
             jobSprites.forEach(job => {
                 if (!imageJobs.includes(job)) {
@@ -88,6 +88,9 @@ export default class AssetLoader {
                     });
                 }
             });
+            
+            // 이미지 크기 정보 저장 (나중에 스프라이트 크기 조정에 사용)
+            this.storeImageSizes(scene, imageJobs, directions);
         });
     }
     
@@ -112,7 +115,8 @@ export default class AssetLoader {
                 break;
                 
             case 'mage':
-                this.createMageSprite(scene, textureKey, direction);
+                // mage는 이미지 파일을 사용하므로 생성된 스프라이트는 사용하지 않음
+                // this.createMageSprite(scene, textureKey, direction);
                 break;
         }
     }
@@ -248,6 +252,8 @@ export default class AssetLoader {
         graphics.generateTexture(textureKey, 64, 64);
     }
     
+    // mage는 이미지 파일을 사용하므로 생성된 스프라이트 메서드는 주석 처리
+    /*
     static createMageSprite(scene, textureKey, direction) {
         const graphics = scene.add.graphics();
         
@@ -292,6 +298,7 @@ export default class AssetLoader {
         
         graphics.generateTexture(textureKey, 64, 64);
     }
+    */
     
     static createAnimations(scene) {
         // 직업별 플레이어 애니메이션
@@ -343,5 +350,51 @@ export default class AssetLoader {
     // 직업과 방향에 따른 스프라이트 키 반환
     static getPlayerSpriteKey(jobType, direction = 'front') {
         return `player_${jobType}_${direction}`;
+    }
+    
+    // 이미지 크기 정보를 저장하는 정적 변수
+    static imageSizes = new Map();
+    
+    // 이미지 크기 정보 저장
+    static storeImageSizes(scene, imageJobs, directions) {
+        imageJobs.forEach(job => {
+            directions.forEach(direction => {
+                const textureKey = `player_${job}_${direction}`;
+                if (scene.textures.exists(textureKey)) {
+                    const texture = scene.textures.get(textureKey);
+                    const source = texture.source[0];
+                    this.imageSizes.set(textureKey, {
+                        width: source.width,
+                        height: source.height
+                    });
+                }
+            });
+        });
+    }
+    
+    // 스프라이트 크기를 일정하게 조정하는 메서드
+    static adjustSpriteSize(sprite, targetWidth = 64, targetHeight = 64) {
+        const textureKey = sprite.texture.key;
+        const sizeInfo = this.imageSizes.get(textureKey);
+        
+        if (sizeInfo) {
+            // 원본 이미지 크기 정보가 있으면 비율을 유지하면서 크기 조정
+            const aspectRatio = sizeInfo.width / sizeInfo.height;
+            
+            if (aspectRatio > 1) {
+                // 가로가 더 긴 경우
+                const newWidth = targetWidth;
+                const newHeight = targetWidth / aspectRatio;
+                sprite.setDisplaySize(newWidth, newHeight);
+            } else {
+                // 세로가 더 긴 경우
+                const newHeight = targetHeight;
+                const newWidth = targetHeight * aspectRatio;
+                sprite.setDisplaySize(newWidth, newHeight);
+            }
+        } else {
+            // 원본 크기 정보가 없으면 기본 크기로 설정
+            sprite.setDisplaySize(targetWidth, targetHeight);
+        }
     }
 } 
