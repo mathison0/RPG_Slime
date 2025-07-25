@@ -64,7 +64,7 @@ export default class AssetLoader {
         const directions = ['front', 'back', 'left', 'right'];
         
         // 이미지 파일이 있는 직업들 (ninja는 이미지가 없으므로 제외)
-        const imageJobs = ['slime', 'warrior', 'mage', 'assassin'];
+        const imageJobs = ['slime', 'warrior', 'mage', 'assassin', 'mechanic'];
         
         jobSprites.forEach(job => {
             directions.forEach(direction => {
