@@ -1,7 +1,15 @@
 import { io } from 'socket.io-client';
 
-export default class NetworkManager {
+class NetworkManager {
     constructor() {
+        // 싱글톤 패턴 - 이미 인스턴스가 있으면 기존 인스턴스 반환
+        if (NetworkManager.instance) {
+            console.log('기존 NetworkManager 인스턴스 반환');
+            return NetworkManager.instance;
+        }
+        
+        console.log('새 NetworkManager 인스턴스 생성');
+        
         // 개발환경과 프로덕션 환경 구분
         const serverUrl = window.location.hostname === 'localhost' 
             ? 'http://localhost:3000' 
@@ -11,8 +19,21 @@ export default class NetworkManager {
         this.isConnected = false;
         this.playerId = null;
         this.callbacks = new Map();
-        this.pendingJoinGame = false; // 게임 입장 대기 상태
+        this.pendingJoinGameData = null; // 게임 입장 대기 데이터
+        this.hasJoinedGame = false; // 게임 입장 완료 여부
         this.setupSocketEvents();
+        
+        // 싱글톤 인스턴스 저장
+        NetworkManager.instance = this;
+    }
+
+    // 싱글톤 인스턴스 제거 (필요시)
+    static destroyInstance() {
+        if (NetworkManager.instance) {
+            NetworkManager.instance.socket.disconnect();
+            NetworkManager.instance = null;
+            console.log('NetworkManager 인스턴스 제거됨');
+        }
     }
 
     setupSocketEvents() {
@@ -21,20 +42,24 @@ export default class NetworkManager {
             this.isConnected = true;
             
             // 연결 완료 후 대기 중인 게임 입장 요청 처리
-            if (this.pendingJoinGame) {
-                this.pendingJoinGame = false;
-                this.socket.emit('join-game', {});
+            if (this.pendingJoinGameData && !this.hasJoinedGame) {
+                const dataToSend = this.pendingJoinGameData;
+                this.pendingJoinGameData = null;
+                console.log('연결 완료 후 대기 중인 join-game 요청 처리:', dataToSend);
+                this.socket.emit('join-game', dataToSend);
             }
         });
 
         this.socket.on('disconnect', () => {
             console.log('서버 연결이 끊어졌습니다.');
             this.isConnected = false;
+            this.hasJoinedGame = false; // 연결이 끊어지면 다시 입장 가능하도록
         });
 
         // 게임 이벤트 리스너들
         this.socket.on('game-joined', (data) => {
             this.playerId = data.playerId;
+            this.hasJoinedGame = true; // 게임 입장 완료 표시
             this.emit('game-joined', data);
         });
 
@@ -77,16 +102,37 @@ export default class NetworkManager {
         this.socket.on('player-job-changed', (data) => {
             this.emit('player-job-changed', data);
         });
+
+        this.socket.on('game-synced', (data) => {
+            this.emit('game-synced', data);
+        });
     }
 
     // 게임 입장
     joinGame(playerData = {}) {
+        const timestamp = Date.now();
+        console.log(`[${timestamp}] NetworkManager.joinGame() 호출:`, playerData);
+        console.log(`[${timestamp}] 현재 상태 - isConnected:`, this.isConnected, 'hasJoinedGame:', this.hasJoinedGame, 'playerId:', this.playerId);
+        
+        // 이미 게임에 입장했다면 무시
+        if (this.hasJoinedGame && this.playerId) {
+            console.log(`[${timestamp}] 이미 게임에 입장했습니다. playerId:`, this.playerId);
+            return;
+        }
+        
+        // 대기 중인 요청이 있다면 무시 (중복 요청 방지)
+        if (this.pendingJoinGameData) {
+            console.log(`[${timestamp}] 이미 대기 중인 join-game 요청이 있습니다.`);
+            return;
+        }
+
         if (this.isConnected) {
+            console.log(`[${timestamp}] 서버에 join-game 이벤트 전송:`, playerData);
             this.socket.emit('join-game', playerData);
         } else {
-            // 연결이 완료되지 않았으면 대기 상태로 설정
-            this.pendingJoinGame = true;
-            console.log('서버 연결 대기 중...');
+            // 연결이 완료되지 않았으면 데이터를 저장하고 대기
+            this.pendingJoinGameData = playerData;
+            console.log(`[${timestamp}] 서버 연결 대기 중...`);
         }
     }
 
@@ -156,6 +202,22 @@ export default class NetworkManager {
             });
         }
     }
+    
+    // 치트: 리스폰 요청 (자살)
+    requestRespawn() {
+        if (this.socket && this.isConnected) {
+            console.log('리스폰 요청 (자살)');
+            this.socket.emit('cheat-respawn');
+        }
+    }
+
+    // 게임 상태 동기화 요청 (탭 포커스 복원 시)
+    requestGameSync() {
+        if (this.socket && this.isConnected) {
+            console.log('게임 상태 동기화 요청');
+            this.socket.emit('request-game-sync');
+        }
+    }
 
     // 연결 해제
     disconnect() {
@@ -164,3 +226,8 @@ export default class NetworkManager {
         }
     }
 } 
+
+// 싱글톤 인스턴스 저장
+NetworkManager.instance = null;
+
+export default NetworkManager; 
