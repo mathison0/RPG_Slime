@@ -106,6 +106,10 @@ class NetworkManager {
         this.socket.on('game-synced', (data) => {
             this.emit('game-synced', data);
         });
+      
+        this.socket.on('player-ping', (data) => {
+            this.emit('player-ping', data);
+        });
     }
 
     // 게임 입장
@@ -149,10 +153,11 @@ class NetworkManager {
     }
 
     // 스킬 사용
-    useSkill(skillType) {
+    useSkill(skillType, additionalData = {}) {
         if (this.isConnected) {
             this.socket.emit('player-skill', {
-                skillType: skillType
+                skillType: skillType,
+                ...additionalData
             });
         }
     }
@@ -171,6 +176,16 @@ class NetworkManager {
         if (this.isConnected) {
             this.socket.emit('player-job-change', {
                 jobClass: jobClass
+            });
+        }
+    }
+
+    // 핑 전송
+    sendPing(x, y) {
+        if (this.isConnected) {
+            this.socket.emit('player-ping', {
+                x: x,
+                y: y
             });
         }
     }

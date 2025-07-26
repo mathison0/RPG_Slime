@@ -302,6 +302,23 @@ io.on('connection', (socket) => {
       console.log(`[${timestamp}] [${playerId}] 게임 입장 처리 완료`);
       console.log(`[${timestamp}] 총 플레이어 수: ${gameState.players.size}`);
     });
+
+    // 플레이어 핑
+    socket.on('player-ping', (data) => {
+      const player = gameState.players.get(socket.id);
+      if (player) {
+        // 같은 팀의 플레이어들에게만 핑 전송
+        const pingData = {
+          playerId: socket.id,
+          team: player.team,
+          x: data.x,
+          y: data.y
+        };
+
+        // 같은 팀의 플레이어들에게만 브로드캐스트
+        socket.broadcast.emit('player-ping', pingData);
+      }
+    });
   
     socket.on('player-update', (data) => {
       const player = gameState.players.get(socket.id);
@@ -331,89 +348,40 @@ io.on('connection', (socket) => {
       }
     });
   
+    // 플레이어 스킬 사용
     socket.on('player-skill', (data) => {
       const player = gameState.players.get(socket.id);
       if (player) {
-        io.emit('player-skill-used', {
+        // 스킬 효과를 모든 플레이어에게 브로드캐스트 (팀 정보 및 추가 데이터 포함)
+        const broadcastData = {
           playerId: socket.id,
           skillType: data.skillType,
           x: player.x,
-          y: player.y
-        });
+          y: player.y,
+          team: player.team
+        };
+
+        // 추가 데이터가 있으면 포함 (미사일 궤적 정보 등)
+        if (data.startX !== undefined) broadcastData.startX = data.startX;
+        if (data.startY !== undefined) broadcastData.startY = data.startY;
+        if (data.targetX !== undefined) broadcastData.targetX = data.targetX;
+        if (data.targetY !== undefined) broadcastData.targetY = data.targetY;
+        if (data.maxRange !== undefined) broadcastData.maxRange = data.maxRange;
+
+        io.emit('player-skill-used', broadcastData);
       }
     });
   
+    // 적과의 충돌
     socket.on('enemy-hit', (data) => {
       const enemy = gameState.enemies.get(data.enemyId);
       const player = gameState.players.get(socket.id);
-      
+
       if (enemy && player) {
         enemy.hp -= player.attack;
-        
-        if (enemy.hp <= 0) {
-          gameState.enemies.delete(data.enemyId);
-          player.exp += 25;
-          
-          if (player.exp >= player.expToNext) {
-            player.level++;
-            player.exp -= player.expToNext;
-            player.expToNext = Math.floor(player.expToNext * 1.2);
-            player.maxHp += 20;
-            player.hp = player.maxHp;
-            player.attack += 5;
-            player.defense += 2;
-            player.speed += 10;
-            
-            io.emit('player-level-up', {
-              playerId: socket.id,
-              level: player.level
-            });
-          }
-          
-          io.emit('enemy-destroyed', { enemyId: data.enemyId });
-          setTimeout(() => spawnEnemy(), 2000);
-        } else {
-          io.emit('enemy-damaged', {
-            enemyId: data.enemyId,
-            hp: enemy.hp,
-            maxHp: enemy.maxHp
-          });
-        }
       }
-    });
-  
-    // 치트: 리스폰 (자살)
-    socket.on('cheat-respawn', () => {
-      const player = gameState.players.get(socket.id);
-      if (player) {
-        console.log(`치트 리스폰: ${socket.id}`);
-        
-        // 새로운 스폰 지점 계산
-        const spawnPoint = getSpawnPoint(player.team);
-        player.x = spawnPoint.x;
-        player.y = spawnPoint.y;
-        player.hp = player.maxHp; // 체력 완전 회복
-        
-        // 클라이언트에게 리스폰 알림
-        socket.emit('game-joined', {
-          playerId: socket.id,
-          playerData: player.getState(),
-          players: Array.from(gameState.players.values()).map(p => p.getState()),
-          enemies: Array.from(gameState.enemies.values()).map(e => e.getState()),
-          mapData: gameState.mapData
-        });
-        
-        // 다른 플레이어들에게 위치 업데이트 전송
-        socket.broadcast.emit('player-moved', {
-          id: socket.id,
-          x: player.x,
-          y: player.y,
-          direction: player.direction,
-          isJumping: player.isJumping,
-          jobClass: player.jobClass,
-          level: player.level,
-          size: player.size
-        });
+      if (enemy.hp <= 0) {
+        io.emit('enemy-destroyed', enemy);
       }
     });
 

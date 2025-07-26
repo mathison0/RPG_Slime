@@ -48,6 +48,15 @@ export default class AssetLoader {
             .fillRect(0, 0, 200, 50)
             .generateTexture('ui_panel', 200, 50);
         
+        // 핑 화살표 이미지 로드
+        scene.load.image('ping_arrow', 'assets/ping_arrow.png');
+        
+        // 슬라임 퍼지기 스킬 이미지 로드
+        scene.load.image('slime_skill', 'assets/slime_skill.png');
+        
+        // 와드 스프라이트 로드
+        scene.load.image('ward', 'assets/ward.png');
+        
         scene.add.graphics()
             .fillStyle(0x00ff00)
             .fillRect(0, 0, 100, 10)
@@ -63,8 +72,8 @@ export default class AssetLoader {
         const jobSprites = ['slime', 'assassin', 'ninja', 'warrior', 'mage', 'mechanic'];
         const directions = ['front', 'back', 'left', 'right'];
         
-        // 이미지 파일이 있는 직업들 (ninja는 이미지가 없으므로 제외)
-        const imageJobs = ['slime', 'warrior', 'mage', 'assassin', 'mechanic'];
+        // 이미지 파일이 있는 직업들
+        const imageJobs = ['slime', 'warrior', 'mage', 'assassin', 'mechanic', 'ninja'];
         
         jobSprites.forEach(job => {
             directions.forEach(direction => {
@@ -129,7 +138,8 @@ export default class AssetLoader {
                 break;
                 
             case 'ninja':
-                this.createNinjaSprite(scene, textureKey, direction);
+                // ninja는 이미지 파일을 사용하므로 생성된 스프라이트는 사용하지 않음
+                // this.createNinjaSprite(scene, textureKey, direction);
                 break;
                 
             case 'warrior':

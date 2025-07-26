@@ -592,6 +592,7 @@ export default class GameScene extends Phaser.Scene {
         if (this.otherPlayerWallCollider) this.otherPlayerWallCollider.destroy();
         if (this.playerEnemyCollider) this.playerEnemyCollider.destroy();
         if (this.playerSpawnBarrierCollider) this.playerSpawnBarrierCollider.destroy();
+        if (this.enemyWardCollider) this.enemyWardCollider.destroy();
         
         // 새 충돌 설정
         this.playerWallCollider = this.physics.add.collider(this.player, this.walls, null, this.player.handleWallCollision, this.player);
@@ -602,6 +603,11 @@ export default class GameScene extends Phaser.Scene {
         // 스폰 구역 물리적 장벽 충돌 추가
         if (this.spawnBarriers) {
             this.playerSpawnBarrierCollider = this.physics.add.collider(this.player, this.spawnBarriers);
+        }
+      
+        // 와드 충돌 설정 (와드가 있을 때만)
+        if (this.activeWard && this.activeWard.sprite) {
+            this.enemyWardCollider = this.physics.add.collider(this.enemies, this.activeWard.sprite, this.handleEnemyWardCollision, null, this);
         }
         
         console.log('물리 충돌 설정 완료');
@@ -727,6 +733,9 @@ export default class GameScene extends Phaser.Scene {
         visionMaskGraphics.fillPath();
 
         this.shadowVisionTexture.erase(visionMaskGraphics);
+    
+        // 와드 범위 내 시야 확장 (와드가 있을 때)
+        this.addWardVisionToMask(visionMaskGraphics, cam);
         
         shadowMask.destroy();
         visionMaskGraphics.destroy();
@@ -857,6 +866,30 @@ export default class GameScene extends Phaser.Scene {
             }
         }
     }
+    
+    // 와드 범위 내 시야를 마스크에 추가
+    addWardVisionToMask(visionMaskGraphics, cam) {
+        // 같은 팀 플레이어들의 와드 시야만 추가
+        
+        // 1. 로컬 와드 (같은 팀이므로 항상 추가)
+        if (this.activeWard) {
+            const ward = this.activeWard;
+            visionMaskGraphics.fillCircle(ward.x - cam.scrollX, ward.y - cam.scrollY, ward.radius);
+        }
+        
+        // 2. 같은 팀 다른 플레이어들의 와드들만 추가
+        this.children.list.forEach(child => {
+            if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
+                // 와드를 설치한 플레이어의 팀 확인
+                const wardOwner = this.otherPlayers.getChildren().find(p => p.networkId === child.wardOwnerId);
+                
+                if (wardOwner && wardOwner.team === this.player.team) {
+                    // 같은 팀의 와드만 시야 추가
+                    visionMaskGraphics.fillCircle(child.x - cam.scrollX, child.y - cam.scrollY, 120); // 와드 반지름
+                }
+            }
+        });
+    }
 
     createGradientTexture() {
         const size = 512;
@@ -894,6 +927,59 @@ export default class GameScene extends Phaser.Scene {
         }
     }
     
+    // 적과 와드 충돌 처리
+    handleEnemyWardCollision(enemy, ward) {
+        // 와드가 존재하고 체력이 있을 때만 데미지
+        if (this.activeWard && this.activeWard.hp > 0) {
+            // 슬라임 공격력 (20)으로 와드 데미지
+            const damage = 20;
+            this.activeWard.hp -= damage;
+            
+            // 와드 데미지 이펙트
+            ward.setTint(0xff0000);
+            this.time.delayedCall(200, () => {
+                ward.clearTint();
+            });
+            
+            console.log(`와드가 공격받음! 남은 체력: ${this.activeWard.hp}/${this.activeWard.maxHp}`);
+            
+            // 와드 체력이 0 이하가 되면 파괴
+            if (this.activeWard.hp <= 0) {
+                console.log('와드가 파괴되었습니다!');
+                
+                // 와드 파괴 이펙트
+                const explosion = this.add.circle(ward.x, ward.y, 50, 0xff0000, 0.5);
+                this.tweens.add({
+                    targets: explosion,
+                    scaleX: 2,
+                    scaleY: 2,
+                    alpha: 0,
+                    duration: 500,
+                    onComplete: () => {
+                        explosion.destroy();
+                    }
+                });
+                
+                // 와드 파괴 함수 호출
+                if (ward.destroyWard) {
+                    ward.destroyWard();
+                }
+                
+                // 네트워크에 와드 파괴 알림
+                if (this.networkManager) {
+                    this.networkManager.emit('ward-destroyed', {
+                        playerId: this.networkManager.playerId,
+                        x: ward.x,
+                        y: ward.y
+                    });
+                }
+                
+                // 충돌 설정 업데이트
+                this.setupCollisions();
+            }
+        }
+    }
+    
     setupUI() {
         // 게임 UI 표시
         const gameUI = document.getElementById('game-ui');
@@ -927,7 +1013,7 @@ export default class GameScene extends Phaser.Scene {
 
         this.minimap = this.add.graphics();
         this.minimap.setScrollFactor(0);
-        this.minimap.setDepth(1000);
+        this.minimap.setDepth(1002);
         this.positionMinimap();
 
         this.bigMap = this.add.graphics();
@@ -938,6 +1024,24 @@ export default class GameScene extends Phaser.Scene {
 
         this.mapToggleKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
         this.bigMapVisible = false;
+
+        // 핑 관련 변수들
+        this.pingKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
+        this.pings = this.add.group();
+        this.pingMessageText = null;
+        this.pingCooldown = 0;
+        this.pingCooldownTime = 1000; // 1초 쿨다운
+        
+        // 핑 화살표 추적을 위한 변수들
+        this.activePingArrows = new Map(); // 핑 ID별 화살표 객체 저장
+        this.activePingPositions = new Map(); // 핑 ID별 위치 저장
+
+        // 마우스 핑 이벤트 설정 (마우스휠 클릭)
+        this.input.on('pointerdown', (pointer) => {
+            if (pointer.button === 1) { // 마우스 휠 클릭 (중간 버튼)
+                this.sendPingAtPosition(pointer.worldX, pointer.worldY);
+            }
+        });
     }
 
     positionMinimap() {
@@ -1106,6 +1210,85 @@ export default class GameScene extends Phaser.Scene {
         // 8. 내 플레이어 아이콘 그리기 (항상 중앙에 위치, 파란색)
         this.minimap.fillStyle(0x0099ff);
         this.minimap.fillCircle(size / 2, size / 2, 4);
+        
+        // 8. 핑 점들의 위치 업데이트
+        this.updateMinimapPingPositions();
+    }
+
+    // 미니맵 핑 점들과 화살표들의 위치 업데이트
+    updateMinimapPingPositions() {
+        const scale = this.minimapScale;
+        const offsetX = this.player.x - (this.minimapSize / 2) / scale;
+        const offsetY = this.player.y - (this.minimapSize / 2) / scale;
+        
+        // 모든 핑 점들과 화살표들을 찾아서 위치 업데이트
+        this.children.list.forEach(child => {
+            if (child.pingWorldX !== undefined && child.pingWorldY !== undefined) {
+                // 핑의 절대 위치를 미니맵 좌표로 변환
+                const minimapX = (child.pingWorldX - offsetX) * scale;
+                const minimapY = (child.pingWorldY - offsetY) * scale;
+                
+                // 미니맵 위치 업데이트 (경계 내로 제한)
+                const clampedX = Math.max(0, Math.min(this.minimapSize, minimapX));
+                const clampedY = Math.max(0, Math.min(this.minimapSize, minimapY));
+                child.setPosition(this.minimap.x + clampedX, this.minimap.y + clampedY);
+                
+                // 화살표가 미니맵 경계를 벗어나면 강제로 경계에 고정
+                if (child.texture && child.texture.key === 'ping_arrow') {
+                    const margin = 5;
+                    const maxX = this.minimapSize - margin;
+                    const maxY = this.minimapSize - margin;
+                    
+                    if (clampedX < margin || clampedX > maxX || clampedY < margin || clampedY > maxY) {
+                        const finalX = Math.max(margin, Math.min(maxX, clampedX));
+                        const finalY = Math.max(margin, Math.min(maxY, clampedY));
+                        child.setPosition(this.minimap.x + finalX, this.minimap.y + finalY);
+                    }
+                }
+                
+                // 화살표인 경우 방향도 업데이트
+                if (child.texture && child.texture.key === 'ping_arrow') {
+                    const margin = 5;
+                    const isOffMinimap = minimapX < margin || minimapX > this.minimapSize - margin || 
+                                        minimapY < margin || minimapY > this.minimapSize - margin;
+                    
+                    // 미니맵 밖에 있는 모든 핑은 화살표로 표시 (거리에 상관없이)
+                    const isOutsideMinimap = minimapX < 0 || minimapX > this.minimapSize || 
+                                            minimapY < 0 || minimapY > this.minimapSize;
+                    
+                    // 미니맵 밖에 있으면 무조건 화살표 표시
+                    if (isOutsideMinimap || isOffMinimap) {
+                        // 화살표 방향 재계산 (경계에 고정)
+                        // 화살표가 미니맵 바깥으로 나가지 않도록 clamp 처리
+                        let arrowX = Math.max(margin, Math.min(this.minimapSize - margin, minimapX));
+                        let arrowY = Math.max(margin, Math.min(this.minimapSize - margin, minimapY));
+                        // 화살표 방향 계산 (미니맵 경계에서 핑의 실제 위치를 가리킴)
+                        const angle = Phaser.Math.Angle.Between(arrowX, arrowY, minimapX, minimapY);
+                        child.setRotation(angle);
+                        child.setVisible(true);
+                    } else {
+                        // 미니맵 안에 있으면 화살표 숨김
+                        child.setVisible(false);
+                    }
+                }
+                
+                // 핑은 2초 후 자동으로 사라지므로 제거 코드 불필요
+                // 한국어 주석: 핑의 수명은 애니메이션으로 관리되므로 여기서 제거하지 않음
+            }
+        });
+    }
+
+    // 시야 판정 함수 - 해당 좌표가 플레이어의 시야 안에 있는지 확인
+    isInVision(x, y) {
+        if (!this.player) return false;
+        
+        // 플레이어와 핑 사이의 거리 계산
+        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, x, y);
+        
+        // 시야 반지름 (기존 시야 시스템과 동일하게 설정)
+        const visionRadius = this.player.visionRange || 300; // 기존 시야 반지름 사용
+        
+        return distance <= visionRadius;
     }
 
     drawBigMap() {
@@ -1249,6 +1432,8 @@ export default class GameScene extends Phaser.Scene {
             this.minimap.setVisible(!this.bigMapVisible);
         }
 
+
+
         if (!this.player.isJumping) {
             this.updateMinimapVision();
             this.updateVision();
@@ -1259,6 +1444,12 @@ export default class GameScene extends Phaser.Scene {
                 this.updateMinimap();
             }
         }
+
+        // 활성 핑 화살표들의 방향 실시간 업데이트
+        this.updatePingArrows();
+        
+        // 와드로 탐지된 적들의 미니맵 위치 업데이트
+        this.updateWardDetectedEnemies();
 
         this.restrictMovement();
     }
@@ -1542,9 +1733,32 @@ export default class GameScene extends Phaser.Scene {
             if (player) {
                 // 본인이 아닌 다른 플레이어의 스킬만 실행
                 if (data.playerId !== this.networkManager.playerId) {
-                    this.showSkillEffect(player, data.skillType);
+                    this.showSkillEffect(player, data.skillType, data);
                 }
             }
+        });
+        
+        // 와드 파괴 (다른 플레이어의 와드가 파괴될 때)
+        this.networkManager.on('ward-destroyed', (data) => {
+            // 다른 플레이어의 와드 스프라이트들을 찾아서 제거
+            this.children.list.forEach(child => {
+                if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
+                    // 파괴 이펙트
+                    const explosion = this.add.circle(child.x, child.y, 50, 0xff0000, 0.5);
+                    this.tweens.add({
+                        targets: explosion,
+                        scaleX: 2,
+                        scaleY: 2,
+                        alpha: 0,
+                        duration: 500,
+                        onComplete: () => {
+                            explosion.destroy();
+                        }
+                    });
+                    
+                    child.destroy();
+                }
+            });
         });
 
         // 플레이어 레벨업
@@ -1643,6 +1857,24 @@ export default class GameScene extends Phaser.Scene {
             console.log('게임 상태 동기화 완료:', syncData);
             this.restorePlayerStates(syncData);
         });
+      
+        // 핑 수신
+        this.networkManager.on('player-ping', (data) => {
+            // 같은 팀의 핑만 표시
+            if (data.team === this.player.team && data.playerId !== this.networkManager.playerId) {
+                this.createPing(data.x, data.y, data.playerId);
+                this.showPingMessage(`팀원이 핑을 찍었습니다!`);
+                
+                // 핑 ID 생성 (플레이어 ID + 타임스탬프)
+                const pingId = `${data.playerId}_${Date.now()}`;
+                
+                // 핑 위치 저장
+                this.activePingPositions.set(pingId, { x: data.x, y: data.y });
+                
+                // 화면 밖에 있는 핑인지 확인하고 화살표 표시
+                this.checkAndShowPingArrow(data.x, data.y, pingId);
+            }
+        });
     }
 
     // 다른 플레이어 생성
@@ -1704,7 +1936,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // 스킬 이펙트 표시
-    showSkillEffect(player, skillType) {
+    showSkillEffect(player, skillType, data = null) {
         switch (skillType) {
             case 'stealth':
                 player.setAlpha(0.3);
@@ -1744,15 +1976,800 @@ export default class GameScene extends Phaser.Scene {
                     });
                 }
                 break;
+            case 'slime_spread':
+                // 슬라임 퍼지기 이펙트 (다른 플레이어용)
+                if (player.isOtherPlayer) {
+                    // 플레이어 스프라이트를 슬라임 스킬 이미지로 변경 (로컬과 동일)
+                    const originalTexture = player.texture.key;
+                    player.setTexture('slime_skill');
+                    
+                    // 시각적 이펙트(원형 범위 표시) - 원래 방식과 동일
+                    const effect = this.add.circle(player.x, player.y, 50, 0x00ff00, 0.3);
+                    this.time.delayedCall(300, () => {
+                        effect.destroy();
+                    });
+                    
+                    // 400ms 후 원래 스프라이트로 복원 (로컬과 동일)
+                    this.time.delayedCall(400, () => {
+                        player.updateJobSprite();
+                    });
+                    
+                    console.log('다른 플레이어의 슬라임 퍼지기 스킬 사용됨:', player.x, player.y);
+                }
+                break;
+            case 'ward':
+                // 마법사 와드 이펙트 (다른 플레이어용)
+                if (player.isOtherPlayer) {
+                    // 와드 스프라이트 생성
+                    const ward = this.add.sprite(player.x, player.y, 'ward');
+                    ward.setScale(0.02); // 로컬과 동일한 크기
+                    ward.isOtherPlayerWard = true; // 다른 플레이어 와드 표시
+                    ward.wardOwnerId = data.playerId; // 와드 소유자 ID 저장
+                    
+                    // 와드 이펙트 (깜빡이는 효과)
+                    this.tweens.add({
+                        targets: ward,
+                        alpha: 0.8,
+                        duration: 1000,
+                        yoyo: true,
+                        repeat: -1
+                    });
+                    
+                    // 와드가 파괴될 때까지 유지 (실제로는 서버에서 관리)
+                    // 다른 플레이어의 와드는 시각적 표시만
+                    console.log('다른 플레이어의 와드 설치됨:', player.x, player.y, '팀:', player.team);
+                }
+                break;
+            case 'ice_field':
+                // 마법사 얼음 장판 이펙트 (다른 플레이어용)
+                if (player.isOtherPlayer) {
+                    const iceField = this.add.circle(player.x, player.y, 100, 0x87ceeb, 0.4);
+                    this.tweens.add({
+                        targets: iceField,
+                        scaleX: 1.2,
+                        scaleY: 1.2,
+                        duration: 2000,
+                        yoyo: true,
+                        repeat: 2
+                    });
+                    this.time.delayedCall(6000, () => {
+                        iceField.destroy();
+                    });
+                }
+                break;
+            case 'magic_missile':
+                // 마법사 마법 투사체 이펙트 (다른 플레이어용)
+                if (player.isOtherPlayer && data && data.startX !== undefined && data.targetX !== undefined) {
+                    // 사거리 제한 적용 (로컬과 동일하게)
+                    let finalTargetX = data.targetX;
+                    let finalTargetY = data.targetY;
+                    const maxRange = data.maxRange || 400; // 기본값 400
+                    
+                    // 시작점에서 목표점까지의 거리 계산
+                    const distance = Phaser.Math.Distance.Between(data.startX, data.startY, data.targetX, data.targetY);
+                    console.log('투사체 사거리 계산:', {
+                        start: [data.startX, data.startY],
+                        target: [data.targetX, data.targetY],
+                        distance: distance,
+                        maxRange: maxRange,
+                        isOverRange: distance > maxRange
+                    });
+                    
+                    if (distance > maxRange) {
+                        // 사거리 밖이면 최대 사거리만큼만 이동
+                        const angle = Phaser.Math.Angle.Between(data.startX, data.startY, data.targetX, data.targetY);
+                        finalTargetX = data.startX + Math.cos(angle) * maxRange;
+                        finalTargetY = data.startY + Math.sin(angle) * maxRange;
+                        console.log('사거리 제한 적용됨:', {
+                            originalTarget: [data.targetX, data.targetY],
+                            finalTarget: [finalTargetX, finalTargetY],
+                            angle: angle * (180 / Math.PI) // 라디안을 도로 변환
+                        });
+                    }
+                    
+                    // 투사체 생성 (시작 위치에서)
+                    const missile = this.add.circle(data.startX, data.startY, 8, 0xff00ff, 0.3); // 투명도 낮춤
+                    missile.team = data.team; // 팀 정보 저장 (충돌 판정용)
+                    
+                    // 물리 바디 추가 (충돌 판정용)
+                    this.physics.add.existing(missile);
+                    missile.body.setSize(8, 8); // 투사체 크기를 더 작게 설정
+                    missile.body.setOffset(0, 0); // 오프셋 설정
+                    
+                    // 투사체 충돌 디버깅을 위한 이벤트 추가
+                    missile.body.onOverlap = (bodyA, bodyB) => {
+                        console.log('투사체 충돌 발생:', {
+                            missileTeam: missile.team,
+                            bodyAType: bodyA.gameObject?.constructor?.name || 'unknown',
+                            bodyBType: bodyB.gameObject?.constructor?.name || 'unknown',
+                            bodyAIsPlayer: bodyA.gameObject?.team !== undefined,
+                            bodyBIsPlayer: bodyB.gameObject?.team !== undefined,
+                            bodyATeam: bodyA.gameObject?.team,
+                            bodyBTeam: bodyB.gameObject?.team
+                        });
+                    };
+                    
+                    // 투사체 이펙트 (깜빡이는 효과)
+                    this.tweens.add({
+                        targets: missile,
+                        scaleX: 1.5,
+                        scaleY: 1.5,
+                        duration: 500,
+                        yoyo: true,
+                        repeat: -1
+                    });
+                    
+                    // 투사체 이동 (최종 목표 위치로) - 로컬과 동일한 속도로 계산
+                    const finalDistance = Phaser.Math.Distance.Between(data.startX, data.startY, finalTargetX, finalTargetY);
+                    const velocity = 400; // 로컬과 동일한 속도 (pixels/second)
+                    const duration = (finalDistance / velocity) * 1000; // 밀리초 단위로 변환
+                    
+                    console.log('투사체 이동 계산:', {
+                        finalDistance: finalDistance,
+                        velocity: velocity,
+                        duration: duration,
+                        finalTarget: [finalTargetX, finalTargetY]
+                    });
+                    
+                    this.tweens.add({
+                        targets: missile,
+                        x: finalTargetX,
+                        y: finalTargetY,
+                        duration: duration,
+                        ease: 'Linear',
+                        onComplete: () => {
+                            // 최종 목표 지점에서 폭발 이펙트
+                            const explosion = this.add.circle(finalTargetX, finalTargetY, 20, 0xff00ff, 0.8);
+                            this.tweens.add({
+                                targets: explosion,
+                                scaleX: 2,
+                                scaleY: 2,
+                                alpha: 0,
+                                duration: 300,
+                                onComplete: () => {
+                                    explosion.destroy();
+                                }
+                            });
+                            missile.destroy();
+                        }
+                    });
+                    
+                    // 다른 플레이어 투사체와 팀원 충돌 방지
+                    // 다른 플레이어 투사체는 벽과만 충돌 (팀원과는 충돌하지 않음)
+                    // 팀원과의 충돌은 아예 등록하지 않음
+                    
+                    // 모든 플레이어(본인+otherPlayers)와 투사체 충돌 등록
+                    const allPlayers = [this.player, ...this.otherPlayers.getChildren()];
+                    allPlayers.forEach(targetPlayer => {
+                        if (!targetPlayer) return; // null 체크
+                        // 같은 팀이면 충돌 등록하지 않음
+                        if (missile.team === targetPlayer.team) return;
+                        // 다른 팀이면 충돌 등록
+                        this.physics.add.overlap(missile, targetPlayer, (missile, hitPlayer) => {
+                            // 적팀 플레이어에게 데미지 적용 (마법 데미지: 1.5배, 예시값 30)
+                            const damage = 30; // 실제 밸런스에 맞게 조정
+                            if (typeof hitPlayer.takeDamage === 'function') {
+                                hitPlayer.takeDamage(damage);
+                            }
+                            // 폭발 이펙트
+                            const explosion = this.add.circle(missile.x, missile.y, 20, 0xff00ff, 0.8);
+                            this.tweens.add({
+                                targets: explosion,
+                                scaleX: 2,
+                                scaleY: 2,
+                                alpha: 0,
+                                duration: 300,
+                                onComplete: () => {
+                                    explosion.destroy();
+                                }
+                            });
+                            missile.destroy();
+                        });
+                    });
+                    
+                    // 다른 플레이어 투사체와 적(Enemy) 충돌
+                    this.physics.add.overlap(missile, this.enemies, (missile, enemy) => {
+                        console.log('다른 플레이어 투사체가 적과 충돌:', missile.x, missile.y);
+                        // 서버에 적 공격 알림 (서버에서 관리되는 적이므로)
+                        if (this.networkManager && enemy.networkId) {
+                            this.networkManager.hitEnemy(enemy.networkId);
+                        }
+                        // 폭발 이펙트
+                        const explosion = this.add.circle(missile.x, missile.y, 20, 0xff00ff, 0.8);
+                        this.tweens.add({
+                            targets: explosion,
+                            scaleX: 2,
+                            scaleY: 2,
+                            alpha: 0,
+                            duration: 300,
+                            onComplete: () => {
+                                explosion.destroy();
+                            }
+                        });
+                        missile.destroy();
+                    });
+                    
+                    // 다른 플레이어 투사체와 벽 충돌
+                    this.physics.add.collider(missile, this.walls, (missile, wall) => {
+                        console.log('다른 플레이어 투사체가 벽과 충돌:', missile.x, missile.y);
+                        // 벽에 부딪혔을 때 폭발 이펙트
+                        const explosion = this.add.circle(missile.x, missile.y, 20, 0xff00ff, 0.8);
+                        this.tweens.add({
+                            targets: explosion,
+                            scaleX: 2,
+                            scaleY: 2,
+                            alpha: 0,
+                            duration: 300,
+                            onComplete: () => {
+                                explosion.destroy();
+                            }
+                        });
+                        missile.destroy();
+                    });
+                    
+                    // 디버깅: 현재 등록된 충돌체 확인
+                    console.log('투사체 충돌 정보:', {
+                        missileId: missile.id,
+                        missileTeam: missile.team,
+                        hasPhysicsBody: missile.body !== undefined,
+                        colliders: this.physics.world.colliders?.entries?.length || 0,
+                        overlaps: this.physics.world.overlaps?.entries?.length || 0,
+                        isInOtherPlayersGroup: this.otherPlayers.contains(missile),
+                        isInEnemiesGroup: this.enemies.contains(missile),
+                        isInWallsGroup: this.walls.contains(missile),
+                        registeredOverlaps: allPlayers.filter(p => p && missile.team !== p.team).length
+                    });
+                    
+                    // 3초 후 투사체 제거 (혹시라도)
+                    this.time.delayedCall(3000, () => {
+                        if (missile.active) {
+                            missile.destroy();
+                        }
+                    });
+                    
+                    console.log('다른 플레이어의 마법 미사일 발사:', {
+                        start: [data.startX, data.startY],
+                        originalTarget: [data.targetX, data.targetY],
+                        finalTarget: [finalTargetX, finalTargetY],
+                        maxRange: maxRange,
+                        missileTeam: data.team,
+                        myTeam: this.player.team,
+                        otherPlayersCount: this.otherPlayers.getChildren().length
+                    });
+                }
+                break;
             case 'charge':
                 // 돌진 이펙트
                 break;
-            case 'ward':
-                const ward = this.add.circle(player.x, player.y, 50, 0x00ffff, 0.3);
-                this.time.delayedCall(5000, () => {
-                    ward.destroy();
+        }
+    }
+
+    // 핑 생성
+    createPing(x, y, playerId) {
+        // 시야 안에 있는 핑만 메인 화면에 표시
+        const isInVision = this.isInVision(x, y);
+        
+        if (isInVision) {
+            // 핑 이펙트 생성 (불투명하게)
+            const ping = this.add.circle(x, y, 20, 0xff0000, 1.0);
+            ping.setStrokeStyle(2, 0xffffff);
+            
+            // 핑 애니메이션 (4초 지속)
+            this.tweens.add({
+                targets: ping,
+                scaleX: 3,
+                scaleY: 3,
+                alpha: 0,
+                duration: 4000,
+                ease: 'Power2',
+                onComplete: () => {
+                    ping.destroy();
+                }
+            });
+
+            // 핑 텍스트 (플레이어 ID)
+            const pingText = this.add.text(x, y - 30, `PING`, {
+                fontSize: '12px',
+                fill: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 2
+            }).setOrigin(0.5);
+
+            this.tweens.add({
+                targets: pingText,
+                y: '-=20',
+                alpha: 0,
+                duration: 4000,
+                ease: 'Power2',
+                onComplete: () => {
+                    pingText.destroy();
+                }
+            });
+        }
+
+        // 미니맵에 핑 표시 (화살표 또는 점)
+        this.createMinimapPingArrow(x, y, 'local-ping');
+    }
+
+    // 미니맵 핑 생성
+    createMinimapPing(x, y) {
+        const scale = this.minimapScale;
+        const offsetX = this.player.x - (this.minimapSize / 2) / scale;
+        const offsetY = this.player.y - (this.minimapSize / 2) / scale;
+        
+        const minimapX = (x - offsetX) * scale;
+        const minimapY = (y - offsetY) * scale;
+        
+        // 미니맵 경계 내에 있는지 확인
+        if (minimapX >= 0 && minimapX <= this.minimapSize && 
+            minimapY >= 0 && minimapY <= this.minimapSize) {
+            
+            const minimapPing = this.add.circle(
+                this.minimap.x + minimapX, 
+                this.minimap.y + minimapY, 
+                3, 
+                0xff0000, 
+                1.0
+            );
+            minimapPing.setScrollFactor(0);
+            minimapPing.setDepth(1001);
+            
+            // 핑의 절대 위치를 저장 (플레이어 이동에 영향받지 않도록)
+            minimapPing.pingWorldX = x;
+            minimapPing.pingWorldY = y;
+            
+            // 미니맵 핑 애니메이션 (4초 지속)
+            this.tweens.add({
+                targets: minimapPing,
+                scaleX: 2,
+                scaleY: 2,
+                alpha: 0,
+                duration: 4000,
+                ease: 'Power2',
+                onComplete: () => {
+                    minimapPing.destroy();
+                }
+            });
+        }
+    }
+
+    // 핑 메시지 표시
+    showPingMessage(message) {
+        // 기존 메시지 제거
+        if (this.pingMessageText) {
+            this.pingMessageText.destroy();
+        }
+
+        // 새 메시지 생성 (좌측 하단)
+        this.pingMessageText = this.add.text(20, this.scale.height - 60, message, {
+            fontSize: '16px',
+            fill: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 2,
+            backgroundColor: '#ff0000',
+            padding: { x: 10, y: 5 }
+        }).setScrollFactor(0);
+
+        // 3초 후 메시지 제거
+        this.time.delayedCall(3000, () => {
+            if (this.pingMessageText) {
+                this.pingMessageText.destroy();
+                this.pingMessageText = null;
+            }
+        });
+    }
+
+    // 핑 전송 (플레이어 위치)
+    sendPing() {
+        this.sendPingAtPosition(this.player.x, this.player.y);
+    }
+
+    // 핑 전송 (지정된 위치)
+    sendPingAtPosition(x, y) {
+        const currentTime = Date.now();
+        if (currentTime - this.pingCooldown < this.pingCooldownTime) {
+            // 쿨다운 중
+            const remainingTime = Math.ceil((this.pingCooldownTime - (currentTime - this.pingCooldown)) / 1000);
+            this.showPingMessage(`핑 쿨다운: ${remainingTime}초`);
+            return;
+        }
+
+        // 핑 전송
+        this.networkManager.sendPing(x, y);
+        this.pingCooldown = currentTime;
+        
+        // 로컬 핑 표시
+        this.createPing(x, y, this.networkManager.playerId);
+        this.showPingMessage('핑을 찍었습니다!');
+    }
+
+    // 핑 화살표 확인 및 표시 (시야 고려)
+    checkAndShowPingArrow(pingX, pingY, pingId) {
+        const cam = this.cameras.main;
+        const screenWidth = this.scale.width;
+        const screenHeight = this.scale.height;
+        
+        // 화면 좌표로 변환
+        const screenX = pingX - cam.scrollX;
+        const screenY = pingY - cam.scrollY;
+        
+        // 화면 밖에 있는지 확인
+        const margin = 20; // 화면 가장자리 여백
+        const isOffScreen = screenX < margin || screenX > screenWidth - margin || 
+                           screenY < margin || screenY > screenHeight - margin;
+        
+        // 시야 안에 있는지 확인
+        const isInVision = this.isInVision(pingX, pingY);
+        
+        // 화면 밖이거나 시야 밖이면 화살표 표시
+        if (isOffScreen || !isInVision) {
+            this.createPingArrow(pingX, pingY, pingId);
+        }
+    }
+
+    // 핑 화살표 생성
+    createPingArrow(pingX, pingY, pingId) {
+        const cam = this.cameras.main;
+        const screenWidth = this.scale.width;
+        const screenHeight = this.scale.height;
+        
+        // 화면 좌표로 변환
+        const screenX = pingX - cam.scrollX;
+        const screenY = pingY - cam.scrollY;
+        
+        // 화면 경계 내에서 화살표 위치 계산 (더 여유있는 위치)
+        const margin = 5;
+        let arrowX = Math.max(margin, Math.min(screenWidth - margin, screenX));
+        let arrowY = Math.max(margin, Math.min(screenHeight - margin, screenY));
+        
+        // 화살표 방향 계산 (플레이어 현재 위치 기준)
+        const angle = Phaser.Math.Angle.Between(arrowX, arrowY, screenX, screenY);
+        
+        // 화살표 이미지 생성
+        const arrow = this.add.image(arrowX, arrowY, 'ping_arrow');
+        arrow.setScrollFactor(0);
+        arrow.setDepth(1001);
+        
+        // 화살표 크기 설정
+        arrow.setScale(0.07);
+        
+        // 화살표 방향 회전 (오른쪽을 가리키는 이미지를 핑 방향으로 회전)
+        arrow.setRotation(angle);
+        
+        // 화살표 객체를 Map에 저장 (실시간 업데이트를 위해)
+        this.activePingArrows.set(pingId, {
+            arrow: arrow,
+            pingX: pingX,
+            pingY: pingY,
+            startTime: Date.now()
+        });
+        
+        // 화살표 애니메이션 (3초 지속)
+        this.tweens.add({
+            targets: arrow,
+            alpha: 0,
+            duration: 3000,
+            ease: 'Power2',
+            onComplete: () => {
+                // 화살표 제거 및 Map에서 삭제
+                arrow.destroy();
+                this.activePingArrows.delete(pingId);
+                this.activePingPositions.delete(pingId);
+            }
+        });
+        
+        // 미니맵에 핑 표시 (화살표 또는 점)
+        this.createMinimapPingArrow(pingX, pingY, pingId);
+    }
+
+    // 미니맵 핑 화살표 생성
+    createMinimapPingArrow(pingX, pingY, pingId) {
+        const scale = this.minimapScale;
+        const offsetX = this.player.x - (this.minimapSize / 2) / scale;
+        const offsetY = this.player.y - (this.minimapSize / 2) / scale;
+        
+        const minimapX = (pingX - offsetX) * scale;
+        const minimapY = (pingY - offsetY) * scale;
+        
+        // 미니맵 경계 margin (화살표가 미니맵 끝에 붙어서 나오도록)
+        const margin = 5;
+        // 미니맵 내부(점) 판정 - margin 안쪽에 있는 핑만 점으로 표시
+        const isInsideMinimap = minimapX >= margin && minimapX <= this.minimapSize - margin &&
+                               minimapY >= margin && minimapY <= this.minimapSize - margin;
+        // 미니맵 밖에 있는 핑 판정 (미니맵 전체 영역 밖)
+        const isOutsideMinimap = minimapX < 0 || minimapX > this.minimapSize || 
+                                 minimapY < 0 || minimapY > this.minimapSize;
+        // 미니맵 경계에 있는 핑 판정 (margin 밖이지만 미니맵 안)
+        const isOnMinimapBorder = !isInsideMinimap && !isOutsideMinimap;
+        
+        // 미니맵 내부가 아니면 모두 화살표로 표시 (경계 + 밖)
+        // 또는 미니맵 밖에 있는 핑은 무조건 화살표로 표시
+        if (!isInsideMinimap || isOutsideMinimap) {
+            // 디버깅: 화살표 생성 조건 확인
+            console.log('미니맵 화살표 생성:', {
+                pingX, pingY,
+                minimapX, minimapY,
+                isInsideMinimap, isOutsideMinimap, isOnMinimapBorder,
+                margin, minimapSize: this.minimapSize
+            });
+            // 미니맵 경계에 화살표 위치 고정 (경계 밖이어도 무조건 경계에 붙임)
+            // 한국어 주석: clamp로 경계에 고정
+            let arrowX = Math.max(margin, Math.min(this.minimapSize - margin, minimapX));
+            let arrowY = Math.max(margin, Math.min(this.minimapSize - margin, minimapY));
+            // 화살표 방향 계산 (경계에서 실제 핑 위치를 바라보게)
+            const angle = Phaser.Math.Angle.Between(arrowX, arrowY, minimapX, minimapY);
+            // 화살표 생성
+            const minimapArrow = this.add.image(
+                this.minimap.x + arrowX, 
+                this.minimap.y + arrowY, 
+                'ping_arrow'
+            );
+            minimapArrow.setScrollFactor(0);
+            minimapArrow.setDepth(1003);
+            // 핑의 절대 위치 저장 (플레이어 이동에 영향받지 않게)
+            minimapArrow.pingWorldX = pingX;
+            minimapArrow.pingWorldY = pingY;
+            // 화살표 크기 (더 크게 설정)
+            minimapArrow.setScale(0.02);
+            // 화살표 방향
+            minimapArrow.setRotation(angle);
+            
+            // 디버깅: 화살표 생성 확인
+            console.log('미니맵 화살표 생성 완료:', {
+                arrowX, arrowY,
+                finalX: this.minimap.x + arrowX,
+                finalY: this.minimap.y + arrowY,
+                angle: angle * (180 / Math.PI), // 라디안을 도로 변환
+                scale: minimapArrow.scale,
+                visible: minimapArrow.visible,
+                depth: minimapArrow.depth
+            });
+            
+            // 디버깅: 화살표 생성 확인
+            console.log('미니맵 화살표 생성 완료:', {
+                arrowX, arrowY,
+                finalX: this.minimap.x + arrowX,
+                finalY: this.minimap.y + arrowY,
+                angle: angle * (180 / Math.PI), // 라디안을 도로 변환
+                scale: minimapArrow.scale,
+                visible: minimapArrow.visible,
+                depth: minimapArrow.depth
+            });
+            // 화살표 애니메이션 (4초)
+            this.tweens.add({
+                targets: minimapArrow,
+                alpha: 0,
+                duration: 3000,
+                ease: 'Power2',
+                onComplete: () => {
+                    minimapArrow.destroy();
+                }
+            });
+        } else {
+            // 미니맵 내부면 점으로 표시
+            const minimapDot = this.add.circle(
+                this.minimap.x + minimapX,
+                this.minimap.y + minimapY,
+                2,
+                0xff0000,
+                1.0
+            );
+            minimapDot.setScrollFactor(0);
+            minimapDot.setDepth(1003);
+            // 핑의 절대 위치 저장
+            minimapDot.pingWorldX = pingX;
+            minimapDot.pingWorldY = pingY;
+            // 점 애니메이션 (4초)
+            this.tweens.add({
+                targets: minimapDot,
+                scaleX: 2,
+                scaleY: 2,
+                alpha: 0,
+                duration: 3000,
+                ease: 'Power2',
+                onComplete: () => {
+                    minimapDot.destroy();
+                }
+            });
+        }
+    }
+
+    // 활성 핑 화살표들의 방향 실시간 업데이트
+    updatePingArrows() {
+        if (!this.player || this.activePingArrows.size === 0) {
+            return;
+        }
+
+        const cam = this.cameras.main;
+        const screenWidth = this.scale.width;
+        const screenHeight = this.scale.height;
+        const margin = 120;
+
+        // 각 활성 핑 화살표 업데이트
+        for (const [pingId, arrowData] of this.activePingArrows) {
+            const { arrow, pingX, pingY } = arrowData;
+            
+            // 화면 좌표로 변환 (플레이어 현재 위치 기준)
+            const screenX = pingX - cam.scrollX;
+            const screenY = pingY - cam.scrollY;
+            
+            // 화면 밖에 있는지 확인
+            const isOffScreen = screenX < margin || screenX > screenWidth - margin || 
+                               screenY < margin || screenY > screenHeight - margin;
+            
+            // 시야 밖에 있는지 확인
+            const isOutOfVision = !this.isInVision(pingX, pingY);
+            
+            // 화면 밖이거나 시야 밖이면 화살표 표시
+            if (isOffScreen || isOutOfVision) {
+                // 화살표를 화면 경계 내로 이동
+                let arrowX = Math.max(margin, Math.min(screenWidth - margin, screenX));
+                let arrowY = Math.max(margin, Math.min(screenHeight - margin, screenY));
+                
+                // 화살표 위치 업데이트
+                arrow.setPosition(arrowX, arrowY);
+                
+                // 화살표 방향 재계산 (플레이어 현재 위치 기준)
+                const angle = Phaser.Math.Angle.Between(arrowX, arrowY, screenX, screenY);
+                arrow.setRotation(angle);
+                
+                // 화살표가 보이도록 설정
+                arrow.setVisible(true);
+            } else {
+                // 화면 안에 있으면 화살표 숨김
+                arrow.setVisible(false);
+            }
+        }
+    }
+    
+    // 와드로 탐지된 적들의 미니맵 위치 업데이트
+    updateWardDetectedEnemies() {
+        if (!this.player) return;
+        
+        const scale = this.minimapScale;
+        const offsetX = this.player.x - (this.minimapSize / 2) / scale;
+        const offsetY = this.player.y - (this.minimapSize / 2) / scale;
+        
+        // 같은 팀 플레이어들의 와드 위치만 수집
+        const allWards = [];
+        
+        // 1. 로컬 와드 (같은 팀이므로 항상 추가)
+        if (this.activeWard) {
+            allWards.push(this.activeWard);
+        }
+        
+        // 2. 같은 팀 다른 플레이어들의 와드들만 추가
+        this.children.list.forEach(child => {
+            if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
+                // 와드를 설치한 플레이어의 팀 확인
+                const wardOwner = this.otherPlayers.getChildren().find(p => p.networkId === child.wardOwnerId);
+                
+                if (wardOwner && wardOwner.team === this.player.team) {
+                    // 같은 팀의 와드만 추가
+                    allWards.push({ x: child.x, y: child.y, radius: 120 });
+                }
+            }
+        });
+        
+        // 모든 적들을 모든 와드로 체크
+        this.enemies.getChildren().forEach(enemy => {
+            if (!enemy.isDead) {
+                let isDetectedByAnyWard = false;
+                
+                // 모든 와드에서 적 탐지
+                allWards.forEach(ward => {
+                    const distance = Phaser.Math.Distance.Between(ward.x, ward.y, enemy.x, enemy.y);
+                    if (distance <= ward.radius) {
+                        isDetectedByAnyWard = true;
+                    }
                 });
-                break;
+                
+                // 와드에 탐지된 적 처리
+                if (isDetectedByAnyWard) {
+                    if (!enemy.wardDetected) {
+                        enemy.wardDetected = true;
+                        enemy.setTint(0xff0000);
+                        enemy.setAlpha(0.8);
+                        
+                        // 미니맵에 표시
+                        if (!enemy.minimapIndicator) {
+                            this.showEnemyOnMinimapForWard(enemy);
+                        }
+                    }
+                } else {
+                    if (enemy.wardDetected) {
+                        enemy.wardDetected = false;
+                        enemy.clearTint();
+                        enemy.setAlpha(1.0);
+                        
+                        // 미니맵에서 제거
+                        if (enemy.minimapIndicator) {
+                            this.hideEnemyFromMinimapForWard(enemy);
+                        }
+                    }
+                }
+            }
+        });
+        
+        // 와드로 탐지된 적들의 미니맵 위치 업데이트
+        this.enemies.getChildren().forEach(enemy => {
+            if (enemy.wardDetected && enemy.minimapIndicator) {
+                const minimapX = (enemy.x - offsetX) * scale;
+                const minimapY = (enemy.y - offsetY) * scale;
+                
+                // 미니맵 경계 내로 제한
+                const clampedX = Math.max(0, Math.min(this.minimapSize, minimapX));
+                const clampedY = Math.max(0, Math.min(this.minimapSize, minimapY));
+                
+                // 미니맵 표시 위치 업데이트
+                enemy.minimapIndicator.setPosition(
+                    this.minimap.x + clampedX, 
+                    this.minimap.y + clampedY
+                );
+                
+                // 미니맵 밖으로 나가면 숨김
+                if (minimapX < 0 || minimapX > this.minimapSize || 
+                    minimapY < 0 || minimapY > this.minimapSize) {
+                    enemy.minimapIndicator.setVisible(false);
+                } else {
+                    enemy.minimapIndicator.setVisible(true);
+                }
+            }
+        });
+    }
+    
+    // 와드용 미니맵 적 표시 함수
+    showEnemyOnMinimapForWard(enemy) {
+        // 이미 미니맵에 표시되어 있으면 중복 생성 방지
+        if (enemy.minimapIndicator) {
+            return;
+        }
+        
+        // 미니맵 위치 확인
+        if (!this.minimap) {
+            return;
+        }
+        
+        // 미니맵에 빨간색 점으로 적 표시
+        const scale = this.minimapScale;
+        const offsetX = this.player.x - (this.minimapSize / 2) / scale;
+        const offsetY = this.player.y - (this.minimapSize / 2) / scale;
+        
+        const minimapX = (enemy.x - offsetX) * scale;
+        const minimapY = (enemy.y - offsetY) * scale;
+        
+        // 미니맵 경계 내로 제한
+        const clampedX = Math.max(0, Math.min(this.minimapSize, minimapX));
+        const clampedY = Math.max(0, Math.min(this.minimapSize, minimapY));
+        
+        const minimapEnemy = this.add.circle(
+            this.minimap.x + clampedX,
+            this.minimap.y + clampedY,
+            3, // 적당한 크기
+            0xff0000, 
+            1.0
+        );
+        minimapEnemy.setScrollFactor(0);
+        minimapEnemy.setDepth(1004); // 미니맵 위에 표시
+        
+        // 적 객체에 미니맵 표시 참조 저장
+        enemy.minimapIndicator = minimapEnemy;
+        
+        // 깜빡이는 효과
+        this.tweens.add({
+            targets: minimapEnemy,
+            alpha: 0.3,
+            duration: 500,
+            yoyo: true,
+            repeat: -1
+        });
+    }
+    
+    // 와드용 미니맵 적 표시 제거 함수
+    hideEnemyFromMinimapForWard(enemy) {
+        if (enemy.minimapIndicator) {
+            enemy.minimapIndicator.destroy();
+            enemy.minimapIndicator = null;
         }
     }
 }
