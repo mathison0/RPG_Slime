@@ -48,7 +48,8 @@ class SocketEventManager {
           playerData: existingPlayer.getState(),
           players: this.gameStateManager.getPlayersState(),
           enemies: this.gameStateManager.getEnemiesState(),
-          mapData: this.gameStateManager.mapData
+          mapData: this.gameStateManager.mapData,
+          serverConfig: this.gameConfig // 서버 설정 추가
         });
         return;
       }
@@ -69,7 +70,8 @@ class SocketEventManager {
         playerData: player.getState(),
         players: this.gameStateManager.getPlayersState(),
         enemies: this.gameStateManager.getEnemiesState(),
-        mapData: this.gameStateManager.mapData
+        mapData: this.gameStateManager.mapData,
+        serverConfig: this.gameConfig // 서버 설정 추가
       };
       
       socket.emit('game-joined', gameJoinedData);
@@ -88,6 +90,12 @@ class SocketEventManager {
       const player = this.gameStateManager.getPlayer(socket.id);
       if (player) {
         player.update(data);
+        
+        // 크기 정보가 있으면 업데이트
+        if (data.size !== undefined) {
+          player.setSize(data.size);
+        }
+        
         socket.broadcast.emit('player-moved', {
           id: socket.id,
           x: player.x,
@@ -124,25 +132,90 @@ class SocketEventManager {
   setupPlayerSkillHandler(socket) {
     socket.on('player-skill', (data) => {
       const player = this.gameStateManager.getPlayer(socket.id);
-      if (player) {
-        const broadcastData = {
-          playerId: socket.id,
-          skillType: data.skillType,
-          x: player.x,
-          y: player.y,
-          team: player.team
-        };
+      if (!player) {
+        socket.emit('skill-error', { error: 'Player not found' });
+        return;
+      }
 
-        // 추가 데이터 포함 (미사일 궤적 정보 등)
-        if (data.startX !== undefined) broadcastData.startX = data.startX;
-        if (data.startY !== undefined) broadcastData.startY = data.startY;
-        if (data.targetX !== undefined) broadcastData.targetX = data.targetX;
-        if (data.targetY !== undefined) broadcastData.targetY = data.targetY;
-        if (data.maxRange !== undefined) broadcastData.maxRange = data.maxRange;
+      // 점프는 기본 능력이므로 별도 처리
+      if (data.skillType === 'jump') {
+        this.handleJumpAction(socket, player);
+        return;
+      }
 
-        this.io.emit('player-skill-used', broadcastData);
+      // 서버에서 스킬 사용 검증 및 처리
+      const skillResult = player.useSkill(
+        data.skillType, 
+        data.targetX, 
+        data.targetY
+      );
+
+      if (!skillResult.success) {
+        // 스킬 사용 실패 시 요청한 클라이언트에게만 에러 전송
+        socket.emit('skill-error', { 
+          error: skillResult.error,
+          skillType: data.skillType 
+        });
+        return;
+      }
+
+      // 스킬 사용 성공 시 모든 클라이언트에게 브로드캐스트
+      const broadcastData = {
+        playerId: socket.id,
+        skillType: skillResult.skillType,
+        timestamp: skillResult.timestamp,
+        x: skillResult.x,
+        y: skillResult.y,
+        team: player.team,
+        skillInfo: skillResult.skillInfo
+      };
+
+      // 타겟 위치가 있는 경우 추가
+      if (skillResult.targetX !== null) {
+        broadcastData.targetX = skillResult.targetX;
+        broadcastData.targetY = skillResult.targetY;
+      }
+
+      // 모든 클라이언트에게 스킬 사용 알림
+      this.io.emit('player-skill-used', broadcastData);
+      
+      console.log(`Player ${socket.id} used skill: ${skillResult.skillType}`);
+    });
+  }
+
+  /**
+   * 점프 액션 처리
+   */
+  handleJumpAction(socket, player) {
+    // 점프 시작 처리
+    const jumpDuration = 400;
+    if (!player.startJump(jumpDuration)) {
+      return; // 이미 점프 중이면 무시
+    }
+
+    // 모든 클라이언트에게 점프 알림
+    this.io.emit('player-skill-used', {
+      playerId: socket.id,
+      skillType: 'jump',
+      timestamp: Date.now(),
+      x: player.x,
+      y: player.y,
+      team: player.team,
+      skillInfo: {
+        range: 0,
+        damage: 0,
+        duration: jumpDuration
       }
     });
+
+    // 점프 완료 후 상태 복원
+    setTimeout(() => {
+      if (player) {
+        player.endJump();
+      }
+    }, jumpDuration);
+
+    console.log(`Player ${socket.id} used jump`);
   }
 
   /**

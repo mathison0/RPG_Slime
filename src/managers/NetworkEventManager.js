@@ -1,5 +1,6 @@
 import Player from '../entities/Player.js';
 import Enemy from '../entities/Enemy.js';
+import AssetLoader from '../utils/AssetLoader.js';
 
 /**
  * 네트워크 이벤트 처리 매니저
@@ -26,6 +27,7 @@ export default class NetworkEventManager {
         this.networkManager.off('player-left');
         this.networkManager.off('player-moved');
         this.networkManager.off('player-skill-used');
+        this.networkManager.off('skill-error');
         this.networkManager.off('enemies-update');
         this.networkManager.off('player-job-changed');
         
@@ -52,6 +54,11 @@ export default class NetworkEventManager {
         // 스킬 사용
         this.networkManager.on('player-skill-used', (data) => {
             this.handlePlayerSkillUsed(data);
+        });
+
+        // 스킬 에러
+        this.networkManager.on('skill-error', (data) => {
+            this.handleSkillError(data);
         });
         
         // 와드 파괴
@@ -130,6 +137,12 @@ export default class NetworkEventManager {
         this.gameJoined = true;
         this.playerId = data.playerId;
         this.playerTeam = data.playerData.team;
+        
+        // 서버 설정 업데이트 (GameConfig 동기화)
+        if (data.serverConfig) {
+            AssetLoader.updateServerConfig(data.serverConfig);
+            console.log('서버 설정이 클라이언트에 동기화되었습니다:', data.serverConfig);
+        }
         
         // 서버 맵 데이터로 맵 재생성
         if (data.mapData) {
@@ -241,8 +254,41 @@ export default class NetworkEventManager {
             ? this.scene.player 
             : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
         
-        if (player && data.playerId !== this.networkManager.playerId) {
-            this.showSkillEffect(player, data.skillType, data);
+        if (player) {
+            // 타임스탬프 기반 이펙트 동기화
+            const currentTime = Date.now();
+            const skillDelay = currentTime - data.timestamp;
+            
+            // 지연시간이 너무 크면 (1초 이상) 이펙트 스킵
+            if (skillDelay > 1000) {
+                console.log(`스킬 이펙트 스킵 - 지연시간: ${skillDelay}ms`);
+                return;
+            }
+            
+            // 지연시간만큼 조정해서 이펙트 재생
+            const adjustedDelay = Math.max(0, -skillDelay);
+            
+            if (adjustedDelay > 0) {
+                // 지연해서 재생
+                this.scene.time.delayedCall(adjustedDelay, () => {
+                    this.showSkillEffect(player, data.skillType, data);
+                });
+            } else {
+                // 즉시 재생
+                this.showSkillEffect(player, data.skillType, data);
+            }
+        }
+    }
+
+    /**
+     * 스킬 에러 처리
+     */
+    handleSkillError(data) {
+        console.log('스킬 사용 실패:', data.error, data.skillType);
+        
+        // 플레이어에게 에러 메시지 표시
+        if (this.scene.player && this.scene.player.job) {
+            this.scene.player.job.showCooldownMessage(data.error);
         }
     }
 
@@ -383,7 +429,8 @@ export default class NetworkEventManager {
         otherPlayer.maxHp = playerData.maxHp;
         otherPlayer.jobClass = playerData.jobClass;
         otherPlayer.direction = playerData.direction;
-        otherPlayer.size = playerData.size;
+        otherPlayer.size = playerData.size || 64; // 기본값 설정
+        otherPlayer.updateSize(); // 크기 업데이트 적용
         otherPlayer.updateJobSprite();
         
         this.scene.otherPlayers.add(otherPlayer);
@@ -433,22 +480,26 @@ export default class NetworkEventManager {
     showSkillEffect(player, skillType, data = null) {
         switch (skillType) {
             case 'stealth':
-                this.showStealthEffect(player);
+                this.showStealthEffect(player, data);
                 break;
             case 'jump':
-                this.showJumpEffect(player);
+                this.showJumpEffect(player, data);
                 break;
+            case 'spread':
             case 'slime_spread':
-                this.showSlimeSpreadEffect(player);
+                this.showSlimeSpreadEffect(player, data);
                 break;
             case 'ward':
                 this.showWardEffect(player, data);
                 break;
             case 'ice_field':
-                this.showIceFieldEffect(player);
+                this.showIceFieldEffect(player, data);
                 break;
             case 'magic_missile':
                 this.showMagicMissileEffect(player, data);
+                break;
+            case 'charge':
+                this.showChargeEffect(player, data);
                 break;
         }
     }
@@ -456,20 +507,44 @@ export default class NetworkEventManager {
     /**
      * 은신 이펙트
      */
-    showStealthEffect(player) {
+    showStealthEffect(player, data = null) {
         player.setAlpha(0.3);
         player.setTint(0x888888);
-        this.scene.time.delayedCall(3000, () => {
-            player.setAlpha(1);
-            player.clearTint();
+        
+        // 서버에서 받은 지속시간 사용 (기본값 5000ms)
+        const duration = data?.skillInfo?.duration || 5000;
+        
+        // 은신 효과 메시지
+        const stealthText = this.scene.add.text(
+            player.x, 
+            player.y - 60, 
+            '은신!', 
+            {
+                fontSize: '16px',
+                fill: '#800080'
+            }
+        ).setOrigin(0.5);
+        
+        this.scene.time.delayedCall(1000, () => {
+            if (stealthText.active) {
+                stealthText.destroy();
+            }
+        });
+        
+        this.scene.time.delayedCall(duration, () => {
+            if (player.active) {
+                player.setAlpha(1);
+                player.clearTint();
+            }
         });
     }
 
     /**
      * 점프 이펙트
      */
-    showJumpEffect(player) {
-        if (!player.isOtherPlayer) return;
+    showJumpEffect(player, data = null) {
+        // 이미 점프 중이면 중복 실행 방지
+        if (player.isJumping) return;
         
         const originalY = player.y;
         const originalNameY = player.nameText ? player.nameText.y : null;
@@ -480,18 +555,24 @@ export default class NetworkEventManager {
             targets.push(player.nameText);
         }
         
+        // 서버에서 받은 지속시간 사용 (기본값 400ms)
+        const duration = data?.skillInfo?.duration || 400;
+        
         this.scene.tweens.add({
             targets: targets,
             y: '-=50',
-            duration: 200,
+            duration: Math.min(duration / 2, 200), // 올라가는 시간
             yoyo: true,
             ease: 'Power2',
             onComplete: () => {
-                player.y = originalY;
-                if (player.nameText && originalNameY !== null) {
-                    player.nameText.y = originalNameY;
+                if (player.active) {
+                    player.y = originalY;
+                    if (player.nameText && originalNameY !== null) {
+                        player.nameText.y = originalNameY;
+                    }
+                    player.isJumping = false;
+                    player.updateNameTextPosition();
                 }
-                player.isJumping = false;
             }
         });
     }
@@ -499,18 +580,24 @@ export default class NetworkEventManager {
     /**
      * 슬라임 퍼지기 이펙트
      */
-    showSlimeSpreadEffect(player) {
-        if (!player.isOtherPlayer) return;
-        
+    showSlimeSpreadEffect(player, data = null) {
+        // 본인도 이펙트를 볼 수 있도록 수정
         player.setTexture('slime_skill');
         
-        const effect = this.scene.add.circle(player.x, player.y, 50, 0x00ff00, 0.3);
+        // 서버에서 받은 범위 정보 사용 (기본값 50)
+        const range = data?.skillInfo?.range || 50;
+        
+        const effect = this.scene.add.circle(player.x, player.y, range, 0x00ff00, 0.3);
         this.scene.time.delayedCall(300, () => {
-            effect.destroy();
+            if (effect.active) {
+                effect.destroy();
+            }
         });
         
         this.scene.time.delayedCall(400, () => {
-            player.updateJobSprite();
+            if (player.active) {
+                player.updateJobSprite();
+            }
         });
     }
 

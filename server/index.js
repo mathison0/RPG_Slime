@@ -104,11 +104,15 @@ class GameServer {
       res.json({
         mapSize: {
           width: gameConfig.MAP_WIDTH,
-          height: gameConfig.MAP_HEIGHT
+          height: gameConfig.MAP_HEIGHT,
+          widthTiles: gameConfig.MAP_WIDTH_TILES,
+          heightTiles: gameConfig.MAP_HEIGHT_TILES
         },
         tileSize: gameConfig.TILE_SIZE,
         spawnWidth: gameConfig.SPAWN_WIDTH,
-        plazaSize: gameConfig.PLAZA_SIZE
+        plazaSize: gameConfig.PLAZA_SIZE,
+        spawnWidthTiles: gameConfig.SPAWN_WIDTH_TILES,
+        plazaSizeTiles: gameConfig.PLAZA_SIZE_TILES
       });
     });
 
@@ -195,7 +199,7 @@ class GameServer {
     this.server.listen(this.port, () => {
       console.log(`\n🚀 서버가 포트 ${this.port}에서 실행 중입니다.`);
       console.log(`📊 현재 설정:`);
-      console.log(`   - 맵 크기: ${gameConfig.MAP_WIDTH} x ${gameConfig.MAP_HEIGHT}`);
+      console.log(`   - 맵 크기: ${gameConfig.MAP_WIDTH_TILES}x${gameConfig.MAP_HEIGHT_TILES} 타일 (${gameConfig.MAP_WIDTH}x${gameConfig.MAP_HEIGHT} 픽셀)`);
       console.log(`   - 최대 적 수: ${gameConfig.ENEMY.MAX_COUNT}`);
       console.log(`   - 게임 루프: ${gameConfig.SERVER.GAME_LOOP_INTERVAL}ms`);
       console.log(`   - 환경: ${process.env.NODE_ENV || 'development'}`);
@@ -265,7 +269,7 @@ class GameServer {
         break;
       case 'spawn-enemy':
         const type = args[0] || 'basic';
-        const enemy = this.enemyManager.spawnEnemyOfType(type, gameConfig.MAP_WIDTH / 2, gameConfig.MAP_HEIGHT / 2);
+        const enemy = this.enemyManager.spawnEnemyOfType(type, gameConfig.MAP_WIDTH_TILES * gameConfig.TILE_SIZE / 2, gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE / 2);
         console.log(`👹 적 스폰: ${enemy ? enemy.type : '실패'}`);
         break;
       default:

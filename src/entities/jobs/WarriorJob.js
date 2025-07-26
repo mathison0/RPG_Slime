@@ -1,5 +1,5 @@
 import BaseJob from './BaseJob.js';
-import { getJobInfo } from '../../data/JobClasses.js';
+import { getJobInfo } from '../../../shared/JobClasses.js';
 
 /**
  * 전사 직업 클래스

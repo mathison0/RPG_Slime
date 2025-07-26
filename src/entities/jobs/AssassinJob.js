@@ -1,5 +1,5 @@
 import BaseJob from './BaseJob.js';
-import { getJobInfo } from '../../data/JobClasses.js';
+import { getJobInfo } from '../../../shared/JobClasses.js';
 
 /**
  * 어쌔신/닌자 직업 클래스
@@ -31,49 +31,21 @@ export default class AssassinJob extends BaseJob {
     useStealth() {
         const skillKey = 'stealth';
         
-        // 쿨타임 체크
-        if (!this.isSkillAvailable(skillKey)) {
-            this.showCooldownMessage();
+        // 다른 플레이어면 실행하지 않음
+        if (this.player.isOtherPlayer) {
             return;
         }
         
-        const skillInfo = this.jobInfo.skills[0]; // 은신 스킬
-        
-        // 쿨타임 설정
-        this.setSkillCooldown(skillKey, skillInfo.cooldown);
-        
-        // 은신 상태 활성화
-        this.isStealth = true;
-        this.stealthDuration = skillInfo.duration;
-        this.stealthBonusDamage = skillInfo.damage;
-        
-        // 시각적 효과
-        this.player.setAlpha(0.3);
-        this.player.setTint(0x888888);
-        
-        // 은신 효과 메시지
-        const stealthText = this.scene.add.text(
-            this.player.x, 
-            this.player.y - 60, 
-            '은신!', 
-            {
-                fontSize: '16px',
-                fill: '#800080'
-            }
-        ).setOrigin(0.5);
-        
-        this.scene.time.delayedCall(1000, () => {
-            if (stealthText.active) {
-                stealthText.destroy();
-            }
-        });
-
-        // 네트워크 동기화
-        if (this.player.networkManager && !this.player.isOtherPlayer) {
-            this.player.networkManager.useSkill('stealth');
+        // 네트워크 매니저가 없으면 실행하지 않음
+        if (!this.player.networkManager) {
+            console.log('NetworkManager가 없어서 스킬을 사용할 수 없습니다.');
+            return;
         }
 
-        console.log(`은신 발동! 지속시간: ${skillInfo.duration}ms, 추가 데미지: ${skillInfo.damage}`);
+        // 서버에 스킬 사용 요청
+        this.player.networkManager.useSkill('stealth');
+        
+        console.log('은신 스킬 서버 요청 전송');
     }
 
     /**

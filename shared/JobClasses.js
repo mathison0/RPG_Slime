@@ -1,9 +1,10 @@
 /**
  * 직업 클래스 정의
  * 각 직업의 기본 정보, 스탯, 스킬 정보를 관리합니다.
+ * 클라이언트와 서버가 공통으로 사용하는 모듈입니다.
  */
 
-export const JobClasses = {
+const JobClasses = {
     slime: {
         name: '슬라임',
         description: '기본 직업. 균형잡힌 스탯과 범위 공격 스킬을 가지고 있습니다.',
@@ -24,10 +25,11 @@ export const JobClasses = {
             {
                 name: '퍼지기',
                 description: '주변 범위에 데미지를 입히는 슬라임 스킬입니다.',
-                cooldown: 3000,
+                cooldown: 1000,
                 damage: 'attack',
                 range: 50,
-                key: '1'
+                key: '1',
+                type: 'spread'
             },
         ],
         color: 0x00ff00,
@@ -57,7 +59,8 @@ export const JobClasses = {
                 cooldown: 10000,
                 damage: 50,
                 duration: 3000,
-                key: '1'
+                key: '1',
+                type: 'stealth'
             }
         ],
         color: 0x800080,
@@ -87,7 +90,8 @@ export const JobClasses = {
                 cooldown: 8000,
                 damage: 60,
                 duration: 3000,
-                key: '1'
+                key: '1',
+                type: 'stealth'
             }
         ],
         color: 0x4B0082,
@@ -117,7 +121,8 @@ export const JobClasses = {
                 cooldown: 5000,
                 damage: 'attack * 1.5',
                 range: 100,
-                key: '1'
+                key: '1',
+                type: 'charge'
             }
         ],
         color: 0xff0000,
@@ -148,7 +153,8 @@ export const JobClasses = {
                 damage: 0,
                 range: 120,
                 duration: 30000,
-                key: '1'
+                key: '1',
+                type: 'ward'
             },
             {
                 name: '얼음 장판',
@@ -158,7 +164,8 @@ export const JobClasses = {
                 range: 100,
                 duration: 6000,
                 effect: 'slow',
-                key: '2'
+                key: '2',
+                type: 'ice_field'
             },
             {
                 name: '마법 투사체',
@@ -166,7 +173,8 @@ export const JobClasses = {
                 cooldown: 3000,
                 damage: 'attack * 1.2',
                 range: 400,
-                key: '3'
+                key: '3',
+                type: 'magic_missile'
             }
         ],
         color: 0x0000ff,
@@ -196,7 +204,8 @@ export const JobClasses = {
                 cooldown: 5000,
                 damage: 0,
                 heal: 50,
-                key: '1'
+                key: '1',
+                type: 'repair'
             }
         ],
         color: 0xff6600,
@@ -204,7 +213,7 @@ export const JobClasses = {
     }
 };
 
-export const JobRequirements = {
+const JobRequirements = {
     slime: {
         level: 1,
         description: '기본 직업'
@@ -234,14 +243,14 @@ export const JobRequirements = {
 /**
  * 직업 정보 조회 함수
  */
-export function getJobInfo(jobClass) {
+function getJobInfo(jobClass) {
     return JobClasses[jobClass] || JobClasses.slime;
 }
 
 /**
  * 직업 변경 가능 여부 확인
  */
-export function canChangeJob(currentLevel, targetJob) {
+function canChangeJob(currentLevel, targetJob) {
     const requirement = JobRequirements[targetJob];
     return currentLevel >= requirement.level;
 }
@@ -249,7 +258,7 @@ export function canChangeJob(currentLevel, targetJob) {
 /**
  * 레벨에 따른 스탯 계산
  */
-export function calculateStats(jobClass, level) {
+function calculateStats(jobClass, level) {
     const jobInfo = getJobInfo(jobClass);
     const stats = { ...jobInfo.baseStats };
     
@@ -260,4 +269,73 @@ export function calculateStats(jobClass, level) {
     stats.speed += jobInfo.levelGrowth.speed * levelDiff;
     
     return stats;
-} 
+}
+
+/**
+ * 직업별 스킬 정보 조회 (스킬 타입별로 반환)
+ */
+function getSkillInfo(jobClass, skillType) {
+    const jobInfo = getJobInfo(jobClass);
+    return jobInfo.skills.find(skill => skill.type === skillType);
+}
+
+/**
+ * 모든 직업의 스킬을 타입별로 매핑한 객체 생성
+ */
+function createSkillTypeMap() {
+    const skillMap = {};
+    
+    Object.values(JobClasses).forEach(jobInfo => {
+        jobInfo.skills.forEach(skill => {
+            if (!skillMap[skill.type]) {
+                skillMap[skill.type] = {};
+            }
+            skillMap[skill.type] = {
+                cooldown: skill.cooldown,
+                damage: skill.damage,
+                range: skill.range || 0,
+                duration: skill.duration || 0,
+                heal: skill.heal || 0,
+                effect: skill.effect
+            };
+        });
+    });
+    
+    return skillMap;
+}
+
+// CommonJS와 ES6 모듈 지원
+if (typeof module !== 'undefined' && module.exports) {
+    // CommonJS (서버용)
+    module.exports = {
+        JobClasses,
+        JobRequirements,
+        getJobInfo,
+        canChangeJob,
+        calculateStats,
+        getSkillInfo,
+        createSkillTypeMap
+    };
+} else if (typeof window !== 'undefined') {
+    // 브라우저 환경 (클라이언트용)
+    window.JobClassesModule = {
+        JobClasses,
+        JobRequirements,
+        getJobInfo,
+        canChangeJob,
+        calculateStats,
+        getSkillInfo,
+        createSkillTypeMap
+    };
+}
+
+// ES6 export (번들러용)
+export {
+    JobClasses,
+    JobRequirements,
+    getJobInfo,
+    canChangeJob,
+    calculateStats,
+    getSkillInfo,
+    createSkillTypeMap
+}; 

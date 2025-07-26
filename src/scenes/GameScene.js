@@ -263,14 +263,24 @@ export default class GameScene extends Phaser.Scene {
         if (this.player && syncData.players) {
             const myPlayerData = syncData.players.find(p => p.id === this.playerId);
             if (myPlayerData) {
+                // 기존 액션 중단
                 if (this.player.isJumping) {
                     this.player.isJumping = false;
                     this.tweens.killTweensOf(this.player);
                 }
                 
+                // 위치 및 기본 상태 복원
                 this.player.x = myPlayerData.x;
                 this.player.y = myPlayerData.y;
                 this.player.direction = myPlayerData.direction;
+                
+                // 크기 정보 복원
+                if (myPlayerData.size && myPlayerData.size !== this.player.size) {
+                    this.player.setSize(myPlayerData.size);
+                }
+                
+                // 액션 상태 복원
+                this.restorePlayerActions(this.player, myPlayerData.activeActions);
                 
                 console.log('본인 플레이어 상태 복원 완료');
             }
@@ -281,6 +291,7 @@ export default class GameScene extends Phaser.Scene {
             this.otherPlayers.getChildren().forEach(otherPlayer => {
                 const playerData = syncData.players.find(p => p.id === otherPlayer.networkId);
                 if (playerData) {
+                    // 기존 액션 중단
                     if (otherPlayer.isJumping) {
                         otherPlayer.isJumping = false;
                         this.tweens.killTweensOf(otherPlayer);
@@ -289,9 +300,20 @@ export default class GameScene extends Phaser.Scene {
                         }
                     }
                     
+                    // 위치 및 기본 상태 복원
                     otherPlayer.x = playerData.x;
                     otherPlayer.y = playerData.y;
                     otherPlayer.direction = playerData.direction;
+                    
+                    // 크기 정보 복원
+                    if (playerData.size && playerData.size !== otherPlayer.size) {
+                        otherPlayer.size = playerData.size;
+                        otherPlayer.updateSize();
+                    }
+                    
+                    // 액션 상태 복원
+                    this.restorePlayerActions(otherPlayer, playerData.activeActions);
+                    
                     otherPlayer.updateNameTextPosition();
                 }
             });
@@ -304,15 +326,117 @@ export default class GameScene extends Phaser.Scene {
             this.enemies.getChildren().forEach(enemy => {
                 const enemyData = syncData.enemies.find(e => e.id === enemy.networkId);
                 if (enemyData) {
+                    // 기존 이동 애니메이션 중단
                     this.tweens.killTweensOf(enemy);
+                    
+                    // 즉시 위치 및 상태 업데이트
                     enemy.x = enemyData.x;
                     enemy.y = enemyData.y;
                     enemy.hp = enemyData.hp;
                     enemy.maxHp = enemyData.maxHp;
+                    
+                    // 물리 바디 위치 즉시 반영
+                    if (enemy.body) {
+                        enemy.body.setPosition(enemyData.x - enemy.width/2, enemyData.y - enemy.height/2);
+                        
+                        // 속도 정보도 복원
+                        if (enemyData.vx !== undefined && enemyData.vy !== undefined) {
+                            enemy.body.setVelocity(enemyData.vx, enemyData.vy);
+                        }
+                    }
+                    
+                    // HP 바 업데이트
+                    if (enemy.hpBar) {
+                        enemy.updateHpBar();
+                    }
+                    
+                    // 공격 상태 복원
+                    if (enemyData.isAttacking) {
+                        enemy.playAttackAnimation();
+                    }
                 }
             });
             
             console.log('적들 상태 복원 완료');
+        }
+    }
+
+    /**
+     * 플레이어 액션 상태 복원
+     */
+    restorePlayerActions(player, activeActions) {
+        if (!activeActions) return;
+
+        // 점프 상태 복원
+        if (activeActions.jump && activeActions.jump.remainingTime > 0) {
+            player.isJumping = true;
+            
+            // 남은 시간만큼 점프 애니메이션 진행
+            const remainingTime = activeActions.jump.remainingTime;
+            this.tweens.add({
+                targets: player,
+                y: player.y - 40,
+                duration: remainingTime / 2,
+                ease: 'Power2.easeOut',
+                yoyo: true,
+                onComplete: () => {
+                    player.isJumping = false;
+                }
+            });
+            
+            console.log(`점프 상태 복원: ${remainingTime}ms 남음`);
+        }
+
+        // 스킬 상태 복원
+        if (activeActions.skills && activeActions.skills.length > 0) {
+            activeActions.skills.forEach(skillData => {
+                if (skillData.remainingTime > 0) {
+                    // 스킬 효과 복원 (남은 시간 고려)
+                    this.restoreSkillEffect(player, skillData);
+                    console.log(`스킬 ${skillData.skillType} 상태 복원: ${skillData.remainingTime}ms 남음`);
+                }
+            });
+        }
+    }
+
+    /**
+     * 스킬 효과 복원
+     */
+    restoreSkillEffect(player, skillData) {
+        // 스킬 타입별로 남은 시간만큼 효과 적용
+        switch (skillData.skillType) {
+            case 'stealth':
+                // 은신 효과 복원
+                player.setAlpha(0.3);
+                this.time.delayedCall(skillData.remainingTime, () => {
+                    player.setAlpha(1);
+                });
+                break;
+                
+            case 'ward':
+                // 와드 효과 복원
+                if (player.wardEffect) {
+                    player.wardEffect.destroy();
+                }
+                player.wardEffect = this.add.circle(player.x, player.y, 30, 0x00ff00, 0.3);
+                this.time.delayedCall(skillData.remainingTime, () => {
+                    if (player.wardEffect) {
+                        player.wardEffect.destroy();
+                        player.wardEffect = null;
+                    }
+                });
+                break;
+                
+            case 'charge':
+                // 차지 효과는 이미 완료되었을 가능성이 높으므로 스킵
+                break;
+                
+            default:
+                // 기타 스킬들은 남은 시간만큼 대기
+                this.time.delayedCall(skillData.remainingTime, () => {
+                    console.log(`스킬 ${skillData.skillType} 효과 종료`);
+                });
+                break;
         }
     }
     

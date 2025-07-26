@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getJobInfo, calculateStats } from '../data/JobClasses.js';
+import { getJobInfo, calculateStats } from '../../shared/JobClasses.js';
 import AssetLoader from '../utils/AssetLoader.js';
 import SkillCooldownUI from '../ui/SkillCooldownUI.js';
 import EffectManager from '../effects/EffectManager.js';
@@ -170,8 +170,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     setSize(newSize) {
+        const oldSize = this.size;
         this.size = newSize;
         this.updateSize();
+        
+        // 네트워크 동기화 (크기가 실제로 변경된 경우만)
+        if (oldSize !== newSize && this.networkManager && !this.isOtherPlayer) {
+            this.networkManager.updatePlayerPosition(this.x, this.y, this.direction, false, { size: newSize });
+        }
     }
     
     getSize() {
@@ -179,12 +185,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 캐릭터 크기를 레벨에 따라 업데이트
+     * 캐릭터 크기를 레벨에 따라 업데이트 (서버 설정 반영)
      */
     updateCharacterSize() {
-        const baseSize = 16;
+        // 서버 설정에서 기본 크기를 가져오고, 없으면 기본값 사용
+        const dynamicPlayerSize = AssetLoader.getDynamicPlayerSize();
+        const baseSize = dynamicPlayerSize.WIDTH * 0.5; // 기본 크기의 절반에서 시작
         const growthRate = 1;
-        const maxSize = 40;
+        const maxSize = dynamicPlayerSize.WIDTH; // 서버 설정의 최대 크기 사용
         
         const targetSize = baseSize + (this.level - 1) * growthRate;
         const finalSize = Math.min(targetSize, maxSize);
@@ -287,7 +295,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 스킬 입력 처리
      */
     handleSkills() {
-        // 스페이스바로 점프 (슬라임 전용)
+        // 스페이스바로 점프 (모든 직업 공통)
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
             if (this.job) {
                 this.job.useJump();

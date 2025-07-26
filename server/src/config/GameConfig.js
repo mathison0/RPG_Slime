@@ -3,11 +3,26 @@
  * 모든 게임 관련 상수값들을 중앙에서 관리
  */
 const gameConfig = {
-  MAP_WIDTH: 6000,
-  MAP_HEIGHT: 6000,
-  TILE_SIZE: 50,
-  SPAWN_WIDTH: 300,
-  PLAZA_SIZE: 1500,
+  // 타일 기반 맵 크기 (타일 개수)
+  MAP_WIDTH_TILES: 120,
+  MAP_HEIGHT_TILES: 120,
+  TILE_SIZE: 100,
+  SPAWN_WIDTH_TILES: 6,
+  PLAZA_SIZE_TILES: 30,
+  
+  // 계산된 픽셀 크기 (하위 호환성을 위해 유지)
+  get MAP_WIDTH() { 
+    return this.MAP_WIDTH_TILES * this.TILE_SIZE;
+  },
+  get MAP_HEIGHT() { 
+    return this.MAP_HEIGHT_TILES * this.TILE_SIZE;
+  },
+  get SPAWN_WIDTH() { 
+    return this.SPAWN_WIDTH_TILES * this.TILE_SIZE;
+  },
+  get PLAZA_SIZE() { 
+    return this.PLAZA_SIZE_TILES * this.TILE_SIZE;
+  },
   get PLAZA_X() { 
     return (this.MAP_WIDTH - this.PLAZA_SIZE) / 2;
   },
