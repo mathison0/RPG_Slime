@@ -107,10 +107,11 @@ export default class NetworkManager {
     }
 
     // 스킬 사용
-    useSkill(skillType) {
+    useSkill(skillType, additionalData = {}) {
         if (this.isConnected) {
             this.socket.emit('player-skill', {
-                skillType: skillType
+                skillType: skillType,
+                ...additionalData
             });
         }
     }

@@ -54,6 +54,9 @@ export default class AssetLoader {
         // 슬라임 퍼지기 스킬 이미지 로드
         scene.load.image('slime_skill', 'assets/slime_skill.png');
         
+        // 와드 스프라이트 로드
+        scene.load.image('ward', 'assets/ward.png');
+        
         scene.add.graphics()
             .fillStyle(0x00ff00)
             .fillRect(0, 0, 100, 10)

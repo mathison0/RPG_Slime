@@ -173,12 +173,18 @@ export default class GameScene extends Phaser.Scene {
         if (this.enemyWallCollider) this.enemyWallCollider.destroy();
         if (this.otherPlayerWallCollider) this.otherPlayerWallCollider.destroy();
         if (this.playerEnemyCollider) this.playerEnemyCollider.destroy();
+        if (this.enemyWardCollider) this.enemyWardCollider.destroy();
         
         // 새 충돌 설정
         this.playerWallCollider = this.physics.add.collider(this.player, this.walls);
         this.enemyWallCollider = this.physics.add.collider(this.enemies, this.walls);
         this.otherPlayerWallCollider = this.physics.add.collider(this.otherPlayers, this.walls);
         this.playerEnemyCollider = this.physics.add.collider(this.player, this.enemies, this.handlePlayerEnemyCollision, null, this);
+        
+        // 와드 충돌 설정 (와드가 있을 때만)
+        if (this.activeWard && this.activeWard.sprite) {
+            this.enemyWardCollider = this.physics.add.collider(this.enemies, this.activeWard.sprite, this.handleEnemyWardCollision, null, this);
+        }
         
         console.log('물리 충돌 설정 완료');
     }
@@ -257,7 +263,7 @@ export default class GameScene extends Phaser.Scene {
         );
     
         // =================================================================
-        // Part 2. 계산된 폴리곤으로 시야 지우기 (기존과 동일)
+        // Part 2. 계산된 폴리곤으로 시야 지우기 (와드 범위 포함)
         // =================================================================
         this.visionTexture.clear();
         this.visionTexture.fill(0x000000, 0.95);
@@ -272,9 +278,36 @@ export default class GameScene extends Phaser.Scene {
         visionMaskGraphics.closePath();
         visionMaskGraphics.fillPath();
     
+        // 와드 범위 내 시야 확장 (와드가 있을 때)
+        this.addWardVisionToMask(visionMaskGraphics, cam);
+    
         this.visionTexture.erase(visionMaskGraphics);
         
         visionMaskGraphics.destroy();
+    }
+    
+    // 와드 범위 내 시야를 마스크에 추가
+    addWardVisionToMask(visionMaskGraphics, cam) {
+        // 같은 팀 플레이어들의 와드 시야만 추가
+        
+        // 1. 로컬 와드 (같은 팀이므로 항상 추가)
+        if (this.activeWard) {
+            const ward = this.activeWard;
+            visionMaskGraphics.fillCircle(ward.x - cam.scrollX, ward.y - cam.scrollY, ward.radius);
+        }
+        
+        // 2. 같은 팀 다른 플레이어들의 와드들만 추가
+        this.children.list.forEach(child => {
+            if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
+                // 와드를 설치한 플레이어의 팀 확인
+                const wardOwner = this.otherPlayers.getChildren().find(p => p.networkId === child.wardOwnerId);
+                
+                if (wardOwner && wardOwner.team === this.player.team) {
+                    // 같은 팀의 와드만 시야 추가
+                    visionMaskGraphics.fillCircle(child.x - cam.scrollX, child.y - cam.scrollY, 120); // 와드 반지름
+                }
+            }
+        });
     }
     // GameScene.js 클래스 내부에 추가
 
@@ -317,6 +350,59 @@ export default class GameScene extends Phaser.Scene {
                 Math.cos(angle) * knockbackForce,
                 Math.sin(angle) * knockbackForce
             );
+        }
+    }
+    
+    // 적과 와드 충돌 처리
+    handleEnemyWardCollision(enemy, ward) {
+        // 와드가 존재하고 체력이 있을 때만 데미지
+        if (this.activeWard && this.activeWard.hp > 0) {
+            // 슬라임 공격력 (20)으로 와드 데미지
+            const damage = 20;
+            this.activeWard.hp -= damage;
+            
+            // 와드 데미지 이펙트
+            ward.setTint(0xff0000);
+            this.time.delayedCall(200, () => {
+                ward.clearTint();
+            });
+            
+            console.log(`와드가 공격받음! 남은 체력: ${this.activeWard.hp}/${this.activeWard.maxHp}`);
+            
+            // 와드 체력이 0 이하가 되면 파괴
+            if (this.activeWard.hp <= 0) {
+                console.log('와드가 파괴되었습니다!');
+                
+                // 와드 파괴 이펙트
+                const explosion = this.add.circle(ward.x, ward.y, 50, 0xff0000, 0.5);
+                this.tweens.add({
+                    targets: explosion,
+                    scaleX: 2,
+                    scaleY: 2,
+                    alpha: 0,
+                    duration: 500,
+                    onComplete: () => {
+                        explosion.destroy();
+                    }
+                });
+                
+                // 와드 파괴 함수 호출
+                if (ward.destroyWard) {
+                    ward.destroyWard();
+                }
+                
+                // 네트워크에 와드 파괴 알림
+                if (this.networkManager) {
+                    this.networkManager.emit('ward-destroyed', {
+                        playerId: this.networkManager.playerId,
+                        x: ward.x,
+                        y: ward.y
+                    });
+                }
+                
+                // 충돌 설정 업데이트
+                this.setupCollisions();
+            }
         }
     }
     
@@ -420,8 +506,6 @@ export default class GameScene extends Phaser.Scene {
             }
         }
     }
-
-
 
     updateMinimap() {
         if (!this.player) return;
@@ -669,6 +753,9 @@ export default class GameScene extends Phaser.Scene {
 
         // 활성 핑 화살표들의 방향 실시간 업데이트
         this.updatePingArrows();
+        
+        // 와드로 탐지된 적들의 미니맵 위치 업데이트
+        this.updateWardDetectedEnemies();
 
         this.restrictMovement();
     }
@@ -821,9 +908,32 @@ export default class GameScene extends Phaser.Scene {
             if (player) {
                 // 본인이 아닌 다른 플레이어의 스킬만 실행
                 if (data.playerId !== this.networkManager.playerId) {
-                    this.showSkillEffect(player, data.skillType);
+                    this.showSkillEffect(player, data.skillType, data);
                 }
             }
+        });
+        
+        // 와드 파괴 (다른 플레이어의 와드가 파괴될 때)
+        this.networkManager.on('ward-destroyed', (data) => {
+            // 다른 플레이어의 와드 스프라이트들을 찾아서 제거
+            this.children.list.forEach(child => {
+                if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
+                    // 파괴 이펙트
+                    const explosion = this.add.circle(child.x, child.y, 50, 0xff0000, 0.5);
+                    this.tweens.add({
+                        targets: explosion,
+                        scaleX: 2,
+                        scaleY: 2,
+                        alpha: 0,
+                        duration: 500,
+                        onComplete: () => {
+                            explosion.destroy();
+                        }
+                    });
+                    
+                    child.destroy();
+                }
+            });
         });
 
         // 플레이어 레벨업
@@ -985,7 +1095,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // 스킬 이펙트 표시
-    showSkillEffect(player, skillType) {
+    showSkillEffect(player, skillType, data = null) {
         switch (skillType) {
             case 'stealth':
                 player.setAlpha(0.3);
@@ -1028,20 +1138,267 @@ export default class GameScene extends Phaser.Scene {
             case 'slime_spread':
                 // 슬라임 퍼지기 이펙트 (다른 플레이어용)
                 if (player.isOtherPlayer) {
-                    const effect = this.add.circle(player.x, player.y, 80, 0x00ff00, 0.3);
+                    // 플레이어 스프라이트를 슬라임 스킬 이미지로 변경 (로컬과 동일)
+                    const originalTexture = player.texture.key;
+                    player.setTexture('slime_skill');
+                    
+                    // 시각적 이펙트(원형 범위 표시) - 원래 방식과 동일
+                    const effect = this.add.circle(player.x, player.y, 50, 0x00ff00, 0.3);
                     this.time.delayedCall(300, () => {
                         effect.destroy();
+                    });
+                    
+                    // 400ms 후 원래 스프라이트로 복원 (로컬과 동일)
+                    this.time.delayedCall(400, () => {
+                        player.updateJobSprite();
+                    });
+                    
+                    console.log('다른 플레이어의 슬라임 퍼지기 스킬 사용됨:', player.x, player.y);
+                }
+                break;
+            case 'ward':
+                // 마법사 와드 이펙트 (다른 플레이어용)
+                if (player.isOtherPlayer) {
+                    // 와드 스프라이트 생성
+                    const ward = this.add.sprite(player.x, player.y, 'ward');
+                    ward.setScale(0.02); // 로컬과 동일한 크기
+                    ward.isOtherPlayerWard = true; // 다른 플레이어 와드 표시
+                    ward.wardOwnerId = data.playerId; // 와드 소유자 ID 저장
+                    
+                    // 와드 이펙트 (깜빡이는 효과)
+                    this.tweens.add({
+                        targets: ward,
+                        alpha: 0.8,
+                        duration: 1000,
+                        yoyo: true,
+                        repeat: -1
+                    });
+                    
+                    // 와드가 파괴될 때까지 유지 (실제로는 서버에서 관리)
+                    // 다른 플레이어의 와드는 시각적 표시만
+                    console.log('다른 플레이어의 와드 설치됨:', player.x, player.y, '팀:', player.team);
+                }
+                break;
+            case 'ice_field':
+                // 마법사 얼음 장판 이펙트 (다른 플레이어용)
+                if (player.isOtherPlayer) {
+                    const iceField = this.add.circle(player.x, player.y, 100, 0x87ceeb, 0.4);
+                    this.tweens.add({
+                        targets: iceField,
+                        scaleX: 1.2,
+                        scaleY: 1.2,
+                        duration: 2000,
+                        yoyo: true,
+                        repeat: 2
+                    });
+                    this.time.delayedCall(6000, () => {
+                        iceField.destroy();
+                    });
+                }
+                break;
+            case 'magic_missile':
+                // 마법사 마법 투사체 이펙트 (다른 플레이어용)
+                if (player.isOtherPlayer && data && data.startX !== undefined && data.targetX !== undefined) {
+                    // 사거리 제한 적용 (로컬과 동일하게)
+                    let finalTargetX = data.targetX;
+                    let finalTargetY = data.targetY;
+                    const maxRange = data.maxRange || 400; // 기본값 400
+                    
+                    // 시작점에서 목표점까지의 거리 계산
+                    const distance = Phaser.Math.Distance.Between(data.startX, data.startY, data.targetX, data.targetY);
+                    console.log('투사체 사거리 계산:', {
+                        start: [data.startX, data.startY],
+                        target: [data.targetX, data.targetY],
+                        distance: distance,
+                        maxRange: maxRange,
+                        isOverRange: distance > maxRange
+                    });
+                    
+                    if (distance > maxRange) {
+                        // 사거리 밖이면 최대 사거리만큼만 이동
+                        const angle = Phaser.Math.Angle.Between(data.startX, data.startY, data.targetX, data.targetY);
+                        finalTargetX = data.startX + Math.cos(angle) * maxRange;
+                        finalTargetY = data.startY + Math.sin(angle) * maxRange;
+                        console.log('사거리 제한 적용됨:', {
+                            originalTarget: [data.targetX, data.targetY],
+                            finalTarget: [finalTargetX, finalTargetY],
+                            angle: angle * (180 / Math.PI) // 라디안을 도로 변환
+                        });
+                    }
+                    
+                    // 투사체 생성 (시작 위치에서)
+                    const missile = this.add.circle(data.startX, data.startY, 8, 0xff00ff, 0.3); // 투명도 낮춤
+                    missile.team = data.team; // 팀 정보 저장 (충돌 판정용)
+                    
+                    // 물리 바디 추가 (충돌 판정용)
+                    this.physics.add.existing(missile);
+                    missile.body.setSize(8, 8); // 투사체 크기를 더 작게 설정
+                    missile.body.setOffset(0, 0); // 오프셋 설정
+                    
+                    // 투사체 충돌 디버깅을 위한 이벤트 추가
+                    missile.body.onOverlap = (bodyA, bodyB) => {
+                        console.log('투사체 충돌 발생:', {
+                            missileTeam: missile.team,
+                            bodyAType: bodyA.gameObject?.constructor?.name || 'unknown',
+                            bodyBType: bodyB.gameObject?.constructor?.name || 'unknown',
+                            bodyAIsPlayer: bodyA.gameObject?.team !== undefined,
+                            bodyBIsPlayer: bodyB.gameObject?.team !== undefined,
+                            bodyATeam: bodyA.gameObject?.team,
+                            bodyBTeam: bodyB.gameObject?.team
+                        });
+                    };
+                    
+                    // 투사체 이펙트 (깜빡이는 효과)
+                    this.tweens.add({
+                        targets: missile,
+                        scaleX: 1.5,
+                        scaleY: 1.5,
+                        duration: 500,
+                        yoyo: true,
+                        repeat: -1
+                    });
+                    
+                    // 투사체 이동 (최종 목표 위치로) - 로컬과 동일한 속도로 계산
+                    const finalDistance = Phaser.Math.Distance.Between(data.startX, data.startY, finalTargetX, finalTargetY);
+                    const velocity = 400; // 로컬과 동일한 속도 (pixels/second)
+                    const duration = (finalDistance / velocity) * 1000; // 밀리초 단위로 변환
+                    
+                    console.log('투사체 이동 계산:', {
+                        finalDistance: finalDistance,
+                        velocity: velocity,
+                        duration: duration,
+                        finalTarget: [finalTargetX, finalTargetY]
+                    });
+                    
+                    this.tweens.add({
+                        targets: missile,
+                        x: finalTargetX,
+                        y: finalTargetY,
+                        duration: duration,
+                        ease: 'Linear',
+                        onComplete: () => {
+                            // 최종 목표 지점에서 폭발 이펙트
+                            const explosion = this.add.circle(finalTargetX, finalTargetY, 20, 0xff00ff, 0.8);
+                            this.tweens.add({
+                                targets: explosion,
+                                scaleX: 2,
+                                scaleY: 2,
+                                alpha: 0,
+                                duration: 300,
+                                onComplete: () => {
+                                    explosion.destroy();
+                                }
+                            });
+                            missile.destroy();
+                        }
+                    });
+                    
+                    // 다른 플레이어 투사체와 팀원 충돌 방지
+                    // 다른 플레이어 투사체는 벽과만 충돌 (팀원과는 충돌하지 않음)
+                    // 팀원과의 충돌은 아예 등록하지 않음
+                    
+                    // 모든 플레이어(본인+otherPlayers)와 투사체 충돌 등록
+                    const allPlayers = [this.player, ...this.otherPlayers.getChildren()];
+                    allPlayers.forEach(targetPlayer => {
+                        if (!targetPlayer) return; // null 체크
+                        // 같은 팀이면 충돌 등록하지 않음
+                        if (missile.team === targetPlayer.team) return;
+                        // 다른 팀이면 충돌 등록
+                        this.physics.add.overlap(missile, targetPlayer, (missile, hitPlayer) => {
+                            // 적팀 플레이어에게 데미지 적용 (마법 데미지: 1.5배, 예시값 30)
+                            const damage = 30; // 실제 밸런스에 맞게 조정
+                            if (typeof hitPlayer.takeDamage === 'function') {
+                                hitPlayer.takeDamage(damage);
+                            }
+                            // 폭발 이펙트
+                            const explosion = this.add.circle(missile.x, missile.y, 20, 0xff00ff, 0.8);
+                            this.tweens.add({
+                                targets: explosion,
+                                scaleX: 2,
+                                scaleY: 2,
+                                alpha: 0,
+                                duration: 300,
+                                onComplete: () => {
+                                    explosion.destroy();
+                                }
+                            });
+                            missile.destroy();
+                        });
+                    });
+                    
+                    // 다른 플레이어 투사체와 적(Enemy) 충돌
+                    this.physics.add.overlap(missile, this.enemies, (missile, enemy) => {
+                        console.log('다른 플레이어 투사체가 적과 충돌:', missile.x, missile.y);
+                        // 서버에 적 공격 알림 (서버에서 관리되는 적이므로)
+                        if (this.networkManager && enemy.networkId) {
+                            this.networkManager.hitEnemy(enemy.networkId);
+                        }
+                        // 폭발 이펙트
+                        const explosion = this.add.circle(missile.x, missile.y, 20, 0xff00ff, 0.8);
+                        this.tweens.add({
+                            targets: explosion,
+                            scaleX: 2,
+                            scaleY: 2,
+                            alpha: 0,
+                            duration: 300,
+                            onComplete: () => {
+                                explosion.destroy();
+                            }
+                        });
+                        missile.destroy();
+                    });
+                    
+                    // 다른 플레이어 투사체와 벽 충돌
+                    this.physics.add.collider(missile, this.walls, (missile, wall) => {
+                        console.log('다른 플레이어 투사체가 벽과 충돌:', missile.x, missile.y);
+                        // 벽에 부딪혔을 때 폭발 이펙트
+                        const explosion = this.add.circle(missile.x, missile.y, 20, 0xff00ff, 0.8);
+                        this.tweens.add({
+                            targets: explosion,
+                            scaleX: 2,
+                            scaleY: 2,
+                            alpha: 0,
+                            duration: 300,
+                            onComplete: () => {
+                                explosion.destroy();
+                            }
+                        });
+                        missile.destroy();
+                    });
+                    
+                    // 디버깅: 현재 등록된 충돌체 확인
+                    console.log('투사체 충돌 정보:', {
+                        missileId: missile.id,
+                        missileTeam: missile.team,
+                        hasPhysicsBody: missile.body !== undefined,
+                        colliders: this.physics.world.colliders?.entries?.length || 0,
+                        overlaps: this.physics.world.overlaps?.entries?.length || 0,
+                        isInOtherPlayersGroup: this.otherPlayers.contains(missile),
+                        isInEnemiesGroup: this.enemies.contains(missile),
+                        isInWallsGroup: this.walls.contains(missile),
+                        registeredOverlaps: allPlayers.filter(p => p && missile.team !== p.team).length
+                    });
+                    
+                    // 3초 후 투사체 제거 (혹시라도)
+                    this.time.delayedCall(3000, () => {
+                        if (missile.active) {
+                            missile.destroy();
+                        }
+                    });
+                    
+                    console.log('다른 플레이어의 마법 미사일 발사:', {
+                        start: [data.startX, data.startY],
+                        originalTarget: [data.targetX, data.targetY],
+                        finalTarget: [finalTargetX, finalTargetY],
+                        maxRange: maxRange,
+                        missileTeam: data.team,
+                        myTeam: this.player.team,
+                        otherPlayersCount: this.otherPlayers.getChildren().length
                     });
                 }
                 break;
             case 'charge':
                 // 돌진 이펙트
-                break;
-            case 'ward':
-                const ward = this.add.circle(player.x, player.y, 50, 0x00ffff, 0.3);
-                this.time.delayedCall(5000, () => {
-                    ward.destroy();
-                });
                 break;
         }
     }
@@ -1422,4 +1779,156 @@ export default class GameScene extends Phaser.Scene {
                 arrow.setVisible(false);
             }
         }
-    }}
+    }
+    
+    // 와드로 탐지된 적들의 미니맵 위치 업데이트
+    updateWardDetectedEnemies() {
+        if (!this.player) return;
+        
+        const scale = this.minimapScale;
+        const offsetX = this.player.x - (this.minimapSize / 2) / scale;
+        const offsetY = this.player.y - (this.minimapSize / 2) / scale;
+        
+        // 같은 팀 플레이어들의 와드 위치만 수집
+        const allWards = [];
+        
+        // 1. 로컬 와드 (같은 팀이므로 항상 추가)
+        if (this.activeWard) {
+            allWards.push(this.activeWard);
+        }
+        
+        // 2. 같은 팀 다른 플레이어들의 와드들만 추가
+        this.children.list.forEach(child => {
+            if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
+                // 와드를 설치한 플레이어의 팀 확인
+                const wardOwner = this.otherPlayers.getChildren().find(p => p.networkId === child.wardOwnerId);
+                
+                if (wardOwner && wardOwner.team === this.player.team) {
+                    // 같은 팀의 와드만 추가
+                    allWards.push({ x: child.x, y: child.y, radius: 120 });
+                }
+            }
+        });
+        
+        // 모든 적들을 모든 와드로 체크
+        this.enemies.getChildren().forEach(enemy => {
+            if (!enemy.isDead) {
+                let isDetectedByAnyWard = false;
+                
+                // 모든 와드에서 적 탐지
+                allWards.forEach(ward => {
+                    const distance = Phaser.Math.Distance.Between(ward.x, ward.y, enemy.x, enemy.y);
+                    if (distance <= ward.radius) {
+                        isDetectedByAnyWard = true;
+                    }
+                });
+                
+                // 와드에 탐지된 적 처리
+                if (isDetectedByAnyWard) {
+                    if (!enemy.wardDetected) {
+                        enemy.wardDetected = true;
+                        enemy.setTint(0xff0000);
+                        enemy.setAlpha(0.8);
+                        
+                        // 미니맵에 표시
+                        if (!enemy.minimapIndicator) {
+                            this.showEnemyOnMinimapForWard(enemy);
+                        }
+                    }
+                } else {
+                    if (enemy.wardDetected) {
+                        enemy.wardDetected = false;
+                        enemy.clearTint();
+                        enemy.setAlpha(1.0);
+                        
+                        // 미니맵에서 제거
+                        if (enemy.minimapIndicator) {
+                            this.hideEnemyFromMinimapForWard(enemy);
+                        }
+                    }
+                }
+            }
+        });
+        
+        // 와드로 탐지된 적들의 미니맵 위치 업데이트
+        this.enemies.getChildren().forEach(enemy => {
+            if (enemy.wardDetected && enemy.minimapIndicator) {
+                const minimapX = (enemy.x - offsetX) * scale;
+                const minimapY = (enemy.y - offsetY) * scale;
+                
+                // 미니맵 경계 내로 제한
+                const clampedX = Math.max(0, Math.min(this.minimapSize, minimapX));
+                const clampedY = Math.max(0, Math.min(this.minimapSize, minimapY));
+                
+                // 미니맵 표시 위치 업데이트
+                enemy.minimapIndicator.setPosition(
+                    this.minimap.x + clampedX, 
+                    this.minimap.y + clampedY
+                );
+                
+                // 미니맵 밖으로 나가면 숨김
+                if (minimapX < 0 || minimapX > this.minimapSize || 
+                    minimapY < 0 || minimapY > this.minimapSize) {
+                    enemy.minimapIndicator.setVisible(false);
+                } else {
+                    enemy.minimapIndicator.setVisible(true);
+                }
+            }
+        });
+    }
+    
+    // 와드용 미니맵 적 표시 함수
+    showEnemyOnMinimapForWard(enemy) {
+        // 이미 미니맵에 표시되어 있으면 중복 생성 방지
+        if (enemy.minimapIndicator) {
+            return;
+        }
+        
+        // 미니맵 위치 확인
+        if (!this.minimap) {
+            return;
+        }
+        
+        // 미니맵에 빨간색 점으로 적 표시
+        const scale = this.minimapScale;
+        const offsetX = this.player.x - (this.minimapSize / 2) / scale;
+        const offsetY = this.player.y - (this.minimapSize / 2) / scale;
+        
+        const minimapX = (enemy.x - offsetX) * scale;
+        const minimapY = (enemy.y - offsetY) * scale;
+        
+        // 미니맵 경계 내로 제한
+        const clampedX = Math.max(0, Math.min(this.minimapSize, minimapX));
+        const clampedY = Math.max(0, Math.min(this.minimapSize, minimapY));
+        
+        const minimapEnemy = this.add.circle(
+            this.minimap.x + clampedX,
+            this.minimap.y + clampedY,
+            3, // 적당한 크기
+            0xff0000, 
+            1.0
+        );
+        minimapEnemy.setScrollFactor(0);
+        minimapEnemy.setDepth(1004); // 미니맵 위에 표시
+        
+        // 적 객체에 미니맵 표시 참조 저장
+        enemy.minimapIndicator = minimapEnemy;
+        
+        // 깜빡이는 효과
+        this.tweens.add({
+            targets: minimapEnemy,
+            alpha: 0.3,
+            duration: 500,
+            yoyo: true,
+            repeat: -1
+        });
+    }
+    
+    // 와드용 미니맵 적 표시 제거 함수
+    hideEnemyFromMinimapForWard(enemy) {
+        if (enemy.minimapIndicator) {
+            enemy.minimapIndicator.destroy();
+            enemy.minimapIndicator = null;
+        }
+    }
+}

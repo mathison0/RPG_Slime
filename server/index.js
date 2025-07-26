@@ -315,13 +315,23 @@ io.on('connection', (socket) => {
   socket.on('player-skill', (data) => {
     const player = gameState.players.get(socket.id);
     if (player) {
-      // 스킬 효과를 모든 플레이어에게 브로드캐스트
-      io.emit('player-skill-used', {
+      // 스킬 효과를 모든 플레이어에게 브로드캐스트 (팀 정보 및 추가 데이터 포함)
+      const broadcastData = {
         playerId: socket.id,
         skillType: data.skillType,
         x: player.x,
-        y: player.y
-      });
+        y: player.y,
+        team: player.team
+      };
+      
+      // 추가 데이터가 있으면 포함 (미사일 궤적 정보 등)
+      if (data.startX !== undefined) broadcastData.startX = data.startX;
+      if (data.startY !== undefined) broadcastData.startY = data.startY;
+      if (data.targetX !== undefined) broadcastData.targetX = data.targetX;
+      if (data.targetY !== undefined) broadcastData.targetY = data.targetY;
+      if (data.maxRange !== undefined) broadcastData.maxRange = data.maxRange;
+      
+      io.emit('player-skill-used', broadcastData);
     }
   });
 
