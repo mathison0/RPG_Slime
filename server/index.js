@@ -325,6 +325,23 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 플레이어 핑
+  socket.on('player-ping', (data) => {
+    const player = gameState.players.get(socket.id);
+    if (player) {
+      // 같은 팀의 플레이어들에게만 핑 전송
+      const pingData = {
+        playerId: socket.id,
+        team: player.team,
+        x: data.x,
+        y: data.y
+      };
+      
+      // 같은 팀의 플레이어들에게만 브로드캐스트
+      socket.broadcast.emit('player-ping', pingData);
+    }
+  });
+
   // 적과의 충돌
   socket.on('enemy-hit', (data) => {
     const enemy = gameState.enemies.get(data.enemyId);

@@ -48,6 +48,9 @@ export default class AssetLoader {
             .fillRect(0, 0, 200, 50)
             .generateTexture('ui_panel', 200, 50);
         
+        // 핑 화살표 이미지 로드
+        scene.load.image('ping_arrow', 'assets/ping_arrow.png');
+        
         scene.add.graphics()
             .fillStyle(0x00ff00)
             .fillRect(0, 0, 100, 10)

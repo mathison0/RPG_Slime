@@ -359,7 +359,7 @@ export default class GameScene extends Phaser.Scene {
 
         this.minimap = this.add.graphics();
         this.minimap.setScrollFactor(0);
-        this.minimap.setDepth(1000);
+        this.minimap.setDepth(1002);
         this.positionMinimap();
 
         this.bigMap = this.add.graphics();
@@ -370,6 +370,24 @@ export default class GameScene extends Phaser.Scene {
 
         this.mapToggleKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
         this.bigMapVisible = false;
+
+        // 핑 관련 변수들
+        this.pingKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
+        this.pings = this.add.group();
+        this.pingMessageText = null;
+        this.pingCooldown = 0;
+        this.pingCooldownTime = 1000; // 1초 쿨다운
+        
+        // 핑 화살표 추적을 위한 변수들
+        this.activePingArrows = new Map(); // 핑 ID별 화살표 객체 저장
+        this.activePingPositions = new Map(); // 핑 ID별 위치 저장
+
+        // 마우스 핑 이벤트 설정 (마우스휠 클릭)
+        this.input.on('pointerdown', (pointer) => {
+            if (pointer.button === 1) { // 마우스 휠 클릭 (중간 버튼)
+                this.sendPingAtPosition(pointer.worldX, pointer.worldY);
+            }
+        });
     }
 
     positionMinimap() {
@@ -402,6 +420,8 @@ export default class GameScene extends Phaser.Scene {
             }
         }
     }
+
+
 
     updateMinimap() {
         if (!this.player) return;
@@ -483,6 +503,72 @@ export default class GameScene extends Phaser.Scene {
         // 7. 플레이어 아이콘 그리기 (항상 중앙에 위치)
         this.minimap.fillStyle(0x00ff00);
         this.minimap.fillCircle(size / 2, size / 2, 4);
+        
+        // 8. 핑 점들의 위치 업데이트
+        this.updateMinimapPingPositions();
+    }
+
+    // 미니맵 핑 점들과 화살표들의 위치 업데이트
+    updateMinimapPingPositions() {
+        const scale = this.minimapScale;
+        const offsetX = this.player.x - (this.minimapSize / 2) / scale;
+        const offsetY = this.player.y - (this.minimapSize / 2) / scale;
+        
+        // 모든 핑 점들과 화살표들을 찾아서 위치 업데이트
+        this.children.list.forEach(child => {
+            if (child.pingWorldX !== undefined && child.pingWorldY !== undefined) {
+                // 핑의 절대 위치를 미니맵 좌표로 변환
+                const minimapX = (child.pingWorldX - offsetX) * scale;
+                const minimapY = (child.pingWorldY - offsetY) * scale;
+                
+                // 미니맵 위치 업데이트 (경계 내로 제한)
+                const clampedX = Math.max(0, Math.min(this.minimapSize, minimapX));
+                const clampedY = Math.max(0, Math.min(this.minimapSize, minimapY));
+                child.setPosition(this.minimap.x + clampedX, this.minimap.y + clampedY);
+                
+                // 화살표가 미니맵 경계를 벗어나면 강제로 경계에 고정
+                if (child.texture && child.texture.key === 'ping_arrow') {
+                    const margin = 5;
+                    const maxX = this.minimapSize - margin;
+                    const maxY = this.minimapSize - margin;
+                    
+                    if (clampedX < margin || clampedX > maxX || clampedY < margin || clampedY > maxY) {
+                        const finalX = Math.max(margin, Math.min(maxX, clampedX));
+                        const finalY = Math.max(margin, Math.min(maxY, clampedY));
+                        child.setPosition(this.minimap.x + finalX, this.minimap.y + finalY);
+                    }
+                }
+                
+                // 화살표인 경우 방향도 업데이트
+                if (child.texture && child.texture.key === 'ping_arrow') {
+                    const margin = 5;
+                    const isOffMinimap = minimapX < margin || minimapX > this.minimapSize - margin || 
+                                        minimapY < margin || minimapY > this.minimapSize - margin;
+                    
+                    // 미니맵 밖에 있는 모든 핑은 화살표로 표시 (거리에 상관없이)
+                    const isOutsideMinimap = minimapX < 0 || minimapX > this.minimapSize || 
+                                            minimapY < 0 || minimapY > this.minimapSize;
+                    
+                    // 미니맵 밖에 있으면 무조건 화살표 표시
+                    if (isOutsideMinimap || isOffMinimap) {
+                        // 화살표 방향 재계산 (경계에 고정)
+                        // 화살표가 미니맵 바깥으로 나가지 않도록 clamp 처리
+                        let arrowX = Math.max(margin, Math.min(this.minimapSize - margin, minimapX));
+                        let arrowY = Math.max(margin, Math.min(this.minimapSize - margin, minimapY));
+                        // 화살표 방향 계산 (미니맵 경계에서 핑의 실제 위치를 가리킴)
+                        const angle = Phaser.Math.Angle.Between(arrowX, arrowY, minimapX, minimapY);
+                        child.setRotation(angle);
+                        child.setVisible(true);
+                    } else {
+                        // 미니맵 안에 있으면 화살표 숨김
+                        child.setVisible(false);
+                    }
+                }
+                
+                // 핑은 2초 후 자동으로 사라지므로 제거 코드 불필요
+                // 한국어 주석: 핑의 수명은 애니메이션으로 관리되므로 여기서 제거하지 않음
+            }
+        });
     }
 
     drawBigMap() {
@@ -555,6 +641,8 @@ export default class GameScene extends Phaser.Scene {
             this.minimap.setVisible(!this.bigMapVisible);
         }
 
+
+
         if (!this.player.isJumping) {
             this.updateMinimapVision();
             this.updateVision();
@@ -565,6 +653,9 @@ export default class GameScene extends Phaser.Scene {
                 this.updateMinimap();
             }
         }
+
+        // 활성 핑 화살표들의 방향 실시간 업데이트
+        this.updatePingArrows();
 
         this.restrictMovement();
     }
@@ -807,6 +898,24 @@ export default class GameScene extends Phaser.Scene {
                 console.log(`플레이어 ${data.id} 직업 변경: ${data.jobClass}`);
             }
         });
+
+        // 핑 수신
+        this.networkManager.on('player-ping', (data) => {
+            // 같은 팀의 핑만 표시
+            if (data.team === this.player.team && data.playerId !== this.networkManager.playerId) {
+                this.createPing(data.x, data.y, data.playerId);
+                this.showPingMessage(`팀원이 핑을 찍었습니다!`);
+                
+                // 핑 ID 생성 (플레이어 ID + 타임스탬프)
+                const pingId = `${data.playerId}_${Date.now()}`;
+                
+                // 핑 위치 저장
+                this.activePingPositions.set(pingId, { x: data.x, y: data.y });
+                
+                // 화면 밖에 있는 핑인지 확인하고 화살표 표시
+                this.checkAndShowPingArrow(data.x, data.y, pingId);
+            }
+        });
     }
 
     // 다른 플레이어 생성
@@ -914,4 +1023,368 @@ export default class GameScene extends Phaser.Scene {
                 break;
         }
     }
-}
+
+    // 핑 생성
+    createPing(x, y, playerId) {
+        // 핑 이펙트 생성 (불투명하게)
+        const ping = this.add.circle(x, y, 20, 0xff0000, 1.0);
+        ping.setStrokeStyle(2, 0xffffff);
+        
+        // 핑 애니메이션 (2초 지속)
+        this.tweens.add({
+            targets: ping,
+            scaleX: 3,
+            scaleY: 3,
+            alpha: 0,
+            duration: 4000,
+            ease: 'Power2',
+            onComplete: () => {
+                ping.destroy();
+            }
+        });
+
+        // 핑 텍스트 (플레이어 ID)
+        const pingText = this.add.text(x, y - 30, `PING`, {
+            fontSize: '12px',
+            fill: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 2
+        }).setOrigin(0.5);
+
+        this.tweens.add({
+            targets: pingText,
+            y: '-=20',
+            alpha: 0,
+            duration: 4000,
+            ease: 'Power2',
+            onComplete: () => {
+                pingText.destroy();
+            }
+        });
+
+        // 미니맵에 핑 표시 (화살표 또는 점)
+        this.createMinimapPingArrow(x, y, 'local-ping');
+    }
+
+    // 미니맵 핑 생성
+    createMinimapPing(x, y) {
+        const scale = this.minimapScale;
+        const offsetX = this.player.x - (this.minimapSize / 2) / scale;
+        const offsetY = this.player.y - (this.minimapSize / 2) / scale;
+        
+        const minimapX = (x - offsetX) * scale;
+        const minimapY = (y - offsetY) * scale;
+        
+        // 미니맵 경계 내에 있는지 확인
+        if (minimapX >= 0 && minimapX <= this.minimapSize && 
+            minimapY >= 0 && minimapY <= this.minimapSize) {
+            
+            const minimapPing = this.add.circle(
+                this.minimap.x + minimapX, 
+                this.minimap.y + minimapY, 
+                3, 
+                0xff0000, 
+                1.0
+            );
+            minimapPing.setScrollFactor(0);
+            minimapPing.setDepth(1001);
+            
+            // 핑의 절대 위치를 저장 (플레이어 이동에 영향받지 않도록)
+            minimapPing.pingWorldX = x;
+            minimapPing.pingWorldY = y;
+            
+            // 미니맵 핑 애니메이션 (4초 지속)
+            this.tweens.add({
+                targets: minimapPing,
+                scaleX: 2,
+                scaleY: 2,
+                alpha: 0,
+                duration: 4000,
+                ease: 'Power2',
+                onComplete: () => {
+                    minimapPing.destroy();
+                }
+            });
+        }
+    }
+
+    // 핑 메시지 표시
+    showPingMessage(message) {
+        // 기존 메시지 제거
+        if (this.pingMessageText) {
+            this.pingMessageText.destroy();
+        }
+
+        // 새 메시지 생성 (좌측 하단)
+        this.pingMessageText = this.add.text(20, this.scale.height - 60, message, {
+            fontSize: '16px',
+            fill: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 2,
+            backgroundColor: '#ff0000',
+            padding: { x: 10, y: 5 }
+        }).setScrollFactor(0);
+
+        // 3초 후 메시지 제거
+        this.time.delayedCall(3000, () => {
+            if (this.pingMessageText) {
+                this.pingMessageText.destroy();
+                this.pingMessageText = null;
+            }
+        });
+    }
+
+    // 핑 전송 (플레이어 위치)
+    sendPing() {
+        this.sendPingAtPosition(this.player.x, this.player.y);
+    }
+
+    // 핑 전송 (지정된 위치)
+    sendPingAtPosition(x, y) {
+        const currentTime = Date.now();
+        if (currentTime - this.pingCooldown < this.pingCooldownTime) {
+            // 쿨다운 중
+            const remainingTime = Math.ceil((this.pingCooldownTime - (currentTime - this.pingCooldown)) / 1000);
+            this.showPingMessage(`핑 쿨다운: ${remainingTime}초`);
+            return;
+        }
+
+        // 핑 전송
+        this.networkManager.sendPing(x, y);
+        this.pingCooldown = currentTime;
+        
+        // 로컬 핑 표시
+        this.createPing(x, y, this.networkManager.playerId);
+        this.showPingMessage('핑을 찍었습니다!');
+    }
+
+    // 핑 화살표 확인 및 표시
+    checkAndShowPingArrow(pingX, pingY, pingId) {
+        const cam = this.cameras.main;
+        const screenWidth = this.scale.width;
+        const screenHeight = this.scale.height;
+        
+        // 화면 좌표로 변환
+        const screenX = pingX - cam.scrollX;
+        const screenY = pingY - cam.scrollY;
+        
+        // 화면 밖에 있는지 확인
+        const margin = 20; // 화면 가장자리 여백
+        const isOffScreen = screenX < margin || screenX > screenWidth - margin || 
+                           screenY < margin || screenY > screenHeight - margin;
+        
+        if (isOffScreen) {
+            this.createPingArrow(pingX, pingY, pingId);
+        }
+    }
+
+    // 핑 화살표 생성
+    createPingArrow(pingX, pingY, pingId) {
+        const cam = this.cameras.main;
+        const screenWidth = this.scale.width;
+        const screenHeight = this.scale.height;
+        
+        // 화면 좌표로 변환
+        const screenX = pingX - cam.scrollX;
+        const screenY = pingY - cam.scrollY;
+        
+        // 화면 경계 내에서 화살표 위치 계산 (더 여유있는 위치)
+        const margin = 5;
+        let arrowX = Math.max(margin, Math.min(screenWidth - margin, screenX));
+        let arrowY = Math.max(margin, Math.min(screenHeight - margin, screenY));
+        
+        // 화살표 방향 계산 (플레이어 현재 위치 기준)
+        const angle = Phaser.Math.Angle.Between(arrowX, arrowY, screenX, screenY);
+        
+        // 화살표 이미지 생성
+        const arrow = this.add.image(arrowX, arrowY, 'ping_arrow');
+        arrow.setScrollFactor(0);
+        arrow.setDepth(1001);
+        
+        // 화살표 크기 설정
+        arrow.setScale(0.07);
+        
+        // 화살표 방향 회전 (오른쪽을 가리키는 이미지를 핑 방향으로 회전)
+        arrow.setRotation(angle);
+        
+        // 화살표 객체를 Map에 저장 (실시간 업데이트를 위해)
+        this.activePingArrows.set(pingId, {
+            arrow: arrow,
+            pingX: pingX,
+            pingY: pingY,
+            startTime: Date.now()
+        });
+        
+        // 화살표 애니메이션 (3초 지속)
+        this.tweens.add({
+            targets: arrow,
+            alpha: 0,
+            duration: 3000,
+            ease: 'Power2',
+            onComplete: () => {
+                // 화살표 제거 및 Map에서 삭제
+                arrow.destroy();
+                this.activePingArrows.delete(pingId);
+                this.activePingPositions.delete(pingId);
+            }
+        });
+        
+        // 미니맵에 핑 표시 (화살표 또는 점)
+        this.createMinimapPingArrow(pingX, pingY, pingId);
+    }
+
+    // 미니맵 핑 화살표 생성
+    createMinimapPingArrow(pingX, pingY, pingId) {
+        const scale = this.minimapScale;
+        const offsetX = this.player.x - (this.minimapSize / 2) / scale;
+        const offsetY = this.player.y - (this.minimapSize / 2) / scale;
+        
+        const minimapX = (pingX - offsetX) * scale;
+        const minimapY = (pingY - offsetY) * scale;
+        
+        // 미니맵 경계 margin (화살표가 미니맵 끝에 붙어서 나오도록)
+        const margin = 5;
+        // 미니맵 내부(점) 판정 - margin 안쪽에 있는 핑만 점으로 표시
+        const isInsideMinimap = minimapX >= margin && minimapX <= this.minimapSize - margin &&
+                               minimapY >= margin && minimapY <= this.minimapSize - margin;
+        // 미니맵 밖에 있는 핑 판정 (미니맵 전체 영역 밖)
+        const isOutsideMinimap = minimapX < 0 || minimapX > this.minimapSize || 
+                                 minimapY < 0 || minimapY > this.minimapSize;
+        // 미니맵 경계에 있는 핑 판정 (margin 밖이지만 미니맵 안)
+        const isOnMinimapBorder = !isInsideMinimap && !isOutsideMinimap;
+        
+        // 미니맵 내부가 아니면 모두 화살표로 표시 (경계 + 밖)
+        // 또는 미니맵 밖에 있는 핑은 무조건 화살표로 표시
+        if (!isInsideMinimap || isOutsideMinimap) {
+            // 디버깅: 화살표 생성 조건 확인
+            console.log('미니맵 화살표 생성:', {
+                pingX, pingY,
+                minimapX, minimapY,
+                isInsideMinimap, isOutsideMinimap, isOnMinimapBorder,
+                margin, minimapSize: this.minimapSize
+            });
+            // 미니맵 경계에 화살표 위치 고정 (경계 밖이어도 무조건 경계에 붙임)
+            // 한국어 주석: clamp로 경계에 고정
+            let arrowX = Math.max(margin, Math.min(this.minimapSize - margin, minimapX));
+            let arrowY = Math.max(margin, Math.min(this.minimapSize - margin, minimapY));
+            // 화살표 방향 계산 (경계에서 실제 핑 위치를 바라보게)
+            const angle = Phaser.Math.Angle.Between(arrowX, arrowY, minimapX, minimapY);
+            // 화살표 생성
+            const minimapArrow = this.add.image(
+                this.minimap.x + arrowX, 
+                this.minimap.y + arrowY, 
+                'ping_arrow'
+            );
+            minimapArrow.setScrollFactor(0);
+            minimapArrow.setDepth(1003);
+            // 핑의 절대 위치 저장 (플레이어 이동에 영향받지 않게)
+            minimapArrow.pingWorldX = pingX;
+            minimapArrow.pingWorldY = pingY;
+            // 화살표 크기 (더 크게 설정)
+            minimapArrow.setScale(0.02);
+            // 화살표 방향
+            minimapArrow.setRotation(angle);
+            
+            // 디버깅: 화살표 생성 확인
+            console.log('미니맵 화살표 생성 완료:', {
+                arrowX, arrowY,
+                finalX: this.minimap.x + arrowX,
+                finalY: this.minimap.y + arrowY,
+                angle: angle * (180 / Math.PI), // 라디안을 도로 변환
+                scale: minimapArrow.scale,
+                visible: minimapArrow.visible,
+                depth: minimapArrow.depth
+            });
+            
+            // 디버깅: 화살표 생성 확인
+            console.log('미니맵 화살표 생성 완료:', {
+                arrowX, arrowY,
+                finalX: this.minimap.x + arrowX,
+                finalY: this.minimap.y + arrowY,
+                angle: angle * (180 / Math.PI), // 라디안을 도로 변환
+                scale: minimapArrow.scale,
+                visible: minimapArrow.visible,
+                depth: minimapArrow.depth
+            });
+            // 화살표 애니메이션 (4초)
+            this.tweens.add({
+                targets: minimapArrow,
+                alpha: 0,
+                duration: 3000,
+                ease: 'Power2',
+                onComplete: () => {
+                    minimapArrow.destroy();
+                }
+            });
+        } else {
+            // 미니맵 내부면 점으로 표시
+            const minimapDot = this.add.circle(
+                this.minimap.x + minimapX,
+                this.minimap.y + minimapY,
+                2,
+                0xff0000,
+                1.0
+            );
+            minimapDot.setScrollFactor(0);
+            minimapDot.setDepth(1003);
+            // 핑의 절대 위치 저장
+            minimapDot.pingWorldX = pingX;
+            minimapDot.pingWorldY = pingY;
+            // 점 애니메이션 (4초)
+            this.tweens.add({
+                targets: minimapDot,
+                scaleX: 2,
+                scaleY: 2,
+                alpha: 0,
+                duration: 3000,
+                ease: 'Power2',
+                onComplete: () => {
+                    minimapDot.destroy();
+                }
+            });
+        }
+    }
+
+    // 활성 핑 화살표들의 방향 실시간 업데이트
+    updatePingArrows() {
+        if (!this.player || this.activePingArrows.size === 0) {
+            return;
+        }
+
+        const cam = this.cameras.main;
+        const screenWidth = this.scale.width;
+        const screenHeight = this.scale.height;
+        const margin = 120;
+
+        // 각 활성 핑 화살표 업데이트
+        for (const [pingId, arrowData] of this.activePingArrows) {
+            const { arrow, pingX, pingY } = arrowData;
+            
+            // 화면 좌표로 변환 (플레이어 현재 위치 기준)
+            const screenX = pingX - cam.scrollX;
+            const screenY = pingY - cam.scrollY;
+            
+            // 화면 밖에 있는지 확인
+            const isOffScreen = screenX < margin || screenX > screenWidth - margin || 
+                               screenY < margin || screenY > screenHeight - margin;
+            
+            if (isOffScreen) {
+                // 화살표를 화면 경계 내로 이동
+                let arrowX = Math.max(margin, Math.min(screenWidth - margin, screenX));
+                let arrowY = Math.max(margin, Math.min(screenHeight - margin, screenY));
+                
+                // 화살표 위치 업데이트
+                arrow.setPosition(arrowX, arrowY);
+                
+                // 화살표 방향 재계산 (플레이어 현재 위치 기준)
+                const angle = Phaser.Math.Angle.Between(arrowX, arrowY, screenX, screenY);
+                arrow.setRotation(angle);
+                
+                // 화살표가 보이도록 설정
+                arrow.setVisible(true);
+            } else {
+                // 화면 안에 있으면 화살표 숨김
+                arrow.setVisible(false);
+            }
+        }
+    }}
