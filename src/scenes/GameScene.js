@@ -571,6 +571,19 @@ export default class GameScene extends Phaser.Scene {
         });
     }
 
+    // 시야 판정 함수 - 해당 좌표가 플레이어의 시야 안에 있는지 확인
+    isInVision(x, y) {
+        if (!this.player) return false;
+        
+        // 플레이어와 핑 사이의 거리 계산
+        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, x, y);
+        
+        // 시야 반지름 (기존 시야 시스템과 동일하게 설정)
+        const visionRadius = this.player.visionRange || 300; // 기존 시야 반지름 사용
+        
+        return distance <= visionRadius;
+    }
+
     drawBigMap() {
         const size = this.bigMapSize;
         const scale = this.bigMapScale;
@@ -1026,41 +1039,46 @@ export default class GameScene extends Phaser.Scene {
 
     // 핑 생성
     createPing(x, y, playerId) {
-        // 핑 이펙트 생성 (불투명하게)
-        const ping = this.add.circle(x, y, 20, 0xff0000, 1.0);
-        ping.setStrokeStyle(2, 0xffffff);
+        // 시야 안에 있는 핑만 메인 화면에 표시
+        const isInVision = this.isInVision(x, y);
         
-        // 핑 애니메이션 (2초 지속)
-        this.tweens.add({
-            targets: ping,
-            scaleX: 3,
-            scaleY: 3,
-            alpha: 0,
-            duration: 4000,
-            ease: 'Power2',
-            onComplete: () => {
-                ping.destroy();
-            }
-        });
+        if (isInVision) {
+            // 핑 이펙트 생성 (불투명하게)
+            const ping = this.add.circle(x, y, 20, 0xff0000, 1.0);
+            ping.setStrokeStyle(2, 0xffffff);
+            
+            // 핑 애니메이션 (4초 지속)
+            this.tweens.add({
+                targets: ping,
+                scaleX: 3,
+                scaleY: 3,
+                alpha: 0,
+                duration: 4000,
+                ease: 'Power2',
+                onComplete: () => {
+                    ping.destroy();
+                }
+            });
 
-        // 핑 텍스트 (플레이어 ID)
-        const pingText = this.add.text(x, y - 30, `PING`, {
-            fontSize: '12px',
-            fill: '#ffffff',
-            stroke: '#000000',
-            strokeThickness: 2
-        }).setOrigin(0.5);
+            // 핑 텍스트 (플레이어 ID)
+            const pingText = this.add.text(x, y - 30, `PING`, {
+                fontSize: '12px',
+                fill: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 2
+            }).setOrigin(0.5);
 
-        this.tweens.add({
-            targets: pingText,
-            y: '-=20',
-            alpha: 0,
-            duration: 4000,
-            ease: 'Power2',
-            onComplete: () => {
-                pingText.destroy();
-            }
-        });
+            this.tweens.add({
+                targets: pingText,
+                y: '-=20',
+                alpha: 0,
+                duration: 4000,
+                ease: 'Power2',
+                onComplete: () => {
+                    pingText.destroy();
+                }
+            });
+        }
 
         // 미니맵에 핑 표시 (화살표 또는 점)
         this.createMinimapPingArrow(x, y, 'local-ping');
@@ -1158,7 +1176,7 @@ export default class GameScene extends Phaser.Scene {
         this.showPingMessage('핑을 찍었습니다!');
     }
 
-    // 핑 화살표 확인 및 표시
+    // 핑 화살표 확인 및 표시 (시야 고려)
     checkAndShowPingArrow(pingX, pingY, pingId) {
         const cam = this.cameras.main;
         const screenWidth = this.scale.width;
@@ -1173,7 +1191,11 @@ export default class GameScene extends Phaser.Scene {
         const isOffScreen = screenX < margin || screenX > screenWidth - margin || 
                            screenY < margin || screenY > screenHeight - margin;
         
-        if (isOffScreen) {
+        // 시야 안에 있는지 확인
+        const isInVision = this.isInVision(pingX, pingY);
+        
+        // 화면 밖이거나 시야 밖이면 화살표 표시
+        if (isOffScreen || !isInVision) {
             this.createPingArrow(pingX, pingY, pingId);
         }
     }
@@ -1368,7 +1390,11 @@ export default class GameScene extends Phaser.Scene {
             const isOffScreen = screenX < margin || screenX > screenWidth - margin || 
                                screenY < margin || screenY > screenHeight - margin;
             
-            if (isOffScreen) {
+            // 시야 밖에 있는지 확인
+            const isOutOfVision = !this.isInVision(pingX, pingY);
+            
+            // 화면 밖이거나 시야 밖이면 화살표 표시
+            if (isOffScreen || isOutOfVision) {
                 // 화살표를 화면 경계 내로 이동
                 let arrowX = Math.max(margin, Math.min(screenWidth - margin, screenX));
                 let arrowY = Math.max(margin, Math.min(screenHeight - margin, screenY));
