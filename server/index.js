@@ -4,6 +4,7 @@ const socketIo = require('socket.io');
 const path = require('path');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
+const { generateMap, isWallPosition } = require('./generateMap');
 
 const app = express();
 const server = http.createServer(app);
@@ -15,6 +16,18 @@ const io = socketIo(server, {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// --- 중앙 집중식 게임 설정 ---
+const gameConfig = {
+  MAP_WIDTH: 6000,
+  MAP_HEIGHT: 6000,
+  TILE_SIZE: 50,
+  SPAWN_WIDTH: 300,
+  PLAZA_SIZE: 1500,
+  get PLAZA_X() { return (this.MAP_WIDTH - this.PLAZA_SIZE) / 2 },
+  get PLAZA_Y() { return (this.MAP_HEIGHT - this.PLAZA_SIZE) / 2 },
+  WALL_REMOVAL_RATIO: 0.5
+};
 
 // 미들웨어
 app.use(cors());
@@ -29,10 +42,11 @@ if (process.env.NODE_ENV === 'production') {
 const gameState = {
   players: new Map(),
   enemies: new Map(),
-  rooms: new Map(), // 나중에 방 시스템 확장 가능
-  mapData: null // 공통 맵 데이터
+  rooms: new Map(),
+  mapData: null
 };
 
+// ... (ServerPlayer, ServerEnemy 클래스 및 기타 소켓 핸들러는 이전과 동일)
 // 플레이어 클래스
 class ServerPlayer {
   constructor(id, x, y, team) {
@@ -79,7 +93,8 @@ class ServerPlayer {
       size: this.size,
       attack: this.attack,
       defense: this.defense,
-      speed: this.speed
+      speed: this.speed,
+      nickname: this.nickname || 'Player'
     };
   }
 }
@@ -98,11 +113,11 @@ class ServerEnemy {
     this.lastUpdate = Date.now();
     
     // AI 관련
-    this.target = null; // 타겟 플레이어
-    this.aggroRange = 200; // 어그로 범위
-    this.attackRange = 60; // 공격 범위
+    this.target = null;
+    this.aggroRange = 200;
+    this.attackRange = 60;
     this.lastAttack = 0;
-    this.attackCooldown = 1500; // 공격 쿨타임
+    this.attackCooldown = 1500;
     
     // 이동 관련
     this.vx = 0;
@@ -115,22 +130,17 @@ class ServerEnemy {
     const now = Date.now();
     this.lastUpdate = now;
     
-    // 타겟 찾기
     this.findTarget(players);
     
     if (this.target) {
-      // 타겟이 있으면 추적
       this.chaseTarget(delta);
     } else {
-      // 타겟이 없으면 배회
       this.wander(delta, now);
     }
     
-    // 위치 업데이트
     this.x += this.vx * delta / 1000;
     this.y += this.vy * delta / 1000;
     
-    // 맵 경계 체크
     this.checkBounds();
   }
   
@@ -160,7 +170,6 @@ class ServerEnemy {
     const distance = Math.sqrt(dx * dx + dy * dy);
     
     if (distance > this.aggroRange) {
-      // 너무 멀면 타겟 해제
       this.target = null;
       this.vx = 0;
       this.vy = 0;
@@ -168,27 +177,21 @@ class ServerEnemy {
     }
     
     if (distance > this.attackRange) {
-      // 추적
       this.vx = (dx / distance) * this.speed;
       this.vy = (dy / distance) * this.speed;
     } else {
-      // 공격 범위 내에서는 정지
       this.vx = 0;
       this.vy = 0;
-      
-      // 공격 시도
       this.tryAttack();
     }
   }
   
   wander(delta, now) {
-    // 방향을 주기적으로 변경
     if (now > this.wanderChangeTime) {
       this.wanderDirection = Math.random() * Math.PI * 2;
       this.wanderChangeTime = now + Math.random() * 3000 + 2000;
     }
     
-    // 배회 이동
     const wanderSpeed = this.speed * 0.3;
     this.vx = Math.cos(this.wanderDirection) * wanderSpeed;
     this.vy = Math.sin(this.wanderDirection) * wanderSpeed;
@@ -198,7 +201,6 @@ class ServerEnemy {
     const now = Date.now();
     if (now - this.lastAttack > this.attackCooldown && this.target) {
       this.lastAttack = now;
-      // 공격 이벤트를 클라이언트에 전송하기 위해 플래그 설정
       this.isAttacking = true;
       return true;
     }
@@ -206,23 +208,20 @@ class ServerEnemy {
   }
   
   checkBounds() {
-    const MAP_WIDTH = 3000;
-    const MAP_HEIGHT = 3000;
-    
     if (this.x < 50) {
       this.x = 50;
       this.vx = Math.abs(this.vx);
     }
-    if (this.x > MAP_WIDTH - 50) {
-      this.x = MAP_WIDTH - 50;
+    if (this.x > gameConfig.MAP_WIDTH - 50) {
+      this.x = gameConfig.MAP_WIDTH - 50;
       this.vx = -Math.abs(this.vx);
     }
     if (this.y < 50) {
       this.y = 50;
       this.vy = Math.abs(this.vy);
     }
-    if (this.y > MAP_HEIGHT - 50) {
-      this.y = MAP_HEIGHT - 50;
+    if (this.y > gameConfig.MAP_HEIGHT - 50) {
+      this.y = gameConfig.MAP_HEIGHT - 50;
       this.vy = -Math.abs(this.vy);
     }
   }
@@ -239,7 +238,6 @@ class ServerEnemy {
       vy: this.vy
     };
     
-    // 공격 상태가 있으면 포함하고 리셋
     if (this.isAttacking) {
       state.isAttacking = true;
       this.isAttacking = false;
@@ -251,161 +249,162 @@ class ServerEnemy {
 
 // 소켓 연결 처리
 io.on('connection', (socket) => {
-  console.log(`플레이어 연결: ${socket.id}`);
-
-  // 플레이어 입장
-  socket.on('join-game', (data) => {
-    const playerId = socket.id;
-    const team = getPlayerTeam();
-    const spawnPoint = getSpawnPoint(team);
-    
-    const player = new ServerPlayer(playerId, spawnPoint.x, spawnPoint.y, team);
-    gameState.players.set(playerId, player);
-
-    // 본인에게 게임 상태 전송 (맵 데이터 포함)
-    socket.emit('game-joined', {
-      playerId: playerId,
-      playerData: player.getState(),
-      players: Array.from(gameState.players.values()).map(p => p.getState()),
-      enemies: Array.from(gameState.enemies.values()).map(e => e.getState()),
-      mapData: gameState.mapData // 맵 데이터 추가
+    // ... (내용은 이전과 동일하므로 생략)
+    console.log(`\n=== 새로운 소켓 연결: ${socket.id} ===`);
+    console.log(`현재 연결된 플레이어 수: ${gameState.players.size}`);
+  
+    // 플레이어 입장
+    socket.on('join-game', (data) => {
+      const timestamp = Date.now();
+      console.log(`\n[${timestamp}] [${socket.id}] join-game 요청 받음:`, data);
+      const playerId = socket.id;
+      
+      if (gameState.players.has(playerId)) {
+        console.log(`[${timestamp}] [${playerId}] 이미 게임에 입장함, 중복 요청 무시`);
+        const existingPlayer = gameState.players.get(playerId);
+        socket.emit('game-joined', {
+          playerId: playerId,
+          playerData: existingPlayer.getState(),
+          players: Array.from(gameState.players.values()).map(p => p.getState()),
+          enemies: Array.from(gameState.enemies.values()).map(e => e.getState()),
+          mapData: gameState.mapData
+        });
+        return;
+      }
+      
+      console.log(`[${timestamp}] [${playerId}] 새 플레이어 생성 시작`);
+      const team = getPlayerTeam();
+      const spawnPoint = getSpawnPoint(team);
+      const nickname = data.nickname || `Player${Math.floor(Math.random() * 1000)}`;
+      
+      const player = new ServerPlayer(playerId, spawnPoint.x, spawnPoint.y, team);
+      player.nickname = nickname;
+      
+      if (gameState.players.has(playerId)) {
+        console.log(`[${timestamp}] [${playerId}] 경고: 플레이어 생성 중 중복 발견, 처리 중단`);
+        return;
+      }
+      
+      gameState.players.set(playerId, player);
+  
+      const gameJoinedData = {
+        playerId: playerId,
+        playerData: player.getState(),
+        players: Array.from(gameState.players.values()).map(p => p.getState()),
+        enemies: Array.from(gameState.enemies.values()).map(e => e.getState()),
+        mapData: gameState.mapData
+      };
+      
+      socket.emit('game-joined', gameJoinedData);
+  
+      socket.broadcast.emit('player-joined', player.getState());
+  
+      console.log(`[${timestamp}] [${playerId}] 게임 입장 처리 완료`);
+      console.log(`[${timestamp}] 총 플레이어 수: ${gameState.players.size}`);
     });
 
-    // 다른 플레이어들에게 새 플레이어 알림
-    socket.broadcast.emit('player-joined', player.getState());
+    // 플레이어 핑
+    socket.on('player-ping', (data) => {
+      const player = gameState.players.get(socket.id);
+      if (player) {
+        // 같은 팀의 플레이어들에게만 핑 전송
+        const pingData = {
+          playerId: socket.id,
+          team: player.team,
+          x: data.x,
+          y: data.y
+        };
 
-    console.log(`플레이어 ${playerId} 게임 입장 (팀: ${team})`);
-  });
-
-  // 플레이어 위치 업데이트
-  socket.on('player-update', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player) {
-      player.update(data);
-      
-      // 다른 플레이어들에게 위치 업데이트 브로드캐스트
-      socket.broadcast.emit('player-moved', {
-        id: socket.id,
-        x: player.x,
-        y: player.y,
-        direction: player.direction,
-        isJumping: player.isJumping,
-        jobClass: player.jobClass,
-        level: player.level,
-        size: player.size
-      });
-    }
-  });
-
-  // 플레이어 직업 변경
-  socket.on('player-job-change', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player) {
-      player.jobClass = data.jobClass;
-      
-      // 모든 플레이어에게 직업 변경 알림
-      io.emit('player-job-changed', {
-        id: socket.id,
-        jobClass: data.jobClass
-      });
-    }
-  });
-
-  // 플레이어 스킬 사용
-  socket.on('player-skill', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player) {
-      // 스킬 효과를 모든 플레이어에게 브로드캐스트 (팀 정보 및 추가 데이터 포함)
-      const broadcastData = {
-        playerId: socket.id,
-        skillType: data.skillType,
-        x: player.x,
-        y: player.y,
-        team: player.team
-      };
-      
-      // 추가 데이터가 있으면 포함 (미사일 궤적 정보 등)
-      if (data.startX !== undefined) broadcastData.startX = data.startX;
-      if (data.startY !== undefined) broadcastData.startY = data.startY;
-      if (data.targetX !== undefined) broadcastData.targetX = data.targetX;
-      if (data.targetY !== undefined) broadcastData.targetY = data.targetY;
-      if (data.maxRange !== undefined) broadcastData.maxRange = data.maxRange;
-      
-      io.emit('player-skill-used', broadcastData);
-    }
-  });
-
-  // 플레이어 핑
-  socket.on('player-ping', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player) {
-      // 같은 팀의 플레이어들에게만 핑 전송
-      const pingData = {
-        playerId: socket.id,
-        team: player.team,
-        x: data.x,
-        y: data.y
-      };
-      
-      // 같은 팀의 플레이어들에게만 브로드캐스트
-      socket.broadcast.emit('player-ping', pingData);
-    }
-  });
-
-  // 적과의 충돌
-  socket.on('enemy-hit', (data) => {
-    const enemy = gameState.enemies.get(data.enemyId);
-    const player = gameState.players.get(socket.id);
-    
-    if (enemy && player) {
-      enemy.hp -= player.attack;
-      
-      if (enemy.hp <= 0) {
-        gameState.enemies.delete(data.enemyId);
-        player.exp += 25;
-        
-        // 경험치 업데이트
-        if (player.exp >= player.expToNext) {
-          player.level++;
-          player.exp -= player.expToNext;
-          player.expToNext = Math.floor(player.expToNext * 1.2);
-          player.maxHp += 20;
-          player.hp = player.maxHp;
-          player.attack += 5;
-          player.defense += 2;
-          player.speed += 10;
-          
-          io.emit('player-level-up', {
-            playerId: socket.id,
-            level: player.level
-          });
-        }
-        
-        // 적 제거
-        io.emit('enemy-destroyed', { enemyId: data.enemyId });
-        
-        // 새 적 스폰
-        setTimeout(() => spawnEnemy(), 2000);
-      } else {
-        // 적 HP 업데이트
-        io.emit('enemy-damaged', {
-          enemyId: data.enemyId,
-          hp: enemy.hp,
-          maxHp: enemy.maxHp
+        // 같은 팀의 플레이어들에게만 브로드캐스트
+        socket.broadcast.emit('player-ping', pingData);
+      }
+    });
+  
+    socket.on('player-update', (data) => {
+      const player = gameState.players.get(socket.id);
+      if (player) {
+        player.update(data);
+        socket.broadcast.emit('player-moved', {
+          id: socket.id,
+          x: player.x,
+          y: player.y,
+          direction: player.direction,
+          isJumping: player.isJumping,
+          jobClass: player.jobClass,
+          level: player.level,
+          size: player.size
         });
       }
-    }
-  });
+    });
+  
+    socket.on('player-job-change', (data) => {
+      const player = gameState.players.get(socket.id);
+      if (player) {
+        player.jobClass = data.jobClass;
+        io.emit('player-job-changed', {
+          id: socket.id,
+          jobClass: data.jobClass
+        });
+      }
+    });
+  
+    // 플레이어 스킬 사용
+    socket.on('player-skill', (data) => {
+      const player = gameState.players.get(socket.id);
+      if (player) {
+        // 스킬 효과를 모든 플레이어에게 브로드캐스트 (팀 정보 및 추가 데이터 포함)
+        const broadcastData = {
+          playerId: socket.id,
+          skillType: data.skillType,
+          x: player.x,
+          y: player.y,
+          team: player.team
+        };
 
-  // 플레이어 연결 해제
-  socket.on('disconnect', () => {
-    console.log(`플레이어 연결 해제: ${socket.id}`);
-    
-    gameState.players.delete(socket.id);
-    
-    // 다른 플레이어들에게 플레이어 퇴장 알림
-    socket.broadcast.emit('player-left', { playerId: socket.id });
-  });
+        // 추가 데이터가 있으면 포함 (미사일 궤적 정보 등)
+        if (data.startX !== undefined) broadcastData.startX = data.startX;
+        if (data.startY !== undefined) broadcastData.startY = data.startY;
+        if (data.targetX !== undefined) broadcastData.targetX = data.targetX;
+        if (data.targetY !== undefined) broadcastData.targetY = data.targetY;
+        if (data.maxRange !== undefined) broadcastData.maxRange = data.maxRange;
+
+        io.emit('player-skill-used', broadcastData);
+      }
+    });
+  
+    // 적과의 충돌
+    socket.on('enemy-hit', (data) => {
+      const enemy = gameState.enemies.get(data.enemyId);
+      const player = gameState.players.get(socket.id);
+
+      if (enemy && player) {
+        enemy.hp -= player.attack;
+      }
+      if (enemy.hp <= 0) {
+        io.emit('enemy-destroyed', enemy);
+      }
+    });
+
+    // 게임 상태 동기화 요청 (탭 포커스 복원 시)
+    socket.on('request-game-sync', () => {
+      const player = gameState.players.get(socket.id);
+      if (player) {
+        console.log(`게임 상태 동기화 요청: ${socket.id}`);
+        
+        // 현재 게임 상태를 클라이언트에게 전송
+        socket.emit('game-synced', {
+          players: Array.from(gameState.players.values()).map(p => p.getState()),
+          enemies: Array.from(gameState.enemies.values()).map(e => e.getState()),
+          timestamp: Date.now()
+        });
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log(`플레이어 연결 해제: ${socket.id}`);
+      gameState.players.delete(socket.id);
+      socket.broadcast.emit('player-left', { playerId: socket.id });
+    });
 });
 
 // 유틸리티 함수들
@@ -413,16 +412,11 @@ function getPlayerTeam() {
   const players = Array.from(gameState.players.values());
   const redCount = players.filter(p => p.team === 'red').length;
   const blueCount = players.filter(p => p.team === 'blue').length;
-  
   return redCount <= blueCount ? 'red' : 'blue';
 }
 
 function getSpawnPoint(team) {
-  const MAP_WIDTH = 3000;
-  const MAP_HEIGHT = 3000;
-  const SPAWN_WIDTH = 300;
-  const TILE_SIZE = 50;
-  
+  const { MAP_WIDTH, MAP_HEIGHT, SPAWN_WIDTH, TILE_SIZE } = gameConfig;
   if (team === 'red') {
     return {
       x: Math.random() * (SPAWN_WIDTH - TILE_SIZE * 2) + TILE_SIZE,
@@ -437,13 +431,10 @@ function getSpawnPoint(team) {
 }
 
 function spawnEnemy() {
+  const { MAP_WIDTH, MAP_HEIGHT, SPAWN_WIDTH } = gameConfig;
   const enemyTypes = ['basic', 'fast', 'tank', 'ranged'];
   const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
   const enemyId = uuidv4();
-  
-  const MAP_WIDTH = 3000;
-  const MAP_HEIGHT = 3000;
-  const SPAWN_WIDTH = 300;
   
   let x, y;
   let attempts = 0;
@@ -451,7 +442,7 @@ function spawnEnemy() {
     x = Math.random() * (MAP_WIDTH - SPAWN_WIDTH * 2) + SPAWN_WIDTH;
     y = Math.random() * MAP_HEIGHT;
     attempts++;
-  } while (attempts < 10 && isWallPosition(x, y)); // 벽 위치 체크
+  } while (attempts < 10 && isWallPosition(x, y, gameState.mapData));
   
   const enemy = new ServerEnemy(enemyId, x, y, type);
   gameState.enemies.set(enemyId, enemy);
@@ -459,174 +450,49 @@ function spawnEnemy() {
   io.emit('enemy-spawned', enemy.getState());
 }
 
-// 초기 적 스폰
 function initializeEnemies() {
   for (let i = 0; i < 10; i++) {
     spawnEnemy();
   }
 }
 
-// 게임 루프
 function gameLoop() {
   const now = Date.now();
-  const deltaTime = 50; // 50ms 간격으로 업데이트
+  const deltaTime = 50;
   
-  // 비활성 플레이어 정리 (5분 이상 업데이트 없음)
   for (const [id, player] of gameState.players) {
-    if (now - player.lastUpdate > 300000) { // 5분
+    if (now - player.lastUpdate > 300000) {
       gameState.players.delete(id);
       io.emit('player-left', { playerId: id });
     }
   }
   
-  // 적 AI 업데이트
   const enemyUpdates = [];
   for (const [id, enemy] of gameState.enemies) {
     enemy.update(gameState.players, deltaTime);
     enemyUpdates.push(enemy.getState());
   }
   
-  // 적 위치 업데이트를 모든 클라이언트에 전송
   if (enemyUpdates.length > 0) {
     io.emit('enemies-update', enemyUpdates);
   }
-}
-
-// 맵 생성 함수
-function generateMap() {
-  const MAP_WIDTH = 3000;
-  const MAP_HEIGHT = 3000;
-  const TILE_SIZE = 50;
-  const SPAWN_WIDTH = 300;
-  const PLAZA_SIZE = 1000;
-  const PLAZA_X = (MAP_WIDTH - PLAZA_SIZE) / 2;
-  const PLAZA_Y = (MAP_HEIGHT - PLAZA_SIZE) / 2;
-
-  console.log('서버에서 맵 생성 중...');
-
-  // 맵 기본 정보
-  const mapData = {
-    MAP_WIDTH,
-    MAP_HEIGHT,
-    TILE_SIZE,
-    SPAWN_WIDTH,
-    PLAZA_SIZE,
-    PLAZA_X,
-    PLAZA_Y,
-    walls: [],
-    redSpawnRect: { x: 0, y: 0, width: SPAWN_WIDTH, height: MAP_HEIGHT },
-    blueSpawnRect: { x: MAP_WIDTH - SPAWN_WIDTH, y: 0, width: SPAWN_WIDTH, height: MAP_HEIGHT },
-    plazaRect: { x: PLAZA_X, y: PLAZA_Y, width: PLAZA_SIZE, height: PLAZA_SIZE }
-  };
-
-  // 외벽 생성
-  for (let x = 0; x < MAP_WIDTH; x += TILE_SIZE) {
-    mapData.walls.push({ x: x + TILE_SIZE / 2, y: TILE_SIZE / 2 });
-    mapData.walls.push({ x: x + TILE_SIZE / 2, y: MAP_HEIGHT - TILE_SIZE / 2 });
-  }
-  for (let y = TILE_SIZE; y < MAP_HEIGHT - TILE_SIZE; y += TILE_SIZE) {
-    mapData.walls.push({ x: TILE_SIZE / 2, y: y + TILE_SIZE / 2 });
-    mapData.walls.push({ x: MAP_WIDTH - TILE_SIZE / 2, y: y + TILE_SIZE / 2 });
-  }
-
-  // 광장 테두리 벽 생성
-  const borderPositions = [];
-  for (let x = PLAZA_X; x < PLAZA_X + PLAZA_SIZE; x += TILE_SIZE) {
-    borderPositions.push({ x: x + TILE_SIZE / 2, y: PLAZA_Y - TILE_SIZE / 2 });
-    borderPositions.push({ x: x + TILE_SIZE / 2, y: PLAZA_Y + PLAZA_SIZE + TILE_SIZE / 2 });
-  }
-  for (let y = PLAZA_Y; y < PLAZA_Y + PLAZA_SIZE; y += TILE_SIZE) {
-    borderPositions.push({ x: PLAZA_X - TILE_SIZE / 2, y: y + TILE_SIZE / 2 });
-    borderPositions.push({ x: PLAZA_X + PLAZA_SIZE + TILE_SIZE / 2, y: y + TILE_SIZE / 2 });
-  }
-
-  // 랜덤 오프닝 생성 (고정 시드 사용)
-  const openings = new Set();
-  const openingCount = 10;
-  for (let i = 0; i < openingCount; i++) {
-    const randomIndex = Math.floor(Math.random() * borderPositions.length);
-    const pos = borderPositions[randomIndex];
-    openings.add(`${pos.x}_${pos.y}`);
-  }
-
-  borderPositions.forEach(pos => {
-    if (!openings.has(`${pos.x}_${pos.y}`)) {
-      mapData.walls.push(pos);
-    }
-  });
-
-  // 미로 생성 (고정 시드 사용)
-  const borderSet = new Set(borderPositions.map(p => `${p.x}_${p.y}`));
-  for (let x = SPAWN_WIDTH; x < MAP_WIDTH - SPAWN_WIDTH; x += TILE_SIZE) {
-    for (let y = 0; y < MAP_HEIGHT; y += TILE_SIZE) {
-      const centerX = x + TILE_SIZE / 2;
-      const centerY = y + TILE_SIZE / 2;
-      
-      // 광장이나 테두리 위치가 아닌 곳에만 벽 생성
-      if (!isInPlaza(centerX, centerY, PLAZA_X, PLAZA_Y, PLAZA_SIZE) && 
-          !borderSet.has(`${centerX}_${centerY}`)) {
-        
-        // 고정된 패턴으로 벽 생성 (완전 랜덤 대신)
-        const wallProbability = 0.3;
-        const hash = simpleHash(x + y * MAP_WIDTH); // 위치 기반 해시
-        if ((hash % 100) / 100 < wallProbability) {
-          mapData.walls.push({ x: centerX, y: centerY });
-        }
-      }
-    }
-  }
-
-  console.log(`맵 생성 완료: 벽 ${mapData.walls.length}개`);
-  return mapData;
-}
-
-// 간단한 해시 함수 (결정적 랜덤)
-function simpleHash(num) {
-  num = ((num >> 16) ^ num) * 0x45d9f3b;
-  num = ((num >> 16) ^ num) * 0x45d9f3b;
-  num = (num >> 16) ^ num;
-  return Math.abs(num);
-}
-
-// 광장 내부인지 확인
-function isInPlaza(x, y, plazaX, plazaY, plazaSize) {
-  return x >= plazaX && x < plazaX + plazaSize && 
-         y >= plazaY && y < plazaY + plazaSize;
-}
-
-// 벽 위치인지 확인
-function isWallPosition(x, y) {
-  if (!gameState.mapData) return false;
-  
-  const TILE_SIZE = gameState.mapData.TILE_SIZE;
-  return gameState.mapData.walls.some(wall => {
-    const dx = Math.abs(wall.x - x);
-    const dy = Math.abs(wall.y - y);
-    return dx < TILE_SIZE && dy < TILE_SIZE;
-  });
 }
 
 // 서버 시작
 server.listen(PORT, () => {
   console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
   
-  // 맵 생성 (서버 시작시 한 번만)
-  gameState.mapData = generateMap();
-  
-  // 적 초기화
+  gameState.mapData = generateMap(gameConfig);
   initializeEnemies();
-  
-  // 게임 루프 시작 (50ms마다 - 20 FPS)
   setInterval(gameLoop, 50);
 });
 
-// 프로덕션에서 클라이언트 서빙
+// 프로덕션/개발 환경 라우팅
 if (process.env.NODE_ENV === 'production') {
   app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../dist/index.html'));
   });
 } else {
-  // 개발 환경에서는 기본 응답
   app.get('/', (req, res) => {
     res.json({ 
       message: '개발 모드입니다. 클라이언트는 http://localhost:5173에서 실행하세요.',
@@ -634,4 +500,4 @@ if (process.env.NODE_ENV === 'production') {
       status: 'running'
     });
   });
-} 
+}

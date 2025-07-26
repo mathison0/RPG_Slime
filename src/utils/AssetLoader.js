@@ -379,6 +379,14 @@ export default class AssetLoader {
     */
     
     static createAnimations(scene) {
+        console.log('애니메이션 생성 시작');
+        
+        // 중복 생성 방지 - 이미 생성된 애니메이션이 있는지 확인
+        if (scene.anims.exists('slime_idle')) {
+            console.log('애니메이션이 이미 생성되어 있음, 건너뛰기');
+            return;
+        }
+        
         // 직업별 플레이어 애니메이션
         const jobs = ['slime', 'thief', 'warrior', 'mage'];
         
@@ -386,43 +394,55 @@ export default class AssetLoader {
             const textureKey = `player_${job}`;
             
             // 기본 애니메이션
-            scene.anims.create({
-                key: `${job}_idle`,
-                frames: scene.anims.generateFrameNumbers(textureKey, { start: 0, end: 0 }),
-                frameRate: 10,
-                repeat: -1
-            });
+            if (!scene.anims.exists(`${job}_idle`)) {
+                scene.anims.create({
+                    key: `${job}_idle`,
+                    frames: scene.anims.generateFrameNumbers(textureKey, { start: 0, end: 0 }),
+                    frameRate: 10,
+                    repeat: -1
+                });
+            }
             
-            scene.anims.create({
-                key: `${job}_walk`,
-                frames: scene.anims.generateFrameNumbers(textureKey, { start: 0, end: 0 }),
-                frameRate: 10,
-                repeat: -1
-            });
+            if (!scene.anims.exists(`${job}_walk`)) {
+                scene.anims.create({
+                    key: `${job}_walk`,
+                    frames: scene.anims.generateFrameNumbers(textureKey, { start: 0, end: 0 }),
+                    frameRate: 10,
+                    repeat: -1
+                });
+            }
         });
         
         // 적 애니메이션
-        scene.anims.create({
-            key: 'enemy_idle',
-            frames: scene.anims.generateFrameNumbers('enemy', { start: 0, end: 0 }),
-            frameRate: 8,
-            repeat: -1
-        });
+        if (!scene.anims.exists('enemy_idle')) {
+            scene.anims.create({
+                key: 'enemy_idle',
+                frames: scene.anims.generateFrameNumbers('enemy', { start: 0, end: 0 }),
+                frameRate: 8,
+                repeat: -1
+            });
+        }
         
-        scene.anims.create({
-            key: 'enemy_walk',
-            frames: scene.anims.generateFrameNumbers('enemy', { start: 0, end: 0 }),
-            frameRate: 8,
-            repeat: -1
-        });
+        if (!scene.anims.exists('enemy_walk')) {
+            scene.anims.create({
+                key: 'enemy_walk',
+                frames: scene.anims.generateFrameNumbers('enemy', { start: 0, end: 0 }),
+                frameRate: 8,
+                repeat: -1
+            });
+        }
         
         // 파티클 애니메이션
-        scene.anims.create({
-            key: 'explosion',
-            frames: scene.anims.generateFrameNumbers('particle', { start: 0, end: 0 }),
-            frameRate: 20,
-            repeat: 0
-        });
+        if (!scene.anims.exists('explosion')) {
+            scene.anims.create({
+                key: 'explosion',
+                frames: scene.anims.generateFrameNumbers('particle', { start: 0, end: 0 }),
+                frameRate: 20,
+                repeat: 0
+            });
+        }
+        
+        console.log('애니메이션 생성 완료');
     }
     
     // 직업과 방향에 따른 스프라이트 키 반환

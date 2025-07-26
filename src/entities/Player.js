@@ -60,6 +60,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // 시야 범위
         this.visionRange = 300;
+        this.minimapVisionRange = 200;
         
         // 물리 속성
         this.setCollideWorldBounds(true);
@@ -69,8 +70,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.wasd = this.scene.input.keyboard.addKeys('W,S,A,D');
         this.spaceKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         this.qKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
-        this.iKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I); // 무적 모드 토글
-        this.lKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.L); // 레벨업 테스트
+        this.eKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+        this.rKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+        this.iKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I);
+        this.lKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.L);
+        this.fKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F);
         
         // 스킬 키 (숫자키)
         this.oneKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
@@ -418,10 +422,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             }
         }
         
-        // 이름 텍스트 위치 업데이트 (점프 중이 아닐 때만)
-        if (this.nameText && !this.isJumping) {
-            this.nameText.setPosition(this.x, this.y - 40);
-        }
+        // 이름 텍스트 위치 즉시 업데이트 (딜레이 최소화)
+        this.updateNameTextPosition();
     }
     
     handleMovement() {
@@ -460,6 +462,53 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 방향 업데이트
         this.updateDirection(movingUp, movingDown, movingLeft, movingRight);
     }
+
+        /****************************************************************
+     * 물리 충돌 프로세스 콜백 (가장 정확한 벽 슬라이딩 처리)
+     * @param {Player} player - 플레이어 객체 (자기 자신)
+     * @param {Phaser.Tilemaps.Tile} wall - 충돌한 벽 타일
+     * @returns {boolean} - true: 충돌 처리, false: 충돌 무시
+     ****************************************************************/
+        handleWallCollision(player, wall) {
+            // body가 없으면 기본 충돌 처리
+            const body = player.body;
+            if (!body) {
+                return true;
+            }
+    
+            // 1. 설정: slideThreshold는 보정을 허용할 최대 겹침 깊이입니다.
+            // 이 값보다 더 많이 겹치면 일반적인 '벽에 막힘'으로 처리됩니다.
+            const slideThreshold = 10; // 10픽셀 이하로 겹쳤을 때만 슬라이딩 허용
+    
+            // 2. 현재 이동 방향 및 속도 확인
+            const velocity = body.velocity;
+    
+            // 3. 겹침 영역 계산
+            // 플레이어의 바디와 벽 타일의 경계가 겹치는 사각형을 계산합니다.
+            const intersection = Phaser.Geom.Intersects.GetRectangleIntersection(body, wall.getBounds());
+            const overlapX = intersection.width;
+            const overlapY = intersection.height;
+    
+            if (velocity.x !== 0 && overlapY > 0 && overlapY < slideThreshold) {
+                if (body.y < wall.y) {
+                    player.y -= overlapY;
+                } else {
+                    player.y += overlapY;
+                }
+                return false;
+            }
+    
+            if (velocity.y !== 0 && overlapX > 0 && overlapX < slideThreshold) {
+                if (body.x < wall.x) {
+                    player.x -= overlapX;
+                } else {
+                    player.x += overlapX;
+                }
+                return false;
+            }
+            
+            return true;
+        }
     
     updateDirection(movingUp, movingDown, movingLeft, movingRight) {
         // 움직이고 있는지 확인
@@ -491,22 +540,26 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
             this.jump();
         }
-        
-        // 숫자키로 스킬 사용 (마법사는 1,2,3번키 모두 사용)
-        if (Phaser.Input.Keyboard.JustDown(this.oneKey)) {
+
+        if (Phaser.Input.Keyboard.JustDown(this.qKey)) {
             this.useSkill(1);
         }
         
-        if (Phaser.Input.Keyboard.JustDown(this.twoKey)) {
+        if (Phaser.Input.Keyboard.JustDown(this.eKey)) {
             this.useSkill(2);
         }
         
-        if (Phaser.Input.Keyboard.JustDown(this.threeKey)) {
+        if (Phaser.Input.Keyboard.JustDown(this.rKey)) {
             this.useSkill(3);
         }
+
+        // 스페이스바로 점프
+        if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            this.useJump();
+        }
         
-        // Q키로 전직
-        if (Phaser.Input.Keyboard.JustDown(this.qKey)) {
+        // F키로 전직
+        if (Phaser.Input.Keyboard.JustDown(this.fKey)) {
             this.showJobSelection();
         }
       
@@ -514,26 +567,31 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.toggleInvincible();
         }
         
-        // L키로 레벨업 테스트
         if (Phaser.Input.Keyboard.JustDown(this.lKey)) {
             this.testLevelUp();
         }
     }
-    
-    // 점프 함수 (모든 직업 공통)
+  
     jump() {
         // 이미 점프 중이거나 다른 플레이어면 실행하지 않음
         if (this.isJumping || this.isOtherPlayer) {
             return;
         }
         
-        // 점프 애니메이션
+        // 기본 슬라임 스킬 - 점프 (로컬에서만 실행)
         const originalY = this.y; // 원래 Y 위치 저장
+        const originalNameY = this.nameText ? this.nameText.y : null; // 이름표 원래 위치 저장
         this.setVelocity(0);
         this.isJumping = true; // 점프 시작
         
+        // 플레이어와 이름표를 함께 애니메이션
+        const targets = [this];
+        if (this.nameText) {
+            targets.push(this.nameText);
+        }
+        
         this.scene.tweens.add({
-            targets: this,
+            targets: targets,
             y: originalY - 50,
             duration: 200,
             yoyo: true,
@@ -541,6 +599,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             onComplete: () => {
                 // 점프 완료 후 정확한 위치로 복원
                 this.y = originalY;
+                if (this.nameText && originalNameY !== null) {
+                    this.nameText.y = originalNameY;
+                }
                 this.isJumping = false;
                 
                 // 점프 완료 후 서버에 위치 동기화 (점프 상태는 false로)
@@ -556,30 +617,24 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     useSkill(skillNumber = 1) {
-        let skillType;
         switch (this.jobClass) {
             case 'assassin':
             case 'ninja':
-                skillType = 'stealth';
                 this.useStealth();
                 break;
             case 'warrior':
-                skillType = 'charge';
                 this.useCharge();
                 break;
             case 'mage':
                 // 마법사는 1번키로 와드, 2번키로 얼음장판, 3번키로 마법투사체
                 switch (skillNumber) {
                     case 1:
-                        skillType = 'ward';
                         this.useMageWard();
                         break;
                     case 2:
-                        skillType = 'ice_field';
                         this.useMageIceField();
                         break;
                     case 3:
-                        skillType = 'magic_missile';
                         this.useMageMagicMissile();
                         break;
                 }
@@ -588,7 +643,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 this.useMechanicSkill();
                 break;
             default:
-                skillType = 'jump';
                 this.useSlimeSkill();
                 break;
         }
@@ -609,21 +663,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     useCharge() {
-        // 전사의 돌진 공격
-        const targetX = this.x + Math.cos(this.rotation) * 100;
-        const targetY = this.y + Math.sin(this.rotation) * 100;
-        
-        this.scene.tweens.add({
-            targets: this,
-            x: targetX,
-            y: targetY,
-            duration: 200,
-            ease: 'Power2',
-            onComplete: () => {
-                // 충돌 체크
-                this.checkChargeCollision();
-            }
-        });
+        return;
 
         if (this.networkManager && !this.isOtherPlayer) {
             this.networkManager.useSkill('charge');
@@ -834,8 +874,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             enemy.minimapIndicator = null;
         }
     }
-    
-
     
     useMageIceField() {
         // 쿨타임 체크
@@ -1164,7 +1202,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // 텍스처 존재 여부 확인
         if (this.scene.textures.exists(spriteKey)) {
-            console.log(`텍스처 설정: ${spriteKey}`);
             this.setTexture(spriteKey);
         } else {
             console.warn(`텍스처가 존재하지 않음: ${spriteKey}`);
@@ -1344,21 +1381,104 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.lastNetworkDirection = this.direction;
     }
 
-    // 다른 플레이어 여부 설정
     setIsOtherPlayer(isOther) {
         this.isOtherPlayer = isOther;
-        
-        // 다른 플레이어의 경우 입력 비활성화 (객체는 유지)
-        // 이렇게 하면 null 체크 없이도 안전하게 처리할 수 있음
     }
 
-    // 다른 플레이어 위치 업데이트 (네트워크에서 받은 데이터)
     updateFromNetwork(data) {
-        this.x = data.x;
-        this.y = data.y;
+        // setPosition을 사용해서 이름표도 함께 업데이트
+        this.setPosition(data.x, data.y);
         this.direction = data.direction;
         this.isJumping = data.isJumping;
         this.updateJobSprite();
+    }
+
+    // 속도 부스트 활성화 (치트)
+    activateSpeedBoost(multiplier) {
+        if (!this.originalSpeed) {
+            this.originalSpeed = this.speed;
+        }
+        this.speed = this.originalSpeed * multiplier;
+        console.log(`속도 부스트 활성화: ${this.originalSpeed} -> ${this.speed}`);
+    }
+    
+    // 속도 부스트 비활성화 (치트)
+    deactivateSpeedBoost() {
+        if (this.originalSpeed) {
+            this.speed = this.originalSpeed;
+            console.log(`속도 부스트 비활성화: ${this.speed}`);
+        }
+    }
+
+    suicide() {
+        this.die();
+    }
+
+    // 이름표 생성 메서드
+    createNameText(nickname, team = this.team, depth) {
+        if (this.nameText) {
+            this.nameText.destroy();
+        }
+        
+        const displayName = nickname || `Player ${this.networkId ? this.networkId.slice(0, 6) : 'Unknown'}`;
+        const teamColor = team === 'red' ? '#ff4444' : '#4444ff';
+        
+        // 이름표 생성 (플레이어 위치 기준)
+        this.nameText = this.scene.add.text(this.x, this.y - 40, displayName, {
+            fontSize: '12px',
+            fill: teamColor,
+            fontStyle: 'bold',
+            stroke: '#000',
+            strokeThickness: 2
+        }).setOrigin(0.5);
+        
+        this.nameText.setDepth(depth); // 이름 텍스트는 플레이어보다도 위에
+        
+        return this.nameText;
+    }
+    
+    // 이름표 위치 즉시 업데이트 메서드
+    updateNameTextPosition() {
+        if (this.nameText) {
+            this.nameText.setPosition(this.x, this.y - 40);
+        }
+    }
+    
+    // 닉네임 업데이트
+    updateNickname(nickname) {
+        if (this.nameText) {
+            const displayName = nickname || `Player ${this.networkId ? this.networkId.slice(0, 6) : 'Unknown'}`;
+            this.nameText.setText(displayName);
+        }
+    }
+    
+    // 팀 색깔 업데이트
+    updateTeamColor(team = this.team) {
+        if (this.nameText) {
+            const teamColor = team === 'red' ? '#ff4444' : '#4444ff';
+            this.nameText.setColor(teamColor);
+        }
+    }
+    
+    // 위치 설정 오버라이드 (이름표 자동 동기화)
+    setPosition(x, y) {
+        super.setPosition(x, y);
+        this.updateNameTextPosition();
+        return this;
+    }
+    
+    // x 좌표만 설정
+    setX(x) {
+        super.setX(x);
+        this.updateNameTextPosition();
+        return this;
+    }
+    
+    // y 좌표만 설정
+    setY(y) {
+        super.setY(y);
+        this.updateNameTextPosition();
+        return this;
     }
 
     // 이름 텍스트 제거
