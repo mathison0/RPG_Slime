@@ -51,6 +51,9 @@ export default class AssetLoader {
         // 핑 화살표 이미지 로드
         scene.load.image('ping_arrow', 'assets/ping_arrow.png');
         
+        // 슬라임 퍼지기 스킬 이미지 로드
+        scene.load.image('slime_skill', 'assets/slime_skill.png');
+        
         scene.add.graphics()
             .fillStyle(0x00ff00)
             .fillRect(0, 0, 100, 10)

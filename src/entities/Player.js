@@ -72,6 +72,18 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.iKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I); // 무적 모드 토글
         this.lKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.L); // 레벨업 테스트
         
+        // 스킬 키 (숫자키)
+        this.oneKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
+        this.twoKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+        this.threeKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
+        
+        // 스킬 쿨타임 UI 초기화
+        this.skillCooldownUI = null;
+        this.slimeSkillCooldown = 0;
+        
+        // 슬라임 퍼지기 스킬 쿨타임 (3초)
+        this.SLIME_SPREAD_COOLDOWN = 3000;
+        
         // UI 업데이트
         this.updateUI();
         
@@ -105,6 +117,91 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         return this.size;
     }
     
+    // 스킬 쿨타임 UI 생성
+    createSkillCooldownUI() {
+        if (this.skillCooldownUI) {
+            this.skillCooldownUI.destroy();
+        }
+        
+        // 화면 왼쪽 하단에 원형 쿨타임 UI 생성
+        const uiX = 80;
+        const uiY = this.scene.scale.height - 120; // 화면 높이에서 80px 위
+        const radius = 30;
+        
+        // 배경 원 (회색)
+        const backgroundCircle = this.scene.add.graphics();
+        backgroundCircle.fillStyle(0x333333, 0.8);
+        backgroundCircle.fillCircle(uiX, uiY, radius);
+        backgroundCircle.setScrollFactor(0);
+        backgroundCircle.setDepth(1000);
+        
+        // 쿨타임 진행 원 (파란색)
+        const cooldownCircle = this.scene.add.graphics();
+        cooldownCircle.setScrollFactor(0);
+        cooldownCircle.setDepth(1001);
+        
+        // 스킬 번호 텍스트
+        const skillNumber = this.scene.add.text(uiX, uiY, '1', {
+            fontSize: '20px',
+            fill: '#ffffff',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        skillNumber.setScrollFactor(0);
+        skillNumber.setDepth(1002);
+        
+        this.skillCooldownUI = {
+            background: backgroundCircle,
+            cooldown: cooldownCircle,
+            number: skillNumber,
+            x: uiX,
+            y: uiY,
+            radius: radius
+        };
+    }
+    
+    // 스킬 쿨타임 UI 업데이트
+    updateSkillCooldownUI() {
+        if (!this.skillCooldownUI) {
+            this.createSkillCooldownUI();
+        }
+        
+        const now = this.scene.time.now;
+        const skillCooldown = this.SLIME_SPREAD_COOLDOWN; // 슬라임 퍼지기 쿨타임 사용
+        const remainingTime = this.slimeSkillCooldown - now;
+        
+        if (remainingTime > 0) {
+            // 쿨타임 진행률 계산 (0~1)
+            const progress = 1 - (remainingTime / skillCooldown);
+            
+            // 쿨타임 원 그리기 (시계방향으로 채워짐)
+            const cooldownGraphics = this.skillCooldownUI.cooldown;
+            cooldownGraphics.clear();
+            cooldownGraphics.fillStyle(0x0066ff, 0.8);
+            
+            // 시계방향으로 채워지는 원 그리기
+            const startAngle = -Math.PI / 2; // 12시 방향부터 시작
+            const endAngle = startAngle + (progress * 2 * Math.PI);
+            
+            cooldownGraphics.beginPath();
+            cooldownGraphics.moveTo(this.skillCooldownUI.x, this.skillCooldownUI.y);
+            cooldownGraphics.arc(this.skillCooldownUI.x, this.skillCooldownUI.y, this.skillCooldownUI.radius, startAngle, endAngle);
+            cooldownGraphics.closePath();
+            cooldownGraphics.fillPath();
+            
+            // 쿨타임 중일 때는 번호 색상을 어둡게
+            this.skillCooldownUI.number.setStyle({ fill: '#888888' });
+        } else {
+            // 쿨타임이 끝났을 때
+            const cooldownGraphics = this.skillCooldownUI.cooldown;
+            cooldownGraphics.clear();
+            cooldownGraphics.fillStyle(0x0066ff, 0.8);
+            cooldownGraphics.fillCircle(this.skillCooldownUI.x, this.skillCooldownUI.y, this.skillCooldownUI.radius);
+            
+            // 사용 가능할 때는 번호 색상을 밝게
+            this.skillCooldownUI.number.setStyle({ fill: '#ffffff' });
+        }
+    }
+    
     update(time, delta) {
         // 다른 플레이어는 입력 처리하지 않음
         if (!this.isOtherPlayer) {
@@ -114,6 +211,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.handleSkills();
             this.updateStealth(delta);
             this.updateCooldowns(delta);
+            
+            // 스킬 쿨타임 UI 업데이트
+            this.updateSkillCooldownUI();
             
             // 위치 변화가 있으면 서버에 전송 (점프 중이 아닐 때만)
             if (this.networkManager && !this.isJumping && (this.lastNetworkX !== this.x || this.lastNetworkY !== this.y || this.lastNetworkDirection !== this.direction)) {
@@ -193,8 +293,13 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     handleSkills() {
-        // 스페이스바로 스킬 사용
+        // 스페이스바로 점프
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            this.jump();
+        }
+        
+        // 숫자키로 스킬 사용
+        if (Phaser.Input.Keyboard.JustDown(this.oneKey)) {
             this.useSkill();
         }
         
@@ -210,6 +315,41 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // L키로 레벨업 테스트
         if (Phaser.Input.Keyboard.JustDown(this.lKey)) {
             this.testLevelUp();
+        }
+    }
+    
+    // 점프 함수 (모든 직업 공통)
+    jump() {
+        // 이미 점프 중이거나 다른 플레이어면 실행하지 않음
+        if (this.isJumping || this.isOtherPlayer) {
+            return;
+        }
+        
+        // 점프 애니메이션
+        const originalY = this.y; // 원래 Y 위치 저장
+        this.setVelocity(0);
+        this.isJumping = true; // 점프 시작
+        
+        this.scene.tweens.add({
+            targets: this,
+            y: originalY - 50,
+            duration: 200,
+            yoyo: true,
+            ease: 'Power2',
+            onComplete: () => {
+                // 점프 완료 후 정확한 위치로 복원
+                this.y = originalY;
+                this.isJumping = false;
+                
+                // 점프 완료 후 서버에 위치 동기화 (점프 상태는 false로)
+                if (this.networkManager) {
+                    this.networkManager.updatePlayerPosition(this.x, this.y, this.direction, false);
+                }
+            }
+        });
+
+        if (this.networkManager && !this.isOtherPlayer) {
+            this.networkManager.useSkill('jump');
         }
     }
     
@@ -292,36 +432,57 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     useSlimeSkill() {
-        // 이미 점프 중이거나 다른 플레이어면 실행하지 않음
+        // 쿨타임(단위: ms)
+        const skillCooldown = this.SLIME_SPREAD_COOLDOWN;
+        if (!this.slimeSkillCooldown) this.slimeSkillCooldown = 0;
+        const now = this.scene.time.now;
+        // 쿨타임 중이면 발동 불가
+        if (now < this.slimeSkillCooldown) {
+            // 쿨타임 안내 메시지
+            this.scene.add.text(this.x, this.y - 60, '스킬 쿨타임 대기 중!', {
+                fontSize: '16px',
+                fill: '#00ff00'
+            }).setOrigin(0.5);
+            return;
+        }
+        // 이미 스킬 사용 중이거나 다른 플레이어면 실행하지 않음
         if (this.isJumping || this.isOtherPlayer) {
             return;
         }
-        
-        // 기본 슬라임 스킬 - 점프 (로컬에서만 실행)
-        const originalY = this.y; // 원래 Y 위치 저장
+        // 쿨타임 갱신
+        this.slimeSkillCooldown = now + skillCooldown;
+        // 슬라임 스킬: 퍼지기(범위 공격)
+        const range = 50; // 공격 범위 반지름(px)
+        const damage = this.getAttackDamage(); // 플레이어의 공격력
+        this.isJumping = true; // 스킬 사용 중 상태(애니메이션 중 중복 방지)
+        // 스킬 사용 시 플레이어 멈춤
         this.setVelocity(0);
-        this.isJumping = true; // 점프 시작
-        
-        this.scene.tweens.add({
-            targets: this,
-            y: originalY - 50,
-            duration: 200,
-            yoyo: true,
-            ease: 'Power2',
-            onComplete: () => {
-                // 점프 완료 후 정확한 위치로 복원
-                this.y = originalY;
-                this.isJumping = false;
-                
-                // 점프 완료 후 서버에 위치 동기화 (점프 상태는 false로)
-                if (this.networkManager) {
-                    this.networkManager.updatePlayerPosition(this.x, this.y, this.direction, false);
+        // 슬라임 퍼지기 스프라이트 적용
+        const originalTexture = this.texture.key;
+        this.setTexture('slime_skill');
+        // 시각적 이펙트(원형 범위 표시)
+        const effect = this.scene.add.circle(this.x, this.y, range, 0x00ff00, 0.3);
+        this.scene.time.delayedCall(300, () => {
+            effect.destroy();
+        });
+        // 범위 내 적 탐색 및 데미지 적용
+        this.scene.enemies.getChildren().forEach(enemy => {
+            if (!enemy.isDead) {
+                const distance = Phaser.Math.Distance.Between(this.x, this.y, enemy.x, enemy.y);
+                if (distance <= range) {
+                    enemy.takeDamage(damage);
                 }
             }
         });
-
+        // 스킬 사용 후 약간의 딜레이(쿨타임 대용, 점프 애니메이션 대체)
+        this.scene.time.delayedCall(400, () => {
+            this.isJumping = false;
+            // 원래 스프라이트로 복원
+            this.updateJobSprite();
+        });
+        // 네트워크 동기화
         if (this.networkManager && !this.isOtherPlayer) {
-            this.networkManager.useSkill('jump');
+            this.networkManager.useSkill('slime_spread');
         }
     }
     
@@ -621,6 +782,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (this.nameText) {
             this.nameText.destroy();
         }
+        
+        // 스킬 쿨타임 UI 제거
+        if (this.skillCooldownUI) {
+            this.skillCooldownUI.background.destroy();
+            this.skillCooldownUI.cooldown.destroy();
+            this.skillCooldownUI.number.destroy();
+        }
+        
         super.destroy();
     }
 } 

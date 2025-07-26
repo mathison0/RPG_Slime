@@ -1025,6 +1025,15 @@ export default class GameScene extends Phaser.Scene {
                     });
                 }
                 break;
+            case 'slime_spread':
+                // 슬라임 퍼지기 이펙트 (다른 플레이어용)
+                if (player.isOtherPlayer) {
+                    const effect = this.add.circle(player.x, player.y, 80, 0x00ff00, 0.3);
+                    this.time.delayedCall(300, () => {
+                        effect.destroy();
+                    });
+                }
+                break;
             case 'charge':
                 // 돌진 이펙트
                 break;
