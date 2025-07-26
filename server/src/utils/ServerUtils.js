@@ -1,6 +1,30 @@
 const gameConfig = require('../config/GameConfig');
 
 /**
+ * 서버에서 플레이어 스폰 위치 생성
+ */
+function generateSpawnPosition(team, gameConfig) {
+  const { MAP_WIDTH_TILES, MAP_HEIGHT_TILES, SPAWN_WIDTH_TILES, TILE_SIZE } = gameConfig;
+  
+  // 타일 기반으로 계산 후 픽셀로 변환
+  const MAP_WIDTH = MAP_WIDTH_TILES * TILE_SIZE;
+  const MAP_HEIGHT = MAP_HEIGHT_TILES * TILE_SIZE;
+  const SPAWN_WIDTH = SPAWN_WIDTH_TILES * TILE_SIZE;
+  
+  if (team === 'red') {
+    return {
+      x: Math.random() * (SPAWN_WIDTH - TILE_SIZE * 2) + TILE_SIZE,
+      y: Math.random() * (MAP_HEIGHT - TILE_SIZE * 2) + TILE_SIZE
+    };
+  } else {
+    return {
+      x: MAP_WIDTH - Math.random() * (SPAWN_WIDTH - TILE_SIZE * 2) - TILE_SIZE,
+      y: Math.random() * (MAP_HEIGHT - TILE_SIZE * 2) + TILE_SIZE
+    };
+  }
+}
+
+/**
  * 서버 유틸리티 함수들
  */
 class ServerUtils {
@@ -8,19 +32,7 @@ class ServerUtils {
    * 팀에 따른 스폰 지점 계산
    */
   static getSpawnPoint(team) {
-    const { MAP_WIDTH, MAP_HEIGHT, SPAWN_WIDTH, TILE_SIZE } = gameConfig;
-    
-    if (team === 'red') {
-      return {
-        x: Math.random() * (SPAWN_WIDTH - TILE_SIZE * 2) + TILE_SIZE,
-        y: Math.random() * (MAP_HEIGHT - TILE_SIZE * 2) + TILE_SIZE
-      };
-    } else {
-      return {
-        x: MAP_WIDTH - Math.random() * (SPAWN_WIDTH - TILE_SIZE * 2) - TILE_SIZE,
-        y: Math.random() * (MAP_HEIGHT - TILE_SIZE * 2) + TILE_SIZE
-      };
-    }
+    return generateSpawnPosition(team, gameConfig);
   }
 
   /**
@@ -99,19 +111,23 @@ class ServerUtils {
    * 좌표가 맵 경계 내에 있는지 확인
    */
   static isInMapBounds(x, y, margin = 0) {
+    const MAP_WIDTH = gameConfig.MAP_WIDTH_TILES * gameConfig.TILE_SIZE;
+    const MAP_HEIGHT = gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE;
     return x >= margin && 
-           x <= gameConfig.MAP_WIDTH - margin && 
+           x <= MAP_WIDTH - margin && 
            y >= margin && 
-           y <= gameConfig.MAP_HEIGHT - margin;
+           y <= MAP_HEIGHT - margin;
   }
 
   /**
    * 좌표를 맵 경계 내로 제한
    */
   static clampToMapBounds(x, y, margin = 0) {
+    const MAP_WIDTH = gameConfig.MAP_WIDTH_TILES * gameConfig.TILE_SIZE;
+    const MAP_HEIGHT = gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE;
     return {
-      x: Math.max(margin, Math.min(gameConfig.MAP_WIDTH - margin, x)),
-      y: Math.max(margin, Math.min(gameConfig.MAP_HEIGHT - margin, y))
+      x: Math.max(margin, Math.min(MAP_WIDTH - margin, x)),
+      y: Math.max(margin, Math.min(MAP_HEIGHT - margin, y))
     };
   }
 

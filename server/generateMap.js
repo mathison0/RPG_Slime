@@ -1,15 +1,22 @@
 // 맵 생성 함수
 function generateMap(gameConfig) {
   const {
-    MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, SPAWN_WIDTH,
-    PLAZA_SIZE, PLAZA_X, PLAZA_Y
+    MAP_WIDTH_TILES, MAP_HEIGHT_TILES, TILE_SIZE, SPAWN_WIDTH_TILES,
+    PLAZA_SIZE_TILES
   } = gameConfig;
 
   const WALL_REMOVAL_CHANCE = 0.25;
-  const SINGLE_WALL_CHANCE = 0.05;
   const PLAZA_REMOVAL_CHANCE = 0.01;
 
   console.log('서버에서 랜덤 맵 생성 중');
+
+  // 타일 기반 계산
+  const MAP_WIDTH = MAP_WIDTH_TILES * TILE_SIZE;
+  const MAP_HEIGHT = MAP_HEIGHT_TILES * TILE_SIZE;
+  const SPAWN_WIDTH = SPAWN_WIDTH_TILES * TILE_SIZE;
+  const PLAZA_SIZE = PLAZA_SIZE_TILES * TILE_SIZE;
+  const PLAZA_X = (MAP_WIDTH - PLAZA_SIZE) / 2;
+  const PLAZA_Y = (MAP_HEIGHT - PLAZA_SIZE) / 2;
 
   const mapData = {
     MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, SPAWN_WIDTH, PLAZA_SIZE, PLAZA_X, PLAZA_Y,
@@ -19,9 +26,9 @@ function generateMap(gameConfig) {
     plazaRect: { x: PLAZA_X, y: PLAZA_Y, width: PLAZA_SIZE, height: PLAZA_SIZE }
   };
 
-  // --- 미로 생성 (Randomized Prim's Algorithm) ---
-  const gridWidth = (MAP_WIDTH - SPAWN_WIDTH * 2) / TILE_SIZE + 1;
-  const gridHeight = MAP_HEIGHT / TILE_SIZE;
+  // --- 미로 생성 (타일 기반 그리드) ---
+  const gridWidth = MAP_WIDTH_TILES - SPAWN_WIDTH_TILES * 2 + 1;
+  const gridHeight = MAP_HEIGHT_TILES;
   const grid = []; // 0: 길, 1: 벽
 
   // 1. 그리드를 모두 벽(1)으로 초기화
@@ -66,11 +73,10 @@ function generateMap(gameConfig) {
     }
   }
 
-  // --- [수정] wallsToRemove 로직을 grid 직접 수정으로 변경 ---
-  // 광장에 '바로 인접한' 벽에 해당하는 grid 위치를 0으로 설정
-  const plazaGridX = (PLAZA_X - SPAWN_WIDTH) / TILE_SIZE;
-  const plazaGridY = PLAZA_Y / TILE_SIZE;
-  const plazaGridSize = PLAZA_SIZE / TILE_SIZE;
+  // --- 광장 관련 타일 기반 계산 ---
+  const plazaGridX = SPAWN_WIDTH_TILES;
+  const plazaGridY = (MAP_HEIGHT_TILES - PLAZA_SIZE_TILES) / 2;
+  const plazaGridSize = PLAZA_SIZE_TILES;
 
   generatePlaza(grid, gridHeight, gridWidth, PLAZA_REMOVAL_CHANCE / 2, 2, plazaGridX, plazaGridY, plazaGridSize);
   generatePlaza(grid, gridHeight, gridWidth, PLAZA_REMOVAL_CHANCE / 5, 3, plazaGridX, plazaGridY, plazaGridSize);
@@ -95,7 +101,7 @@ function generateMap(gameConfig) {
     }
   }
 
-  // --- Prim's Algorithm Helper Functions (변경 없음) ---
+  // --- Prim's Algorithm Helper Functions ---
   function addFrontiers(x, y) {
     const directions = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
     for (const dir of directions) {
@@ -125,7 +131,7 @@ function generateMap(gameConfig) {
     return frontiers.some(f => f.x === x && f.y === y);
   }
 
-  // 5. 생성된 그리드 데이터를 실제 벽 좌표로 변환
+  // 5. 생성된 그리드 데이터를 실제 벽 좌표로 변환 (타일 -> 픽셀)
   for (let y = 0; y < gridHeight; y++) {
     for (let x = 0; x < gridWidth; x++) {
       if (grid[y][x] === 1) {
@@ -183,7 +189,12 @@ function generatePlaza(grid, gridHeight, gridWidth, PLAZA_REMOVAL_CHANCE, PLAZA_
       if (Math.random() < PLAZA_REMOVAL_CHANCE) {
         for (let i = -PLAZA_SIZE; i < PLAZA_SIZE + 1; i++) {
           for (let j = -PLAZA_SIZE; j < PLAZA_SIZE + 1; j++) {
-            grid[y + i][x + j] = 0;
+            const newY = y + i;
+            const newX = x + j;
+            // 배열 경계 체크 추가
+            if (newY >= 0 && newY < gridHeight && newX >= 0 && newX < gridWidth) {
+              grid[newY][newX] = 0;
+            }
           }
         }
       }

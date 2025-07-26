@@ -55,43 +55,82 @@ export default class BaseJob {
     /**
      * 쿨타임 메시지 표시
      */
-    showCooldownMessage() {
+    showCooldownMessage(message = '쿨타임 대기 중!') {
         if (this.player.cooldownMessageActive) return;
         
         this.player.cooldownMessageActive = true;
         
         const cooldownText = this.scene.add.text(
             this.player.x, 
-            this.player.y - 60, 
-            '쿨타임 대기 중!', 
+            this.player.y - 80, 
+            message, 
             {
-                fontSize: '16px',
-                fill: '#ffffff'
+                fontSize: '14px',
+                fill: '#ffff00',
+                stroke: '#000000',
+                strokeThickness: 2
             }
         ).setOrigin(0.5);
         
-        this.scene.time.delayedCall(500, () => {
+        this.scene.time.delayedCall(1500, () => {
             if (cooldownText.active) {
                 cooldownText.destroy();
             }
             this.player.cooldownMessageActive = false;
         });
+    }
+
+    /**
+     * 점프 기능 (모든 직업 공통)
+     */
+    useJump() {
+        // 이미 점프 중이거나 다른 플레이어면 실행하지 않음
+        if (this.player.isJumping || this.player.isOtherPlayer) {
+            return;
+        }
         
-        const positionTimer = this.scene.time.addEvent({
-            delay: 16,
-            callback: () => {
-                if (cooldownText.active) {
-                    cooldownText.setPosition(this.player.x, this.player.y - 60);
+        const originalY = this.player.y;
+        const originalNameY = this.player.nameText ? this.player.nameText.y : null;
+        
+        this.player.setVelocity(0);
+        this.player.isJumping = true;
+        
+        // 플레이어와 이름표를 함께 애니메이션
+        const targets = [this.player];
+        if (this.player.nameText) {
+            targets.push(this.player.nameText);
+        }
+        
+        this.scene.tweens.add({
+            targets: targets,
+            y: originalY - 50,
+            duration: 200,
+            yoyo: true,
+            ease: 'Power2',
+            onComplete: () => {
+                // 점프 완료 후 정확한 위치로 복원
+                this.player.y = originalY;
+                if (this.player.nameText && originalNameY !== null) {
+                    this.player.nameText.y = originalNameY;
                 }
-            },
-            loop: true
-        });
-        
-        this.scene.time.delayedCall(500, () => {
-            if (positionTimer) {
-                positionTimer.destroy();
+                this.player.isJumping = false;
+                
+                // 점프 완료 후 서버에 위치 동기화
+                if (this.player.networkManager) {
+                    this.player.networkManager.updatePlayerPosition(
+                        this.player.x, 
+                        this.player.y, 
+                        this.player.direction, 
+                        false
+                    );
+                }
             }
         });
+
+        // 네트워크 동기화
+        if (this.player.networkManager && !this.player.isOtherPlayer) {
+            this.player.networkManager.useSkill('jump');
+        }
     }
 
     /**

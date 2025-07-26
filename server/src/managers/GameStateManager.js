@@ -59,6 +59,10 @@ class GameStateManager {
    * 플레이어 상태 배열 조회
    */
   getPlayersState() {
+    // 만료된 액션들 정리
+    for (const player of this.players.values()) {
+      player.cleanupExpiredActions();
+    }
     return Array.from(this.players.values()).map(p => p.getState());
   }
 
@@ -101,7 +105,15 @@ class GameStateManager {
    * 적 상태 배열 조회
    */
   getEnemiesState() {
-    return Array.from(this.enemies.values()).map(e => e.getState());
+    return Array.from(this.enemies.values()).map(e => {
+      const state = e.getState();
+      // 적에게도 액션 상태 정보 추가 (필요시)
+      state.activeActions = {
+        jump: null,
+        skills: []
+      };
+      return state;
+    });
   }
 
   /**

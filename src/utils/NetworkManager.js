@@ -79,6 +79,10 @@ class NetworkManager {
             this.emit('player-skill-used', data);
         });
 
+        this.socket.on('skill-error', (data) => {
+            this.emit('skill-error', data);
+        });
+
         this.socket.on('player-level-up', (data) => {
             this.emit('player-level-up', data);
         });
@@ -141,13 +145,14 @@ class NetworkManager {
     }
 
     // 플레이어 위치 업데이트
-    updatePlayerPosition(x, y, direction, isJumping) {
+    updatePlayerPosition(x, y, direction, isJumping, additionalData = {}) {
         if (this.isConnected) {
             this.socket.emit('player-update', {
                 x: x,
                 y: y,
                 direction: direction,
-                isJumping: isJumping
+                isJumping: isJumping,
+                ...additionalData
             });
         }
     }
