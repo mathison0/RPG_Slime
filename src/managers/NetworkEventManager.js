@@ -856,7 +856,7 @@ export default class NetworkEventManager {
         const centerX = player.x;
         const centerY = player.y;
         const radius = 80; // 휩쓸기 범위
-        const angleOffset = Math.PI / 3; // 60도
+        const angleOffset = Math.PI / 2; // 90도
         
         const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
         const startAngle = angleToMouse - angleOffset;

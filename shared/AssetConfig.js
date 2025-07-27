@@ -81,7 +81,7 @@ const AssetConfig = {
     },
 
     // 지원되는 직업 목록
-    SUPPORTED_JOBS: ['slime', 'warrior', 'mage', 'assassin', 'mechanic', 'ninja'],
+    SUPPORTED_JOBS: ['slime', 'warrior', 'mage', 'assassin', 'mechanic', 'ninja', 'archer', 'supporter'],
 
     // 스프라이트 방향
     DIRECTIONS: ['front', 'back', 'left', 'right'],

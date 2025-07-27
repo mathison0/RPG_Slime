@@ -10,6 +10,8 @@ import MageJob from './jobs/MageJob.js';
 import AssassinJob from './jobs/AssassinJob.js';
 import WarriorJob from './jobs/WarriorJob.js';
 import MechanicJob from './jobs/MechanicJob.js';
+import ArcherJob from './jobs/ArcherJob.js';
+import SupporterJob from './jobs/SupporterJob.js';
 
 export default class Player extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y, team = 'red') {
@@ -88,6 +90,13 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.oneKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
         this.twoKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
         this.threeKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
+        
+        // 마우스 클릭 이벤트 설정
+        this.scene.input.on('pointerdown', (pointer) => {
+            if (pointer.leftButtonDown()) {
+                this.handleMouseClick(pointer.worldX, pointer.worldY);
+            }
+        });
     }
     
     /**
@@ -130,12 +139,18 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 case 'warrior':
                     this.job = new WarriorJob(this);
                     break;
-                case 'mechanic':
-                    this.job = new MechanicJob(this);
-                    break;
-                default:
-                    this.job = new SlimeJob(this);
-                    break;
+                            case 'mechanic':
+                this.job = new MechanicJob(this);
+                break;
+            case 'archer':
+                this.job = new ArcherJob(this);
+                break;
+            case 'supporter':
+                this.job = new SupporterJob(this);
+                break;
+            default:
+                this.job = new SlimeJob(this);
+                break;
             }
         } catch (error) {
             console.error('직업 생성 중 오류 발생:', error);
@@ -304,6 +319,24 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
+     * 마우스 클릭 처리
+     */
+    handleMouseClick(worldX, worldY) {
+        // 다른 플레이어면 실행하지 않음
+        if (this.isOtherPlayer) {
+            return;
+        }
+
+        // 원거리 기본 공격이 가능한 직업들
+        const rangedJobs = ['slime', 'ninja', 'archer', 'mage'];
+        
+        // 모든 직업이 기본 공격 사용 가능
+        if (this.job && this.job.useBasicAttack) {
+            this.job.useBasicAttack(worldX, worldY);
+        }
+    }
+
+    /**
      * 스킬 입력 처리
      */
     handleSkills() {
@@ -422,7 +455,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 직업 선택 UI (간단한 순환 방식)
      */
     showJobSelection() {
-        const jobs = ['slime', 'assassin', 'ninja', 'warrior', 'mage', 'mechanic'];
+        const jobs = ['slime', 'assassin', 'ninja', 'warrior', 'mage', 'mechanic', 'archer', 'supporter'];
         const currentIndex = jobs.indexOf(this.jobClass);
         const nextIndex = (currentIndex + 1) % jobs.length;
         this.changeJob(jobs[nextIndex]);
@@ -441,9 +474,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         if (this.scene.textures.exists(spriteKey)) {
             this.setTexture(spriteKey);
+            console.log(`스프라이트 업데이트: ${spriteKey} (${this.jobClass})`);
         } else {
             console.warn(`텍스처가 존재하지 않음: ${spriteKey}`);
-                this.createFallbackTexture();
+            this.createFallbackTexture();
         }
         
         this.updateCharacterSize();
@@ -631,6 +665,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.speed = this.originalSpeed;
             console.log(`속도 부스트 비활성화: ${this.speed}`);
         }
+        this.buffFieldActive = false;
     }
     
     // 네트워크 관련 메서드들
