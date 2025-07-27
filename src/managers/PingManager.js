@@ -78,6 +78,11 @@ export default class PingManager {
 
         // 미니맵에 핑 표시
         this.createMinimapPingArrow(x, y, 'local-ping');
+        
+        // 빅맵이 표시 중이면 빅맵도 업데이트
+        if (this.scene.minimapManager && this.scene.minimapManager.bigMapVisible) {
+            this.scene.minimapManager.drawBigMap();
+        }
     }
 
     /**
@@ -214,6 +219,11 @@ export default class PingManager {
         
         // 미니맵에 핑 표시
         this.createMinimapPingArrow(pingX, pingY, pingId);
+        
+        // 빅맵이 표시 중이면 빅맵도 업데이트
+        if (this.scene.minimapManager && this.scene.minimapManager.bigMapVisible) {
+            this.scene.minimapManager.drawBigMap();
+        }
     }
 
     /**
