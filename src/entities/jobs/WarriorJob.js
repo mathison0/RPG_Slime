@@ -146,31 +146,22 @@ export default class WarriorJob extends BaseJob {
         this.sweepGraphics.fillStyle(0xff0000, 0.3);
         this.sweepGraphics.lineStyle(2, 0xff0000, 1);
         
-        // 플레이어 방향에 따른 부채꼴 그리기
+        // 마우스 커서 위치 기준으로 부채꼴 그리기
         const centerX = this.player.x;
         const centerY = this.player.y;
         const radius = skillInfo.range;
         const angleOffset = Math.PI / 3; // 60도
         
-        let startAngle, endAngle;
-        switch (this.player.direction) {
-            case 'front':
-                startAngle = -angleOffset;
-                endAngle = angleOffset;
-                break;
-            case 'back':
-                startAngle = Math.PI - angleOffset;
-                endAngle = Math.PI + angleOffset;
-                break;
-            case 'left':
-                startAngle = Math.PI / 2 - angleOffset;
-                endAngle = Math.PI / 2 + angleOffset;
-                break;
-            case 'right':
-                startAngle = -Math.PI / 2 - angleOffset;
-                endAngle = -Math.PI / 2 + angleOffset;
-                break;
-        }
+        // 마우스 커서 위치 가져오기
+        const mouseX = this.scene.input.mousePointer.worldX;
+        const mouseY = this.scene.input.mousePointer.worldY;
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
+        
+        // 부채꼴의 시작과 끝 각도 계산
+        const startAngle = angleToMouse - angleOffset;
+        const endAngle = angleToMouse + angleOffset;
         
         this.sweepGraphics.beginPath();
         this.sweepGraphics.moveTo(centerX, centerY);
@@ -212,9 +203,8 @@ export default class WarriorJob extends BaseJob {
         // 네트워크 동기화
         if (this.player.networkManager && !this.player.isOtherPlayer) {
             this.player.networkManager.useSkill('sweep', {
-                direction: this.player.direction,
-                x: this.player.x,
-                y: this.player.y
+                targetX: this.scene.input.mousePointer.worldX,
+                targetY: this.scene.input.mousePointer.worldY
             });
         }
 
@@ -238,31 +228,32 @@ export default class WarriorJob extends BaseJob {
                 
                 // 휩쓸기 범위 내에 있으면 데미지 적용
                 if (distance <= skillInfo.range) {
-                    // 부채꼴 각도 체크
-                    const angle = Phaser.Math.Angle.Between(
+                    // 마우스 커서 위치 가져오기
+                    const mouseX = this.scene.input.mousePointer.worldX;
+                    const mouseY = this.scene.input.mousePointer.worldY;
+                    
+                    // 플레이어에서 마우스 커서까지의 각도 계산
+                    const angleToMouse = Phaser.Math.Angle.Between(
+                        this.player.x, this.player.y, 
+                        mouseX, mouseY
+                    );
+                    
+                    // 적까지의 각도 계산
+                    const angleToEnemy = Phaser.Math.Angle.Between(
                         this.player.x, this.player.y, 
                         enemy.x, enemy.y
                     );
                     
-                    let isInSweepAngle = false;
+                    // 각도 차이 계산 (360도 범위에서)
+                    let angleDiff = Math.abs(angleToMouse - angleToEnemy);
+                    // 360도 범위를 넘어가는 경우 처리
+                    if (angleDiff > Math.PI) {
+                        angleDiff = 2 * Math.PI - angleDiff;
+                    }
                     const angleOffset = Math.PI / 3; // 60도
                     
-                    switch (this.player.direction) {
-                        case 'front':
-                            isInSweepAngle = angle >= -angleOffset && angle <= angleOffset;
-                            break;
-                        case 'back':
-                            isInSweepAngle = angle >= Math.PI - angleOffset && angle <= Math.PI + angleOffset;
-                            break;
-                        case 'left':
-                            isInSweepAngle = angle >= Math.PI / 2 - angleOffset && angle <= Math.PI / 2 + angleOffset;
-                            break;
-                        case 'right':
-                            isInSweepAngle = angle >= -Math.PI / 2 - angleOffset && angle <= -Math.PI / 2 + angleOffset;
-                            break;
-                    }
-                    
-                    if (isInSweepAngle) {
+                    // 부채꼴 범위 내에 있는지 확인
+                    if (angleDiff <= angleOffset) {
                         enemy.takeDamage(damage);
                         console.log(`휩쓸기로 적에게 ${damage} 데미지!`);
                     }
@@ -320,39 +311,56 @@ export default class WarriorJob extends BaseJob {
         this.thrustGraphics.fillStyle(0xff0000, 0.3);
         this.thrustGraphics.lineStyle(2, 0xff0000, 1);
         
-        // 플레이어 방향에 따른 직사각형 그리기
+        // 플레이어 몸에서 마우스 커서 방향으로 직사각형 그리기
         const centerX = this.player.x;
         const centerY = this.player.y;
         const width = 40;
         const height = skillInfo.range;
         
-        let rectX, rectY;
-        switch (this.player.direction) {
-            case 'front':
-                rectX = centerX - width / 2;
-                rectY = centerY;
-                break;
-            case 'back':
-                rectX = centerX - width / 2;
-                rectY = centerY - height;
-                break;
-            case 'left':
-                rectX = centerX - height;
-                rectY = centerY - width / 2;
-                break;
-            case 'right':
-                rectX = centerX;
-                rectY = centerY - width / 2;
-                break;
-        }
+        // 마우스 커서 위치 가져오기
+        const mouseX = this.scene.input.mousePointer.worldX;
+        const mouseY = this.scene.input.mousePointer.worldY;
         
-        if (this.player.direction === 'left' || this.player.direction === 'right') {
-            this.thrustGraphics.fillRect(rectX, rectY, height, width);
-            this.thrustGraphics.strokeRect(rectX, rectY, height, width);
-        } else {
-            this.thrustGraphics.fillRect(rectX, rectY, width, height);
-            this.thrustGraphics.strokeRect(rectX, rectY, width, height);
-        }
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
+        
+        // 직사각형의 시작점 (플레이어 위치에서 아래변 중심)
+        const startX = centerX;
+        const startY = centerY;
+        
+        // 직사각형의 끝점 (마우스 방향으로 height만큼 이동한 윗변 중심)
+        const endX = centerX + Math.cos(angleToMouse) * height;
+        const endY = centerY + Math.sin(angleToMouse) * height;
+        
+        // 직사각형의 네 꼭지점 계산
+        const halfWidth = width / 2;
+        
+        // width 방향의 수직 벡터 계산 (마우스 방향에 수직)
+        const perpendicularAngle = angleToMouse + Math.PI / 2;
+        const widthVectorX = Math.cos(perpendicularAngle) * halfWidth;
+        const widthVectorY = Math.sin(perpendicularAngle) * halfWidth;
+        
+        // 아래변의 두 꼭지점 (플레이어 위치에서)
+        const bottomLeftX = startX - widthVectorX;
+        const bottomLeftY = startY - widthVectorY;
+        const bottomRightX = startX + widthVectorX;
+        const bottomRightY = startY + widthVectorY;
+        
+        // 윗변의 두 꼭지점 (마우스 방향으로)
+        const topLeftX = endX - widthVectorX;
+        const topLeftY = endY - widthVectorY;
+        const topRightX = endX + widthVectorX;
+        const topRightY = endY + widthVectorY;
+        
+        // 직사각형 그리기 (플레이어에서 마우스 방향으로)
+        this.thrustGraphics.beginPath();
+        this.thrustGraphics.moveTo(bottomLeftX, bottomLeftY);
+        this.thrustGraphics.lineTo(topLeftX, topLeftY);
+        this.thrustGraphics.lineTo(topRightX, topRightY);
+        this.thrustGraphics.lineTo(bottomRightX, bottomRightY);
+        this.thrustGraphics.closePath();
+        this.thrustGraphics.fill();
+        this.thrustGraphics.stroke();
         
         // 찌르기 애니메이션
         this.scene.tweens.add({
@@ -387,9 +395,8 @@ export default class WarriorJob extends BaseJob {
         // 네트워크 동기화
         if (this.player.networkManager && !this.player.isOtherPlayer) {
             this.player.networkManager.useSkill('thrust', {
-                direction: this.player.direction,
-                x: this.player.x,
-                y: this.player.y
+                targetX: this.scene.input.mousePointer.worldX,
+                targetY: this.scene.input.mousePointer.worldY
             });
         }
 
@@ -413,33 +420,42 @@ export default class WarriorJob extends BaseJob {
                 
                 // 찌르기 범위 내에 있으면 데미지 적용
                 if (distance <= skillInfo.range) {
-                    // 직사각형 각도 체크
-                    const angle = Phaser.Math.Angle.Between(
+                    // 마우스 커서 위치 가져오기
+                    const mouseX = this.scene.input.mousePointer.worldX;
+                    const mouseY = this.scene.input.mousePointer.worldY;
+                    
+                    // 플레이어에서 마우스 커서까지의 각도 계산
+                    const angleToMouse = Phaser.Math.Angle.Between(
+                        this.player.x, this.player.y, 
+                        mouseX, mouseY
+                    );
+                    
+                    // 적까지의 각도 계산
+                    const angleToEnemy = Phaser.Math.Angle.Between(
                         this.player.x, this.player.y, 
                         enemy.x, enemy.y
                     );
                     
-                    let isInThrustAngle = false;
+                    // 각도 차이 계산 (360도 범위에서)
+                    let angleDiff = Math.abs(angleToMouse - angleToEnemy);
+                    // 360도 범위를 넘어가는 경우 처리
+                    if (angleDiff > Math.PI) {
+                        angleDiff = 2 * Math.PI - angleDiff;
+                    }
                     const angleTolerance = Math.PI / 6; // 30도
                     
-                    switch (this.player.direction) {
-                        case 'front':
-                            isInThrustAngle = Math.abs(angle) <= angleTolerance;
-                            break;
-                        case 'back':
-                            isInThrustAngle = Math.abs(angle - Math.PI) <= angleTolerance;
-                            break;
-                        case 'left':
-                            isInThrustAngle = Math.abs(angle - Math.PI / 2) <= angleTolerance;
-                            break;
-                        case 'right':
-                            isInThrustAngle = Math.abs(angle + Math.PI / 2) <= angleTolerance;
-                            break;
-                    }
-                    
-                    if (isInThrustAngle) {
-                        enemy.takeDamage(damage);
-                        console.log(`찌르기로 적에게 ${damage} 데미지!`);
+                    // 직사각형 범위 내에 있는지 확인 (플레이어에서 마우스 방향으로)
+                    if (angleDiff <= angleTolerance) {
+                        // 적이 플레이어에서 마우스 방향으로 직사각형 범위 내에 있는지 추가 확인
+                        const distanceFromPlayer = Phaser.Math.Distance.Between(
+                            this.player.x, this.player.y, 
+                            enemy.x, enemy.y
+                        );
+                        
+                        if (distanceFromPlayer <= skillInfo.range) {
+                            enemy.takeDamage(damage);
+                            console.log(`찌르기로 적에게 ${damage} 데미지!`);
+                        }
                     }
                 }
             }

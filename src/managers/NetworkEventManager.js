@@ -501,6 +501,15 @@ export default class NetworkEventManager {
             case 'charge':
                 this.showChargeEffect(player, data);
                 break;
+            case 'roar':
+                this.showRoarEffect(player, data);
+                break;
+            case 'sweep':
+                this.showSweepEffect(player, data);
+                break;
+            case 'thrust':
+                this.showThrustEffect(player, data);
+                break;
         }
     }
 
@@ -573,6 +582,193 @@ export default class NetworkEventManager {
                     player.isJumping = false;
                     player.updateNameTextPosition();
                 }
+            }
+        });
+    }
+
+    /**
+     * 울부짖기 이펙트
+     */
+    showRoarEffect(player, data = null) {
+        // 울부짖기 스프라이트로 변경
+        player.setTexture('warrior_skill');
+        
+        // 울부짖기 효과 메시지
+        const roarText = this.scene.add.text(
+            player.x, 
+            player.y - 80, 
+            '울부짖기!', 
+            {
+                fontSize: '18px',
+                fill: '#ff0000',
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5);
+        
+        // 1초 후 원래 스프라이트로 복원
+        this.scene.time.delayedCall(1000, () => {
+            if (roarText.active) {
+                roarText.destroy();
+            }
+            if (player.active) {
+                player.updateJobSprite();
+            }
+        });
+    }
+
+    /**
+     * 휩쓸기 이펙트
+     */
+    showSweepEffect(player, data = null) {
+        // 휩쓸기 시각적 효과
+        player.setTint(0xff0000);
+        
+        // 마우스 커서 위치 가져오기 (서버 데이터에서)
+        const mouseX = data?.targetX || player.x;
+        const mouseY = data?.targetY || player.y;
+        
+        // 부채꼴 모양의 휩쓸기 그래픽 생성
+        const sweepGraphics = this.scene.add.graphics();
+        sweepGraphics.fillStyle(0xff0000, 0.3);
+        sweepGraphics.lineStyle(2, 0xff0000, 1);
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const centerX = player.x;
+        const centerY = player.y;
+        const radius = 80; // 휩쓸기 범위
+        const angleOffset = Math.PI / 3; // 60도
+        
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
+        const startAngle = angleToMouse - angleOffset;
+        const endAngle = angleToMouse + angleOffset;
+        
+        sweepGraphics.beginPath();
+        sweepGraphics.moveTo(centerX, centerY);
+        sweepGraphics.arc(centerX, centerY, radius, startAngle, endAngle);
+        sweepGraphics.closePath();
+        sweepGraphics.fill();
+        sweepGraphics.stroke();
+        
+        // 휩쓸기 애니메이션
+        this.scene.tweens.add({
+            targets: sweepGraphics,
+            alpha: 0,
+            duration: 500,
+            onComplete: () => {
+                sweepGraphics.destroy();
+                if (player.active) {
+                    player.clearTint();
+                }
+            }
+        });
+        
+        // 휩쓸기 효과 메시지
+        const sweepText = this.scene.add.text(
+            player.x, 
+            player.y - 60, 
+            '휩쓸기!', 
+            {
+                fontSize: '16px',
+                fill: '#ff0000'
+            }
+        ).setOrigin(0.5);
+        
+        this.scene.time.delayedCall(1000, () => {
+            if (sweepText.active) {
+                sweepText.destroy();
+            }
+        });
+    }
+
+    /**
+     * 찌르기 이펙트
+     */
+    showThrustEffect(player, data = null) {
+        // 찌르기 시각적 효과
+        player.setTint(0xff0000);
+        
+        // 마우스 커서 위치 가져오기 (서버 데이터에서)
+        const mouseX = data?.targetX || player.x;
+        const mouseY = data?.targetY || player.y;
+        
+        // 직사각형 모양의 찌르기 그래픽 생성
+        const thrustGraphics = this.scene.add.graphics();
+        thrustGraphics.fillStyle(0xff0000, 0.3);
+        thrustGraphics.lineStyle(2, 0xff0000, 1);
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const centerX = player.x;
+        const centerY = player.y;
+        const width = 40;
+        const height = 120; // 찌르기 범위
+        
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
+        
+        // 직사각형의 시작점 (플레이어 위치에서 아래변 중심)
+        const startX = centerX;
+        const startY = centerY;
+        
+        // 직사각형의 끝점 (마우스 방향으로 height만큼 이동한 윗변 중심)
+        const endX = centerX + Math.cos(angleToMouse) * height;
+        const endY = centerY + Math.sin(angleToMouse) * height;
+        
+        // 직사각형의 네 꼭지점 계산
+        const halfWidth = width / 2;
+        
+        // width 방향의 수직 벡터 계산 (마우스 방향에 수직)
+        const perpendicularAngle = angleToMouse + Math.PI / 2;
+        const widthVectorX = Math.cos(perpendicularAngle) * halfWidth;
+        const widthVectorY = Math.sin(perpendicularAngle) * halfWidth;
+        
+        // 아래변의 두 꼭지점 (플레이어 위치에서)
+        const bottomLeftX = startX - widthVectorX;
+        const bottomLeftY = startY - widthVectorY;
+        const bottomRightX = startX + widthVectorX;
+        const bottomRightY = startY + widthVectorY;
+        
+        // 윗변의 두 꼭지점 (마우스 방향으로)
+        const topLeftX = endX - widthVectorX;
+        const topLeftY = endY - widthVectorY;
+        const topRightX = endX + widthVectorX;
+        const topRightY = endY + widthVectorY;
+        
+        // 직사각형 그리기 (플레이어에서 마우스 방향으로)
+        thrustGraphics.beginPath();
+        thrustGraphics.moveTo(bottomLeftX, bottomLeftY);
+        thrustGraphics.lineTo(topLeftX, topLeftY);
+        thrustGraphics.lineTo(topRightX, topRightY);
+        thrustGraphics.lineTo(bottomRightX, bottomRightY);
+        thrustGraphics.closePath();
+        thrustGraphics.fill();
+        thrustGraphics.stroke();
+        
+        // 찌르기 애니메이션
+        this.scene.tweens.add({
+            targets: thrustGraphics,
+            alpha: 0,
+            duration: 800,
+            onComplete: () => {
+                thrustGraphics.destroy();
+                if (player.active) {
+                    player.clearTint();
+                }
+            }
+        });
+        
+        // 찌르기 효과 메시지
+        const thrustText = this.scene.add.text(
+            player.x, 
+            player.y - 60, 
+            '찌르기!', 
+            {
+                fontSize: '16px',
+                fill: '#ff0000'
+            }
+        ).setOrigin(0.5);
+        
+        this.scene.time.delayedCall(1000, () => {
+            if (thrustText.active) {
+                thrustText.destroy();
             }
         });
     }
