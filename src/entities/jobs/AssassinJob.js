@@ -16,7 +16,7 @@ export default class AssassinJob extends BaseJob {
         
         // 기본 공격 관련
         this.lastBasicAttackTime = 0;
-        this.basicAttackCooldown = 400; // 기본 공격 쿨다운 (밀리초)
+        this.basicAttackCooldown = 300; // 기본 공격 쿨다운 (밀리초) - 어쌔신은 빠른 연속 공격
     }
 
     useSkill(skillNumber, options = {}) {
@@ -149,7 +149,7 @@ export default class AssassinJob extends BaseJob {
         return true;
     }
 
-    // 어쌔신용 근접 공격
+    // 어쌔신용 근접 공격 (연속 공격)
     useMeleeAttack(targetX, targetY) {
         // 부채꼴 공격 범위 설정
         const attackRange = 40;
@@ -166,8 +166,15 @@ export default class AssassinJob extends BaseJob {
         const startAngle = angleToMouse - angleOffset;
         const endAngle = angleToMouse + angleOffset;
         
+        // 첫 번째 공격
         this.createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, attackRange);
-        this.performMeleeAttack(centerX, centerY, startAngle, endAngle, attackRange);
+        this.performMeleeAttack(centerX, centerY, startAngle, endAngle, attackRange, 0.5);
+        
+        // 두 번째 공격 (150ms 후)
+        this.player.scene.time.delayedCall(150, () => {
+            this.createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, attackRange);
+            this.performMeleeAttack(centerX, centerY, startAngle, endAngle, attackRange, 0.5);
+        });
         
         return true;
     }
@@ -197,7 +204,7 @@ export default class AssassinJob extends BaseJob {
         });
     }
 
-    performMeleeAttack(centerX, centerY, startAngle, endAngle, radius) {
+    performMeleeAttack(centerX, centerY, startAngle, endAngle, radius, damageMultiplier = 1.0) {
         // 적과의 부채꼴 근접 공격
         if (this.player.scene.enemies) {
             this.player.scene.enemies.getChildren().forEach(enemy => {
@@ -208,11 +215,12 @@ export default class AssassinJob extends BaseJob {
                         const angleToEnemy = Phaser.Math.Angle.Between(centerX, centerY, enemy.x, enemy.y);
                         if (this.isAngleInRange(angleToEnemy, startAngle, endAngle)) {
                             // 데미지 계산 (은신 보너스 포함)
-                            const damage = this.getAttackDamage();
+                            const baseDamage = this.getAttackDamage();
+                            const damage = Math.floor(baseDamage * damageMultiplier);
                             enemy.takeDamage(damage);
                             
                             const jobName = this.player.jobClass === 'ninja' ? '닌자' : '어쌔신';
-                            console.log(`${jobName} 부채꼴 근접 공격으로 ${damage} 데미지`);
+                            console.log(`${jobName} 부채꼴 근접 공격으로 ${damage} 데미지 (${damageMultiplier}배)`);
                         }
                     }
                 }
@@ -229,11 +237,12 @@ export default class AssassinJob extends BaseJob {
                         const angleToPlayer = Phaser.Math.Angle.Between(centerX, centerY, otherPlayer.x, otherPlayer.y);
                         if (this.isAngleInRange(angleToPlayer, startAngle, endAngle)) {
                             // 데미지 계산 (은신 보너스 포함)
-                            const damage = this.getAttackDamage();
+                            const baseDamage = this.getAttackDamage();
+                            const damage = Math.floor(baseDamage * damageMultiplier);
                             otherPlayer.takeDamage(damage);
                             
                             const jobName = this.player.jobClass === 'ninja' ? '닌자' : '어쌔신';
-                            console.log(`${jobName} 부채꼴 근접 공격으로 ${otherPlayer.nameText?.text || '적'}에게 ${damage} 데미지`);
+                            console.log(`${jobName} 부채꼴 근접 공격으로 ${otherPlayer.nameText?.text || '적'}에게 ${damage} 데미지 (${damageMultiplier}배)`);
                         }
                     }
                 }

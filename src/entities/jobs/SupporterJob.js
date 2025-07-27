@@ -297,7 +297,7 @@ export default class SupporterJob extends BaseJob {
         this.lastBasicAttackTime = currentTime;
         
         // 부채꼴 공격 범위 설정
-        const attackRange = 35;
+        const attackRange = 55;
         const angleOffset = Math.PI / 6; // 30도 (π/6)
         
         // 마우스 커서 위치 기준으로 부채꼴 공격
