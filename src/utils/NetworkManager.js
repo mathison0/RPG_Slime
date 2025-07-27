@@ -114,6 +114,26 @@ class NetworkManager {
         this.socket.on('player-ping', (data) => {
             this.emit('player-ping', data);
         });
+
+        this.socket.on('spawn-barrier-damage', (data) => {
+            this.emit('spawn-barrier-damage', data);
+        });
+
+        this.socket.on('player-died', (data) => {
+            this.emit('player-died', data);
+        });
+
+        this.socket.on('player-respawned', (data) => {
+            this.emit('player-respawned', data);
+        });
+
+        this.socket.on('player-state-sync', (data) => {
+            this.emit('player-state-sync', data);
+        });
+
+        this.socket.on('ward-destroyed', (data) => {
+            this.emit('ward-destroyed', data);
+        });
     }
 
     // 게임 입장

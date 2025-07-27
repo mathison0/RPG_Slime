@@ -1,5 +1,6 @@
 import BaseJob from './BaseJob.js';
-import { getJobInfo } from '../../../shared/JobClasses.js';
+// JobClasses functions available via window.JobClassesModule
+const { getJobInfo } = window.JobClassesModule;
 
 /**
  * 마법사 직업 클래스
@@ -148,7 +149,9 @@ export default class MageJob extends BaseJob {
         ward.destroyWard = destroyWard;
         
         // 와드 설치 후 충돌 설정 업데이트
-        this.scene.setupCollisions();
+        if (this.scene.mapManager && typeof this.scene.mapManager.setupCollisions === 'function') {
+            this.scene.mapManager.setupCollisions();
+        }
 
         // 네트워크 동기화
         if (this.player.networkManager && !this.player.isOtherPlayer) {
@@ -308,11 +311,8 @@ export default class MageJob extends BaseJob {
         // 네트워크 동기화
         if (this.player.networkManager && !this.player.isOtherPlayer) {
             this.player.networkManager.useSkill('magic_missile', {
-                startX: this.player.x,
-                startY: this.player.y,
                 targetX: worldPoint.x,
-                targetY: worldPoint.y,
-                maxRange: skillInfo.range
+                targetY: worldPoint.y
             });
         }
 

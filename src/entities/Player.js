@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { getJobInfo, calculateStats } from '../../shared/JobClasses.js';
+// JobClasses functions available via window.JobClassesModule
+const { getJobInfo, calculateStats } = window.JobClassesModule;
 import AssetLoader from '../utils/AssetLoader.js';
 import SkillCooldownUI from '../ui/SkillCooldownUI.js';
 import EffectManager from '../effects/EffectManager.js';
@@ -52,6 +53,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.isJumping = false;
         this.team = team;
         this.isInvincible = false;
+        this.isDead = false; // 사망 상태
         this.visionRange = 300;
         this.minimapVisionRange = 200;
         
@@ -65,6 +67,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.effectManager = new EffectManager(scene);
         this.skillCooldownUI = null;
         this.cooldownMessageActive = false;
+        
+        // 디버그 관련
+        this.debugMode = false;
+        this.debugGraphics = null;
+        this.spriteDebugBox = null;
+        this.bodyDebugBox = null;
         
         // 초기 설정
         this.initializeCharacter();
@@ -88,6 +96,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.oneKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
         this.twoKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
         this.threeKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
+        this.tKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T); // 디버그 토글
     }
     
     /**
@@ -154,18 +163,26 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.visionRange = stats.visionRange;
     }
     
-    /**
-     * 크기 계산 및 업데이트
-     */
-    calculateColliderSize() {
-        return this.size + 450;
-    }
+
     
     updateSize() {
+        // 화면 표시 크기와 물리적 충돌 크기를 동일하게 설정
         this.setDisplaySize(this.size, this.size);
-        this.colliderSize = this.calculateColliderSize();
+        this.colliderSize = this.size; // 스프라이트 크기와 동일하게 설정
+        
         if (this.body) {
-            this.body.setSize(this.colliderSize, this.colliderSize);
+            const bodyWidth = this.colliderSize / this.scaleX;
+            const bodyHeight = this.colliderSize / this.scaleY;
+            
+            this.body.setSize(bodyWidth, bodyHeight);
+            
+            // 충돌 박스를 스프라이트 중앙에 맞추기 위한 오프셋 계산
+            this.body.setOffset(0, 0);
+        }
+        
+        // 디버그 박스 업데이트
+        if (this.debugMode) {
+            this.updateDebugBoxes();
         }
     }
     
@@ -185,20 +202,23 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 캐릭터 크기를 레벨에 따라 업데이트 (서버 설정 반영)
+     * 캐릭터 크기를 균등하게 업데이트 (모든 직업 동일 크기 적용)
      */
     updateCharacterSize() {
-        // 서버 설정에서 기본 크기를 가져오고, 없으면 기본값 사용
-        const dynamicPlayerSize = AssetLoader.getDynamicPlayerSize();
-        const baseSize = dynamicPlayerSize.WIDTH * 0.5; // 기본 크기의 절반에서 시작
-        const growthRate = 1;
-        const maxSize = dynamicPlayerSize.WIDTH; // 서버 설정의 최대 크기 사용
+        // 표준화된 플레이어 크기 설정을 가져온다
+        const sizeConfig = AssetLoader.getDynamicPlayerSize();
+        
+        // 레벨에 따른 크기 증가 (모든 직업 동일한 비율로 적용)
+        const baseSize = sizeConfig.MIN_SIZE; // 최소 크기에서 시작
+        const growthRate = sizeConfig.GROWTH_RATE; // 설정된 성장률
+        const maxSize = sizeConfig.MAX_SIZE; // 설정된 최대 크기
         
         const targetSize = baseSize + (this.level - 1) * growthRate;
         const finalSize = Math.min(targetSize, maxSize);
         
         this.size = finalSize;
-        AssetLoader.adjustSpriteSize(this, finalSize, finalSize);
+        
+        // 직접 크기 설정 (AssetLoader.adjustSpriteSize 대신)
         this.updateSize();
     }
     
@@ -227,12 +247,23 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         }
         
         this.updateNameTextPosition();
+        
+        // 디버그 박스 업데이트
+        if (this.debugMode) {
+            this.updateDebugBoxes();
+        }
     }
     
     /**
      * 이동 처리
      */
     handleMovement() {
+        // 죽은 상태에서는 이동 불가
+        if (this.isDead) {
+            this.setVelocity(0);
+            return;
+        }
+        
         const speed = this.speed;
         this.setVelocity(0);
         
@@ -295,6 +326,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 스킬 입력 처리
      */
     handleSkills() {
+        // 죽은 상태에서는 스킬과 점프 사용 불가
+        if (this.isDead) {
+            return;
+        }
+
         // 스페이스바로 점프 (모든 직업 공통)
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
             if (this.job) {
@@ -337,37 +373,64 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (Phaser.Input.Keyboard.JustDown(this.lKey)) {
             this.testLevelUp();
         }
+        
+        // T키로 디버그 모드 토글
+        if (Phaser.Input.Keyboard.JustDown(this.tKey)) {
+            this.toggleDebugMode();
+        }
     }
   
-    /**
+        /**
      * 벽 충돌 처리
      */
     handleWallCollision(player, wall) {
         const body = player.body;
         if (!body) return true;
 
-        const slideThreshold = 10;
+        const slideThreshold = body.width / 4;
         const velocity = body.velocity;
         const intersection = Phaser.Geom.Intersects.GetRectangleIntersection(body, wall.getBounds());
         const overlapX = intersection.width;
         const overlapY = intersection.height;
 
-        if (velocity.x !== 0 && overlapY > 0 && overlapY < slideThreshold) {
-            if (body.y < wall.y) {
+        const wallBounds = wall.getBounds();
+        
+        // 수평 이동 시: 플레이어 중심축에서 벽의 위/아래 가장자리까지의 거리 확인
+        if (velocity.x !== 0 && overlapY > 0) {
+            const thresholdTop = wallBounds.top + slideThreshold;
+            const thresholdBottom = wallBounds.bottom - slideThreshold;
+            const moveX = velocity.x > 0 ? 1 : -1;
+            
+            if (body.y + body.height < thresholdTop) {
                 player.y -= overlapY;
-            } else {
+                player.x += moveX;
+                console.log('벽 충돌 처리1');
+                return false;
+            } else if (body.y > thresholdBottom) {
                 player.y += overlapY;
+                player.x += moveX;
+                console.log('벽 충돌 처리2');
+                return false;
             }
-            return false;
         }
 
-        if (velocity.y !== 0 && overlapX > 0 && overlapX < slideThreshold) {
-            if (body.x < wall.x) {
+        // 수직 이동 시: 플레이어 중심축에서 벽의 좌/우 가장자리까지의 거리 확인
+        if (velocity.y !== 0 && overlapX > 0) {
+            const thresholdLeft = wallBounds.left + slideThreshold;
+            const thresholdRight = wallBounds.right - slideThreshold;
+            const moveY = velocity.y > 0 ? 1 : -1;
+            
+            if (body.x + body.width < thresholdLeft) {
                 player.x -= overlapX;
-                            } else {
+                player.y += moveY;
+                console.log('벽 충돌 처리3');
+                return false;
+            } else if (body.x > thresholdRight) {
                 player.x += overlapX;
+                player.y += moveY;
+                console.log('벽 충돌 처리4');
+                return false;
             }
-            return false;
         }
         
         return true;
@@ -483,6 +546,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 데미지 받기
      */
     takeDamage(damage) {
+        if (this.isDead) {
+            return; // 이미 죽은 상태면 데미지 받지 않음
+        }
+        
         if (this.isInvincible) {
             this.effectManager.showMessage(this.x, this.y - 30, '무적!', { fill: '#00ff00' });
             return;
@@ -497,6 +564,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.updateUI();
         
         if (this.hp <= 0) {
+            this.isDead = true;
             this.die();
         }
     }
@@ -540,7 +608,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 사망 처리
      */
     die() {
-        this.scene.scene.restart();
+        // 새로운 사망 처리 로직 사용
+        this.scene.handlePlayerDeath('direct');
     }
     
     /**
@@ -569,13 +638,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.originalSpeed = this.speed;
         }
         this.speed = this.originalSpeed * multiplier;
-        console.log(`속도 부스트 활성화: ${this.originalSpeed} -> ${this.speed}`);
     }
     
     deactivateSpeedBoost() {
         if (this.originalSpeed) {
             this.speed = this.originalSpeed;
-            console.log(`속도 부스트 비활성화: ${this.speed}`);
         }
     }
     
@@ -647,25 +714,141 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     setPosition(x, y) {
         super.setPosition(x, y);
         this.updateNameTextPosition();
+        if (this.debugMode) {
+            this.updateDebugBoxes();
+        }
         return this;
     }
     
     setX(x) {
         super.setX(x);
         this.updateNameTextPosition();
+        if (this.debugMode) {
+            this.updateDebugBoxes();
+        }
         return this;
     }
     
     setY(y) {
         super.setY(y);
         this.updateNameTextPosition();
+        if (this.debugMode) {
+            this.updateDebugBoxes();
+        }
         return this;
+    }
+
+    /**
+     * 디버그 모드 토글
+     */
+    toggleDebugMode() {
+        this.debugMode = !this.debugMode;
+        
+        if (this.debugMode) {
+            this.createDebugBoxes();
+            this.effectManager.showMessage(this.x, this.y - 120, '디버그 모드 ON', { fill: '#00ffff' });
+        } else {
+            this.destroyDebugBoxes();
+            this.effectManager.showMessage(this.x, this.y - 120, '디버그 모드 OFF', { fill: '#888888' });
+        }
+    }
+    
+    /**
+     * 디버그 박스 생성
+     */
+    createDebugBoxes() {
+        this.destroyDebugBoxes(); // 기존 박스 제거
+        
+        // 스프라이트 크기 박스 (파란색)
+        this.spriteDebugBox = this.scene.add.graphics();
+        this.spriteDebugBox.lineStyle(2, 0x0088ff);
+        this.spriteDebugBox.setDepth(1000);
+        
+        // 물리 바디 크기 박스 (빨간색)
+        this.bodyDebugBox = this.scene.add.graphics();
+        this.bodyDebugBox.lineStyle(2, 0xff0088);
+        this.bodyDebugBox.setDepth(1001);
+        
+        this.updateDebugBoxes();
+    }
+    
+    /**
+     * 디버그 박스 업데이트
+     */
+    updateDebugBoxes() {
+        if (!this.spriteDebugBox || !this.bodyDebugBox) return;
+        
+        // 스프라이트 크기 박스 (파란색) - 실제 표시되는 크기
+        this.spriteDebugBox.clear();
+        this.spriteDebugBox.lineStyle(2, 0x0088ff);
+        const spriteX = this.x - this.displayWidth / 2;
+        const spriteY = this.y - this.displayHeight / 2;
+        this.spriteDebugBox.strokeRect(spriteX, spriteY, this.displayWidth, this.displayHeight);
+        
+        // 물리 바디 크기 박스 (빨간색) - 충돌 판정 크기
+        this.bodyDebugBox.clear();
+        this.bodyDebugBox.lineStyle(2, 0xff0088);
+        if (this.body) {
+            this.bodyDebugBox.strokeRect(this.body.x, this.body.y, this.body.width, this.body.height);
+        }
+        
+        // 디버그 정보 텍스트 업데이트
+        this.updateDebugInfo();
+    }
+    
+    /**
+     * 디버그 정보 텍스트 업데이트
+     */
+    updateDebugInfo() {
+        if (!this.debugMode) return;
+        
+        // 기존 디버그 텍스트 제거
+        if (this.debugText) {
+            this.debugText.destroy();
+        }
+        
+        // 디버그 정보 생성
+        const spriteInfo = `스프라이트: ${this.displayWidth}x${this.displayHeight}`;
+        const bodyInfo = this.body ? `물리바디: ${this.body.width}x${this.body.height}` : '물리바디: 없음';
+        const offsetInfo = this.body ? `오프셋: ${this.body.offset.x}, ${this.body.offset.y}` : '오프셋: 없음';
+        const debugInfo = `${spriteInfo}\n${bodyInfo}\n${offsetInfo}`;
+        
+        this.debugText = this.scene.add.text(this.x + 50, this.y - 40, debugInfo, {
+            fontSize: '10px',
+            fill: '#ffffff',
+            backgroundColor: '#000000',
+            padding: { x: 4, y: 4 }
+        }).setOrigin(0);
+        
+        this.debugText.setDepth(1002);
+    }
+    
+    /**
+     * 디버그 박스 제거
+     */
+    destroyDebugBoxes() {
+        if (this.spriteDebugBox) {
+            this.spriteDebugBox.destroy();
+            this.spriteDebugBox = null;
+        }
+        
+        if (this.bodyDebugBox) {
+            this.bodyDebugBox.destroy();
+            this.bodyDebugBox = null;
+        }
+        
+        if (this.debugText) {
+            this.debugText.destroy();
+            this.debugText = null;
+        }
     }
 
     /**
      * 정리 작업
      */
     destroy() {
+        this.destroyDebugBoxes();
+        
         if (this.nameText) {
             this.nameText.destroy();
         }

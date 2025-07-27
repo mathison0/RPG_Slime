@@ -327,15 +327,4 @@ if (typeof module !== 'undefined' && module.exports) {
         getSkillInfo,
         createSkillTypeMap
     };
-}
-
-// ES6 export (번들러용)
-export {
-    JobClasses,
-    JobRequirements,
-    getJobInfo,
-    canChangeJob,
-    calculateStats,
-    getSkillInfo,
-    createSkillTypeMap
-}; 
+} 
