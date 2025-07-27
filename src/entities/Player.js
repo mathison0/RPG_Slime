@@ -115,26 +115,33 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         }
         
         // 새로운 직업 인스턴스 생성
-        switch (this.jobClass) {
-            case 'slime':
-                this.job = new SlimeJob(this);
-                break;
-            case 'mage':
-                this.job = new MageJob(this);
-                break;
-            case 'assassin':
-            case 'ninja':
-                this.job = new AssassinJob(this);
-                break;
-            case 'warrior':
-                this.job = new WarriorJob(this);
-                break;
-            case 'mechanic':
-                this.job = new MechanicJob(this);
-                break;
-            default:
-                this.job = new SlimeJob(this);
-                break;
+        try {
+            switch (this.jobClass) {
+                case 'slime':
+                    this.job = new SlimeJob(this);
+                    break;
+                case 'mage':
+                    this.job = new MageJob(this);
+                    break;
+                case 'assassin':
+                case 'ninja':
+                    this.job = new AssassinJob(this);
+                    break;
+                case 'warrior':
+                    this.job = new WarriorJob(this);
+                    break;
+                case 'mechanic':
+                    this.job = new MechanicJob(this);
+                    break;
+                default:
+                    this.job = new SlimeJob(this);
+                    break;
+            }
+        } catch (error) {
+            console.error('직업 생성 중 오류 발생:', error);
+            // 오류 발생 시 기본 슬라임으로 폴백
+            this.jobClass = 'slime';
+            this.job = new SlimeJob(this);
         }
         
         // 레벨에 따른 스탯 재계산

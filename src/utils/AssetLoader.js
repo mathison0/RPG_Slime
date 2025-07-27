@@ -287,5 +287,5 @@ export default class AssetLoader {
     
     static getDynamicPlayerSize() {
         return getDynamicPlayerSize();
-    }
+ㅈ    }
 } 
