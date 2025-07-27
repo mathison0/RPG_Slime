@@ -130,6 +130,13 @@ export default class WarriorJob extends BaseJob {
             });
         }
 
+        // 휩쓸기 상태 자동 해제 (500ms 후)
+        this.player.scene.time.delayedCall(500, () => {
+            if (this.isSweeping) {
+                this.endSweep();
+            }
+        });
+
         console.log('휩쓸기 발동!');
     }
 
