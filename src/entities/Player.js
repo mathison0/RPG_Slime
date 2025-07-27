@@ -427,6 +427,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 스프라이트 업데이트
      */
     updateJobSprite() {
+        // 스킬 사용 중일 때는 스프라이트 변경하지 않음
+        if (this.isUsingSlimeSkill || this.isUsingRoarSkill) {
+            return;
+        }
+        
         const spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
         
         if (this.scene.textures.exists(spriteKey)) {
@@ -710,6 +715,24 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 정리 작업
      */
     destroy() {
+        // 스킬 이펙트 타이머 정리
+        if (this.roarEffectTimer) {
+            this.scene.time.removeEvent(this.roarEffectTimer);
+            this.roarEffectTimer = null;
+        }
+        
+        // 슬라임 스킬 타이머 정리
+        if (this.slimeSkillTimer) {
+            this.scene.time.removeEvent(this.slimeSkillTimer);
+            this.slimeSkillTimer = null;
+        }
+        
+        // 슬라임 스킬 이펙트 정리
+        if (this.slimeSkillEffect) {
+            this.slimeSkillEffect.destroy();
+            this.slimeSkillEffect = null;
+        }
+        
         if (this.nameText) {
             this.nameText.destroy();
         }

@@ -58,7 +58,7 @@ export default class WarriorJob extends BaseJob {
         
         const skillInfo = this.jobInfo.skills[0]; // 울부짖기 스킬
         
-        // 쿨타임 설정
+        // 쿨타임 설정 (즉시 설정)
         this.setSkillCooldown(skillKey, skillInfo.cooldown);
         
         // 울부짖기 상태 활성화

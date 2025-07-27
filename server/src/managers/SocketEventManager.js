@@ -147,9 +147,6 @@ class SocketEventManager {
         return;
       }
 
-      // 클라이언트에서 전송한 타임스탬프 사용 (없으면 서버 타임스탬프 사용)
-      const clientTimestamp = data.timestamp || Date.now();
-
       // 서버에서 스킬 사용 검증 및 처리
       const skillResult = this.skillManager.useSkill(
         player,
@@ -182,7 +179,7 @@ class SocketEventManager {
       const broadcastData = {
         playerId: socket.id,
         skillType: skillResult.skillType,
-        timestamp: clientTimestamp, // 클라이언트에서 전송한 타임스탬프 사용 (정확한 동기화)
+        timestamp: skillResult.timestamp,
         x: skillResult.x,
         y: skillResult.y,
         team: player.team,

@@ -42,10 +42,8 @@ export default class SlimeJob extends BaseJob {
             return;
         }
 
-        // 서버에 스킬 사용 요청 (타임스탬프 포함)
-        this.player.networkManager.useSkill('spread', {
-            timestamp: Date.now() // 클라이언트 스킬 사용 타임스탬프 전송
-        });
+        // 서버에 스킬 사용 요청
+        this.player.networkManager.useSkill('spread');
         
         console.log('슬라임 퍼지기 서버 요청 전송');
     }

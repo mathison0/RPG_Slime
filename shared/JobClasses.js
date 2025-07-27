@@ -28,6 +28,7 @@ const JobClasses = {
                 cooldown: 1000,
                 damage: 'attack',
                 range: 50,
+                duration: 1000,
                 key: '1',
                 type: 'spread'
             },
@@ -121,6 +122,7 @@ const JobClasses = {
                 cooldown: 1000,
                 damage: 0,
                 range: 50,
+                duration: 1000,
                 key: 'Q',
                 type: 'roar'
             },

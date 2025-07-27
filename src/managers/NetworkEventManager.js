@@ -273,38 +273,64 @@ export default class NetworkEventManager {
             ? this.scene.player 
             : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
         
+        // 디버깅 로그 추가
+        const isOwnPlayer = data.playerId === this.networkManager.playerId;
+        console.log(`${isOwnPlayer ? '본인' : '다른 플레이어'} 스킬 사용: ${data.skillType} (플레이어 ID: ${data.playerId})`);
+        
         if (player) {
-            // 타임스탬프 기반 정확한 타이밍 동기화
+            // 본인 플레이어의 스킬 사용 성공 시 쿨타임 설정 (울부짖기는 이미 설정됨)
+            if (isOwnPlayer && player.job && data.skillType !== 'roar') {
+                this.setSkillCooldown(player, data.skillType);
+            }
+            
+            // 타임스탬프 기반 이펙트 동기화
             const currentTime = Date.now();
             const skillDelay = currentTime - data.timestamp;
             
-            // 지연시간이 너무 크면 (2초 이상) 이펙트 스킵
-            if (skillDelay > 2000) {
+            console.log(`스킬 지연시간: ${skillDelay}ms`);
+            
+            // 지연시간이 너무 크면 (1초 이상) 이펙트 스킵
+            if (skillDelay > 1000) {
                 console.log(`스킬 이펙트 스킵 - 지연시간: ${skillDelay}ms`);
                 return;
             }
             
-            // 지연시간만큼 조정해서 정확한 타이밍에 이펙트 재생
-            const adjustedDelay = Math.max(0, skillDelay);
-            
-            const showEffect = () => {
-                // 시각적 효과 표시 (스프라이트 변경 포함)
-                this.showSkillEffect(player, data.skillType, data);
-                
-                // 서버에서 받은 데미지 결과 처리 (시각적 효과와 별도로)
-                if (data.damageResult && (data.damageResult.affectedEnemies || data.damageResult.affectedPlayers)) {
-                    this.handleSkillDamageResult(data.damageResult);
-                }
-            };
+            // 지연시간만큼 조정해서 이펙트 재생
+            const adjustedDelay = Math.max(0, -skillDelay);
             
             if (adjustedDelay > 0) {
-                // 지연시간만큼 기다린 후 재생 (정확한 타이밍 동기화)
-                this.scene.time.delayedCall(adjustedDelay, showEffect);
+                // 지연해서 재생
+                console.log(`스킬 이펙트 지연 실행: ${adjustedDelay}ms 후`);
+                this.scene.time.delayedCall(adjustedDelay, () => {
+                    this.showSkillEffect(player, data.skillType, data);
+                });
             } else {
-                // 즉시 재생 (지연이 없는 경우)
-                showEffect();
+                // 즉시 재생
+                console.log('스킬 이펙트 즉시 실행');
+                this.showSkillEffect(player, data.skillType, data);
             }
+        } else {
+            console.warn(`플레이어를 찾을 수 없음: ${data.playerId}`);
         }
+    }
+
+    /**
+     * 스킬 쿨타임 설정
+     */
+    setSkillCooldown(player, skillType) {
+        if (!player.job) return;
+        
+        // 직업별 스킬 정보 가져오기
+        const jobInfo = player.job.jobInfo;
+        if (!jobInfo || !jobInfo.skills) return;
+        
+        // 스킬 정보 찾기
+        const skillInfo = jobInfo.skills.find(skill => skill.type === skillType);
+        if (!skillInfo) return;
+        
+        // 쿨타임 설정
+        player.job.setSkillCooldown(skillType, skillInfo.cooldown);
+        console.log(`${skillType} 스킬 쿨타임 설정: ${skillInfo.cooldown}ms`);
     }
 
     /**
@@ -752,10 +778,24 @@ export default class NetworkEventManager {
      * 울부짖기 이펙트
      */
     showRoarEffect(player, data = null) {
+        // 기존 울부짖기 이펙트가 있다면 제거
+        if (player.roarEffectTimer) {
+            this.scene.time.removeEvent(player.roarEffectTimer);
+            player.roarEffectTimer = null;
+        }
+        
+        // 울부짖기 스킬 상태 설정
+        player.isUsingRoarSkill = true;
+        
         // 울부짖기 스프라이트로 변경
         player.setTexture('warrior_skill');
         
-        // 울부짖기 효과 메시지
+        // 서버에서 받은 지속시간 사용 (기본값 1000ms)
+        const effectDuration = data?.skillInfo?.duration || 1000;
+        
+        console.log(`울부짖기 지속시간: ${effectDuration}ms`);
+        
+        // 울부짖기 효과 메시지 (1초 후 제거)
         const roarText = this.scene.add.text(
             player.x, 
             player.y - 80, 
@@ -767,16 +807,30 @@ export default class NetworkEventManager {
             }
         ).setOrigin(0.5);
         
-        // 1초 후 텍스트 제거 및 스프라이트 복원 (정확한 타이밍)
+        // 텍스트는 1초 후 제거
         this.scene.time.delayedCall(1000, () => {
             if (roarText.active) {
                 roarText.destroy();
             }
+        });
+        
+        // 스프라이트는 지속시간 후 복원 (정확한 타이밍)
+        player.roarEffectTimer = this.scene.time.delayedCall(effectDuration, () => {
+            // 울부짖기 스킬 상태 해제
+            player.isUsingRoarSkill = false;
+            
+            // WarriorJob의 isRoaring 상태도 해제
+            if (player.job && player.job.isRoaring) {
+                player.job.isRoaring = false;
+                console.log('울부짖기 상태 해제 완료');
+            }
+            
             if (player.active) {
                 // 원래 직업 스프라이트로 복원
                 player.updateJobSprite();
-                console.log('울부짖기 스프라이트 복원 완료');
+                console.log(`울부짖기 스프라이트 복원 완료 (지속시간: ${effectDuration}ms)`);
             }
+            player.roarEffectTimer = null;
         });
         
         console.log('울부짖기 스프라이트 변경 완료');
@@ -943,54 +997,69 @@ export default class NetworkEventManager {
      * 슬라임 퍼지기 이펙트
      */
     showSlimeSpreadEffect(player, data = null) {
-        // 슬라임 스킬 텍스처로 변경
+        // 본인도 이펙트를 볼 수 있도록 수정
+        const isOwnPlayer = player === this.scene.player;
+        const startTime = Date.now();
+        console.log(`슬라임 퍼지기 이펙트 시작 (본인: ${isOwnPlayer}, 시작시간: ${startTime})`);
+        
+        // 기존 슬라임 스킬 이펙트가 있다면 제거
+        if (player.slimeSkillEffect) {
+            player.slimeSkillEffect.destroy();
+            player.slimeSkillEffect = null;
+        }
+        
+        // 기존 슬라임 스킬 타이머가 있다면 제거
+        if (player.slimeSkillTimer) {
+            this.scene.time.removeEvent(player.slimeSkillTimer);
+            player.slimeSkillTimer = null;
+        }
+        
+        // 슬라임 스킬 상태 설정
+        player.isUsingSlimeSkill = true;
+        
+        // 슬라임 스킬 스프라이트로 변경
         player.setTexture('slime_skill');
         
         // 서버에서 받은 범위 정보 사용 (기본값 50)
         const range = data?.skillInfo?.range || 50;
         
-        // 퍼지기 범위 효과
+        // 초록색 범위 효과 생성
         const effect = this.scene.add.circle(player.x, player.y, range, 0x00ff00, 0.3);
-        this.scene.tweens.add({
-            targets: effect,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            alpha: 0,
-            duration: 300,
-            onComplete: () => {
-                if (effect.active) {
-                    effect.destroy();
-                }
-            }
-        });
+        player.slimeSkillEffect = effect; // 플레이어에 이펙트 참조 저장
         
-        // 퍼지기 효과 메시지
-        const spreadText = this.scene.add.text(
-            player.x, 
-            player.y - 60, 
-            '퍼지기!', 
-            {
-                fontSize: '16px',
-                fill: '#00ff00'
-            }
-        ).setOrigin(0.5);
+        // 서버에서 받은 지속시간 사용 (기본값 1000ms)
+        const effectDuration = data?.skillInfo?.duration || 1000;
         
-        this.scene.time.delayedCall(1000, () => {
-            if (spreadText.active) {
-                spreadText.destroy();
-            }
-        });
+        console.log(`슬라임 퍼지기 지속시간: ${effectDuration}ms`);
         
-        // 400ms 후 원래 스프라이트로 복원 (정확한 타이밍)
-        this.scene.time.delayedCall(400, () => {
+        // 스프라이트 복원 타이머 설정 (지속시간과 정확히 동일하게)
+        player.slimeSkillTimer = this.scene.time.delayedCall(effectDuration, () => {
+            const endTime = Date.now();
+            const actualDuration = endTime - startTime;
+            
+            // 범위 효과 제거
+            if (effect.active) {
+                effect.destroy();
+                console.log(`슬라임 퍼지기 범위 효과 제거 (실제 지속시간: ${actualDuration}ms)`);
+            }
+            
+            // 플레이어 참조 정리
+            if (player.slimeSkillEffect === effect) {
+                player.slimeSkillEffect = null;
+            }
+            
+            // 슬라임 스킬 상태 해제
+            player.isUsingSlimeSkill = false;
+            
+            // 스프라이트 복원
             if (player.active) {
-                // 원래 직업 스프라이트로 복원
                 player.updateJobSprite();
-                console.log('슬라임 퍼지기 스프라이트 복원 완료');
+                console.log(`슬라임 퍼지기 스프라이트 복원 완료 (실제 지속시간: ${actualDuration}ms)`);
             }
+            
+            // 타이머 참조 정리
+            player.slimeSkillTimer = null;
         });
-        
-        console.log('슬라임 퍼지기 스프라이트 변경 완료');
     }
 
     /**
