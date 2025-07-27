@@ -243,6 +243,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const speed = this.speed;
         this.setVelocity(0);
         
+        // 슬라임 스킬 사용 중이면 이동 불가
+        if (this.isUsingSlimeSkill) {
+            return;
+        }
+        
         let movingUp = false;
         let movingDown = false;
         let movingLeft = false;

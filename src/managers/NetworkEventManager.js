@@ -1020,6 +1020,33 @@ export default class NetworkEventManager {
         // 슬라임 스킬 스프라이트로 변경
         player.setTexture('slime_skill');
         
+        // 퍼지기 스킬 메시지 표시
+        const skillText = this.scene.add.text(
+            player.x, 
+            player.y - 60, 
+            '퍼지기!', 
+            {
+                fontSize: '16px',
+                fill: '#00ff00',
+                stroke: '#000000',
+                strokeThickness: 2
+            }
+        ).setOrigin(0.5);
+        
+        // 메시지 애니메이션 (위로 올라가면서 사라짐)
+        this.scene.tweens.add({
+            targets: skillText,
+            y: skillText.y - 30,
+            alpha: 0,
+            duration: 1500,
+            ease: 'Power2',
+            onComplete: () => {
+                if (skillText.active) {
+                    skillText.destroy();
+                }
+            }
+        });
+        
         // 서버에서 받은 범위 정보 사용 (기본값 50)
         const range = data?.skillInfo?.range || 50;
         
