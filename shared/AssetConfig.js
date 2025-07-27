@@ -90,7 +90,8 @@ const AssetConfig = {
     ADDITIONAL_ASSETS: [
         'ping_arrow',
         'slime_skill',
-        'ward'
+        'ward',
+        'warrior_skill'
     ]
 };
 

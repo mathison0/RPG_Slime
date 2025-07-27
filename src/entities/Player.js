@@ -115,26 +115,33 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         }
         
         // 새로운 직업 인스턴스 생성
-        switch (this.jobClass) {
-            case 'slime':
-                this.job = new SlimeJob(this);
-                break;
-            case 'mage':
-                this.job = new MageJob(this);
-                break;
-            case 'assassin':
-            case 'ninja':
-                this.job = new AssassinJob(this);
-                break;
-            case 'warrior':
-                this.job = new WarriorJob(this);
-                break;
-            case 'mechanic':
-                this.job = new MechanicJob(this);
-                break;
-            default:
-                this.job = new SlimeJob(this);
-                break;
+        try {
+            switch (this.jobClass) {
+                case 'slime':
+                    this.job = new SlimeJob(this);
+                    break;
+                case 'mage':
+                    this.job = new MageJob(this);
+                    break;
+                case 'assassin':
+                case 'ninja':
+                    this.job = new AssassinJob(this);
+                    break;
+                case 'warrior':
+                    this.job = new WarriorJob(this);
+                    break;
+                case 'mechanic':
+                    this.job = new MechanicJob(this);
+                    break;
+                default:
+                    this.job = new SlimeJob(this);
+                    break;
+            }
+        } catch (error) {
+            console.error('직업 생성 중 오류 발생:', error);
+            // 오류 발생 시 기본 슬라임으로 폴백
+            this.jobClass = 'slime';
+            this.job = new SlimeJob(this);
         }
         
         // 레벨에 따른 스탯 재계산
@@ -420,6 +427,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 스프라이트 업데이트
      */
     updateJobSprite() {
+        // 스킬 사용 중일 때는 스프라이트 변경하지 않음
+        if (this.isUsingSlimeSkill || this.isUsingRoarSkill) {
+            return;
+        }
+        
         const spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
         
         if (this.scene.textures.exists(spriteKey)) {
@@ -537,10 +549,47 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 사망 처리
+     * 서버에서 받은 체력 정보로 업데이트
+     */
+    updateHealthFromServer() {
+        // 서버에서 이미 데미지가 적용되었으므로 클라이언트에서는 시각적 효과만 처리
+        if (this.hp <= 0 && !this.isDead) {
+            this.die();
+        }
+    }
+
+    /**
+     * 서버에서 체력 정보 설정
+     */
+    setHealthFromServer(hp, maxHp) {
+        this.hp = hp;
+        this.maxHp = maxHp;
+        
+        if (this.hp <= 0 && !this.isDead) {
+            this.die();
+        }
+    }
+
+    /**
+     * 플레이어 사망 처리
      */
     die() {
-        this.scene.scene.restart();
+        this.isDead = true;
+        this.setAlpha(0.5);
+        this.setTint(0xff0000);
+        
+        // 사망 메시지 표시
+        const deathText = this.scene.add.text(this.x, this.y - 80, '사망!', {
+            fontSize: '20px',
+            fill: '#ff0000',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        
+        this.scene.time.delayedCall(2000, () => {
+            if (deathText.active) {
+                deathText.destroy();
+            }
+        });
     }
     
     /**
@@ -666,6 +715,24 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 정리 작업
      */
     destroy() {
+        // 스킬 이펙트 타이머 정리
+        if (this.roarEffectTimer) {
+            this.scene.time.removeEvent(this.roarEffectTimer);
+            this.roarEffectTimer = null;
+        }
+        
+        // 슬라임 스킬 타이머 정리
+        if (this.slimeSkillTimer) {
+            this.scene.time.removeEvent(this.slimeSkillTimer);
+            this.slimeSkillTimer = null;
+        }
+        
+        // 슬라임 스킬 이펙트 정리
+        if (this.slimeSkillEffect) {
+            this.slimeSkillEffect.destroy();
+            this.slimeSkillEffect = null;
+        }
+        
         if (this.nameText) {
             this.nameText.destroy();
         }
