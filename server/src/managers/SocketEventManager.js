@@ -1,4 +1,5 @@
 const ServerUtils = require('../utils/ServerUtils');
+const SkillManager = require('./SkillManager');
 
 /**
  * 소켓 이벤트 관리 매니저
@@ -8,6 +9,7 @@ class SocketEventManager {
     this.io = io;
     this.gameStateManager = gameStateManager;
     this.enemyManager = enemyManager;
+    this.skillManager = new SkillManager(gameStateManager);
   }
 
   /**
@@ -104,7 +106,9 @@ class SocketEventManager {
           isJumping: player.isJumping,
           jobClass: player.jobClass,
           level: player.level,
-          size: player.size
+          size: player.size,
+          hp: player.hp,
+          maxHp: player.maxHp
         });
       }
     });
@@ -143,8 +147,12 @@ class SocketEventManager {
         return;
       }
 
+      // 클라이언트에서 전송한 타임스탬프 사용 (없으면 서버 타임스탬프 사용)
+      const clientTimestamp = data.timestamp || Date.now();
+
       // 서버에서 스킬 사용 검증 및 처리
-      const skillResult = player.useSkill(
+      const skillResult = this.skillManager.useSkill(
+        player,
         data.skillType, 
         data.targetX, 
         data.targetY
@@ -159,15 +167,27 @@ class SocketEventManager {
         return;
       }
 
+      // 서버에서 데미지 계산 및 적용
+      const damageResult = this.skillManager.applySkillDamage(
+        player, 
+        skillResult.skillType, 
+        skillResult.skillInfo, 
+        skillResult.x, 
+        skillResult.y, 
+        skillResult.targetX, 
+        skillResult.targetY
+      );
+
       // 스킬 사용 성공 시 모든 클라이언트에게 브로드캐스트
       const broadcastData = {
         playerId: socket.id,
         skillType: skillResult.skillType,
-        timestamp: skillResult.timestamp,
+        timestamp: clientTimestamp, // 클라이언트에서 전송한 타임스탬프 사용 (정확한 동기화)
         x: skillResult.x,
         y: skillResult.y,
         team: player.team,
-        skillInfo: skillResult.skillInfo
+        skillInfo: skillResult.skillInfo,
+        damageResult: damageResult // 데미지 결과 추가
       };
 
       // 타겟 위치가 있는 경우 추가

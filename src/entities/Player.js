@@ -544,10 +544,47 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 사망 처리
+     * 서버에서 받은 체력 정보로 업데이트
+     */
+    updateHealthFromServer() {
+        // 서버에서 이미 데미지가 적용되었으므로 클라이언트에서는 시각적 효과만 처리
+        if (this.hp <= 0 && !this.isDead) {
+            this.die();
+        }
+    }
+
+    /**
+     * 서버에서 체력 정보 설정
+     */
+    setHealthFromServer(hp, maxHp) {
+        this.hp = hp;
+        this.maxHp = maxHp;
+        
+        if (this.hp <= 0 && !this.isDead) {
+            this.die();
+        }
+    }
+
+    /**
+     * 플레이어 사망 처리
      */
     die() {
-        this.scene.scene.restart();
+        this.isDead = true;
+        this.setAlpha(0.5);
+        this.setTint(0xff0000);
+        
+        // 사망 메시지 표시
+        const deathText = this.scene.add.text(this.x, this.y - 80, '사망!', {
+            fontSize: '20px',
+            fill: '#ff0000',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        
+        this.scene.time.delayedCall(2000, () => {
+            if (deathText.active) {
+                deathText.destroy();
+            }
+        });
     }
     
     /**

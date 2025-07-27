@@ -187,8 +187,32 @@ class GameServer {
       // 적 AI 업데이트
       this.enemyManager.updateEnemies(deltaTime);
       
+      // 플레이어 상태 동기화 (HP 등)
+      this.syncPlayerStates();
+      
     } catch (error) {
       ServerUtils.errorLog('게임 루프 오류', { error: error.message, stack: error.stack });
+    }
+  }
+
+  /**
+   * 플레이어 상태 동기화
+   */
+  syncPlayerStates() {
+    const players = this.gameStateManager.getAllPlayers();
+    if (players.length > 0) {
+      const playerStates = players.map(player => ({
+        id: player.id,
+        x: player.x,
+        y: player.y,
+        hp: player.hp,
+        maxHp: player.maxHp,
+        level: player.level,
+        jobClass: player.jobClass,
+        team: player.team
+      }));
+      
+      this.io.emit('players-state-update', playerStates);
     }
   }
 

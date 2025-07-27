@@ -136,7 +136,7 @@ const JobClasses = {
             {
                 name: '찌르기',
                 description: '직사각형 범위 공격으로 강력한 데미지를 입힙니다.',
-                cooldown: 6000,
+                cooldown: 4000,
                 damage: 'attack * 2.0',
                 range: 120,
                 key: 'R',

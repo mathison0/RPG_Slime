@@ -61,6 +61,11 @@ export default class NetworkEventManager {
             this.handleSkillError(data);
         });
         
+        // 플레이어 데미지
+        this.networkManager.on('player-damaged', (data) => {
+            this.handlePlayerDamaged(data);
+        });
+        
         // 와드 파괴
         this.networkManager.on('ward-destroyed', (data) => {
             this.handleWardDestroyed(data);
@@ -73,6 +78,11 @@ export default class NetworkEventManager {
 
         // 적 관련 이벤트
         this.setupEnemyEvents();
+        
+        // 플레이어 상태 업데이트
+        this.networkManager.on('players-state-update', (data) => {
+            this.handlePlayersStateUpdate(data);
+        });
         
         // 기타 이벤트
         this.setupMiscEvents();
@@ -242,6 +252,15 @@ export default class NetworkEventManager {
                 otherPlayer.updateSize();
             }
             
+            // HP 정보 업데이트
+            if (data.hp !== undefined && data.hp !== otherPlayer.hp) {
+                otherPlayer.hp = data.hp;
+            }
+            if (data.maxHp !== undefined && data.maxHp !== otherPlayer.maxHp) {
+                otherPlayer.maxHp = data.maxHp;
+            }
+            
+            // 스프라이트 업데이트
             otherPlayer.updateJobSprite();
         }
     }
@@ -255,28 +274,106 @@ export default class NetworkEventManager {
             : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
         
         if (player) {
-            // 타임스탬프 기반 이펙트 동기화
+            // 타임스탬프 기반 정확한 타이밍 동기화
             const currentTime = Date.now();
             const skillDelay = currentTime - data.timestamp;
             
-            // 지연시간이 너무 크면 (1초 이상) 이펙트 스킵
-            if (skillDelay > 1000) {
+            // 지연시간이 너무 크면 (2초 이상) 이펙트 스킵
+            if (skillDelay > 2000) {
                 console.log(`스킬 이펙트 스킵 - 지연시간: ${skillDelay}ms`);
                 return;
             }
             
-            // 지연시간만큼 조정해서 이펙트 재생
-            const adjustedDelay = Math.max(0, -skillDelay);
+            // 지연시간만큼 조정해서 정확한 타이밍에 이펙트 재생
+            const adjustedDelay = Math.max(0, skillDelay);
+            
+            const showEffect = () => {
+                // 시각적 효과 표시 (스프라이트 변경 포함)
+                this.showSkillEffect(player, data.skillType, data);
+                
+                // 서버에서 받은 데미지 결과 처리 (시각적 효과와 별도로)
+                if (data.damageResult && (data.damageResult.affectedEnemies || data.damageResult.affectedPlayers)) {
+                    this.handleSkillDamageResult(data.damageResult);
+                }
+            };
             
             if (adjustedDelay > 0) {
-                // 지연해서 재생
-                this.scene.time.delayedCall(adjustedDelay, () => {
-                    this.showSkillEffect(player, data.skillType, data);
-                });
+                // 지연시간만큼 기다린 후 재생 (정확한 타이밍 동기화)
+                this.scene.time.delayedCall(adjustedDelay, showEffect);
             } else {
-                // 즉시 재생
-                this.showSkillEffect(player, data.skillType, data);
+                // 즉시 재생 (지연이 없는 경우)
+                showEffect();
             }
+        }
+    }
+
+    /**
+     * 플레이어 ID로 플레이어 찾기
+     */
+    findPlayerById(playerId) {
+        // 본인 플레이어인지 확인
+        if (this.scene.player && this.scene.player.networkId === playerId) {
+            return this.scene.player;
+        }
+        
+        // 다른 플레이어들 중에서 찾기
+        if (this.scene.otherPlayers) {
+            return this.scene.otherPlayers.getChildren().find(p => p.networkId === playerId);
+        }
+        
+        return null;
+    }
+
+    /**
+     * 서버에서 받은 스킬 데미지 결과 처리
+     */
+    handleSkillDamageResult(damageResult) {
+        let totalAffected = 0;
+        
+        // 적들에게 데미지 적용된 경우
+        if (damageResult.affectedEnemies && damageResult.affectedEnemies.length > 0) {
+            totalAffected += damageResult.affectedEnemies.length;
+            
+            // 각 피해받은 적에 대해 데미지 효과 표시
+            damageResult.affectedEnemies.forEach(enemyData => {
+                const enemy = this.scene.enemies?.getChildren().find(e => e.networkId === enemyData.id);
+                if (enemy) {
+                    // 실제 적용된 데미지 텍스트 표시
+                    const damageToShow = enemyData.actualDamage || enemyData.damage;
+                    this.scene.effectManager.showDamageText(enemy.x, enemy.y, damageToShow);
+                    
+                    // 적 체력 업데이트 (서버에서 이미 처리됨)
+                    // 실제 HP는 서버에서 관리되므로 클라이언트에서는 시각적 효과만
+                    if (enemy.updateHealthFromServer) {
+                        enemy.updateHealthFromServer();
+                    }
+                }
+            });
+        }
+
+        // 다른 팀 플레이어들에게 데미지 적용된 경우
+        if (damageResult.affectedPlayers && damageResult.affectedPlayers.length > 0) {
+            totalAffected += damageResult.affectedPlayers.length;
+            
+            // 각 피해받은 플레이어에 대해 데미지 효과 표시
+            damageResult.affectedPlayers.forEach(playerData => {
+                const targetPlayer = this.scene.otherPlayers?.getChildren().find(p => p.networkId === playerData.id);
+                if (targetPlayer) {
+                    // 실제 적용된 데미지 텍스트 표시
+                    const damageToShow = playerData.actualDamage || playerData.damage;
+                    this.scene.effectManager.showDamageText(targetPlayer.x, targetPlayer.y, damageToShow);
+                    
+                    // 플레이어 체력 업데이트 (서버에서 이미 처리됨)
+                    // 실제 HP는 서버에서 관리되므로 클라이언트에서는 시각적 효과만
+                    if (targetPlayer.updateHealthFromServer) {
+                        targetPlayer.updateHealthFromServer();
+                    }
+                }
+            });
+        }
+
+        if (totalAffected > 0) {
+            console.log(`서버 데미지 결과: ${damageResult.totalDamage} 데미지, ${totalAffected}개 대상에게 적용`);
         }
     }
 
@@ -289,6 +386,58 @@ export default class NetworkEventManager {
         // 플레이어에게 에러 메시지 표시
         if (this.scene.player && this.scene.player.job) {
             this.scene.player.job.showCooldownMessage(data.error);
+        }
+    }
+
+    /**
+     * 플레이어 상태 업데이트 처리
+     */
+    handlePlayersStateUpdate(playerStates) {
+        // 본인 플레이어 상태 업데이트
+        const myPlayerState = playerStates.find(p => p.id === this.networkManager.playerId);
+        if (myPlayerState && this.scene.player) {
+            this.scene.player.hp = myPlayerState.hp;
+            this.scene.player.maxHp = myPlayerState.maxHp;
+            this.scene.player.updateUI();
+        }
+        
+        // 다른 플레이어들 상태 업데이트
+        if (this.scene.otherPlayers?.children) {
+            playerStates.forEach(playerState => {
+                if (playerState.id === this.networkManager.playerId) return; // 본인 제외
+                
+                const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === playerState.id);
+                if (otherPlayer) {
+                    otherPlayer.hp = playerState.hp;
+                    otherPlayer.maxHp = playerState.maxHp;
+                    otherPlayer.level = playerState.level;
+                    otherPlayer.jobClass = playerState.jobClass;
+                    otherPlayer.updateJobSprite();
+                }
+            });
+        }
+    }
+
+    /**
+     * 플레이어 데미지 처리
+     */
+    handlePlayerDamaged(data) {
+        // 본인 플레이어가 데미지를 받은 경우
+        if (this.scene.player && this.scene.player.networkId === this.networkManager.playerId) {
+            // 서버에서 받은 체력 정보로 업데이트
+            this.scene.player.setHealthFromServer(data.currentHp, data.maxHp);
+            
+            // 실제 적용된 데미지 텍스트 표시
+            const damageToShow = data.actualDamage || data.damage;
+            this.scene.effectManager.showDamageText(this.scene.player.x, this.scene.player.y, damageToShow);
+            
+            // UI 업데이트
+            this.scene.player.updateUI();
+            
+            // 체력이 0 이하면 사망 처리
+            if (data.currentHp <= 0) {
+                this.scene.player.die();
+            }
         }
     }
 
@@ -355,29 +504,42 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 적 위치 업데이트 처리
+     * 적 상태 업데이트 처리
      */
     handleEnemiesUpdate(enemiesData) {
+        if (!this.scene.enemies) return;
+
+        // 서버에서 받은 적 데이터로 클라이언트 적들 업데이트
         enemiesData.forEach(enemyData => {
-            if (!this.scene.enemies?.children) return;
+            let enemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyData.id);
             
-            const enemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyData.id);
-            if (enemy) {
-                // 부드러운 이동
-                this.scene.tweens.add({
-                    targets: enemy,
-                    x: enemyData.x,
-                    y: enemyData.y,
-                    duration: 50,
-                    ease: 'Linear'
-                });
-                
+            if (!enemy) {
+                // 새로운 적 생성
+                enemy = this.createNetworkEnemy(enemyData);
+            } else {
+                // 기존 적 상태 업데이트
+                enemy.x = enemyData.x;
+                enemy.y = enemyData.y;
                 enemy.hp = enemyData.hp;
                 enemy.maxHp = enemyData.maxHp;
+                enemy.vx = enemyData.vx || 0;
+                enemy.vy = enemyData.vy || 0;
                 
+                // 서버에서 관리되는 적으로 설정
+                enemy.isServerControlled = true;
+                
+                // 공격 상태 처리
                 if (enemyData.isAttacking) {
                     this.showEnemyAttack(enemy);
                 }
+            }
+        });
+
+        // 서버에 없는 적들 제거 (클라이언트에서만 존재하는 적들)
+        const serverEnemyIds = new Set(enemiesData.map(e => e.id));
+        this.scene.enemies.getChildren().forEach(enemy => {
+            if (enemy.networkId && !serverEnemyIds.has(enemy.networkId)) {
+                enemy.destroy();
             }
         });
     }
@@ -605,15 +767,19 @@ export default class NetworkEventManager {
             }
         ).setOrigin(0.5);
         
-        // 1초 후 원래 스프라이트로 복원
+        // 1초 후 텍스트 제거 및 스프라이트 복원 (정확한 타이밍)
         this.scene.time.delayedCall(1000, () => {
             if (roarText.active) {
                 roarText.destroy();
             }
             if (player.active) {
+                // 원래 직업 스프라이트로 복원
                 player.updateJobSprite();
+                console.log('울부짖기 스프라이트 복원 완료');
             }
         });
+        
+        console.log('울부짖기 스프라이트 변경 완료');
     }
 
     /**
@@ -777,24 +943,54 @@ export default class NetworkEventManager {
      * 슬라임 퍼지기 이펙트
      */
     showSlimeSpreadEffect(player, data = null) {
-        // 본인도 이펙트를 볼 수 있도록 수정
+        // 슬라임 스킬 텍스처로 변경
         player.setTexture('slime_skill');
         
         // 서버에서 받은 범위 정보 사용 (기본값 50)
         const range = data?.skillInfo?.range || 50;
         
+        // 퍼지기 범위 효과
         const effect = this.scene.add.circle(player.x, player.y, range, 0x00ff00, 0.3);
-        this.scene.time.delayedCall(300, () => {
-            if (effect.active) {
-                effect.destroy();
+        this.scene.tweens.add({
+            targets: effect,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            alpha: 0,
+            duration: 300,
+            onComplete: () => {
+                if (effect.active) {
+                    effect.destroy();
+                }
             }
         });
         
-        this.scene.time.delayedCall(400, () => {
-            if (player.active) {
-                player.updateJobSprite();
+        // 퍼지기 효과 메시지
+        const spreadText = this.scene.add.text(
+            player.x, 
+            player.y - 60, 
+            '퍼지기!', 
+            {
+                fontSize: '16px',
+                fill: '#00ff00'
+            }
+        ).setOrigin(0.5);
+        
+        this.scene.time.delayedCall(1000, () => {
+            if (spreadText.active) {
+                spreadText.destroy();
             }
         });
+        
+        // 400ms 후 원래 스프라이트로 복원 (정확한 타이밍)
+        this.scene.time.delayedCall(400, () => {
+            if (player.active) {
+                // 원래 직업 스프라이트로 복원
+                player.updateJobSprite();
+                console.log('슬라임 퍼지기 스프라이트 복원 완료');
+            }
+        });
+        
+        console.log('슬라임 퍼지기 스프라이트 변경 완료');
     }
 
     /**

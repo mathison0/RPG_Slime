@@ -64,37 +64,14 @@ export default class WarriorJob extends BaseJob {
         // 울부짖기 상태 활성화
         this.isRoaring = true;
         
-        // 울부짖기 스프라이트로 변경
-        this.player.setTexture('warrior_skill');
+        // 스프라이트 변경은 서버 응답 후 동기화됨 (즉시 변경하지 않음)
         
-        // 1초 후 원래 스프라이트로 복원
-        this.scene.time.delayedCall(1000, () => {
-            this.endRoar();
-        });
-        
-        // 울부짖기 효과 메시지
-        const roarText = this.scene.add.text(
-            this.player.x, 
-            this.player.y - 80, 
-            '울부짖기!', 
-            {
-                fontSize: '18px',
-                fill: '#ff0000',
-                fontStyle: 'bold'
-            }
-        ).setOrigin(0.5);
-        
-        this.scene.time.delayedCall(1000, () => {
-            if (roarText.active) {
-                roarText.destroy();
-            }
-        });
-
         // 네트워크 동기화
         if (this.player.networkManager && !this.player.isOtherPlayer) {
             this.player.networkManager.useSkill('roar', {
                 x: this.player.x,
-                y: this.player.y
+                y: this.player.y,
+                timestamp: Date.now() // 클라이언트 스킬 사용 타임스탬프 전송
             });
         }
 
@@ -107,8 +84,7 @@ export default class WarriorJob extends BaseJob {
     endRoar() {
         this.isRoaring = false;
         
-        // 원래 스프라이트로 복원
-        this.player.updateJobSprite();
+        // 스프라이트 복원은 서버에서 처리됨
         
         console.log('울부짖기 종료');
     }
@@ -137,6 +113,8 @@ export default class WarriorJob extends BaseJob {
         
         // 휩쓸기 상태 활성화
         this.isSweeping = true;
+        
+        // 스프라이트 변경은 서버에서 처리됨
         
         // 휩쓸기 시각적 효과
         this.player.setTint(0xff0000);
@@ -197,10 +175,7 @@ export default class WarriorJob extends BaseJob {
             }
         });
 
-        // 휩쓸기 데미지 적용
-        this.applySweepDamage();
-
-        // 네트워크 동기화
+        // 네트워크 동기화 (서버에서 데미지 계산)
         if (this.player.networkManager && !this.player.isOtherPlayer) {
             this.player.networkManager.useSkill('sweep', {
                 targetX: this.scene.input.mousePointer.worldX,
@@ -212,54 +187,12 @@ export default class WarriorJob extends BaseJob {
     }
 
     /**
-     * 휩쓸기 데미지 적용
+     * 휩쓸기 데미지 적용 (서버에서 처리됨)
+     * 클라이언트에서는 시각적 효과만 처리
      */
     applySweepDamage() {
-        const skillInfo = this.jobInfo.skills[1];
-        const damage = this.calculateDamage(skillInfo.damage);
-        
-        // 부채꼴 범위 내 적들과의 충돌 체크
-        this.scene.enemies.getChildren().forEach(enemy => {
-            if (!enemy.isDead) {
-                const distance = Phaser.Math.Distance.Between(
-                    this.player.x, this.player.y, 
-                    enemy.x, enemy.y
-                );
-                
-                // 휩쓸기 범위 내에 있으면 데미지 적용
-                if (distance <= skillInfo.range) {
-                    // 마우스 커서 위치 가져오기
-                    const mouseX = this.scene.input.mousePointer.worldX;
-                    const mouseY = this.scene.input.mousePointer.worldY;
-                    
-                    // 플레이어에서 마우스 커서까지의 각도 계산
-                    const angleToMouse = Phaser.Math.Angle.Between(
-                        this.player.x, this.player.y, 
-                        mouseX, mouseY
-                    );
-                    
-                    // 적까지의 각도 계산
-                    const angleToEnemy = Phaser.Math.Angle.Between(
-                        this.player.x, this.player.y, 
-                        enemy.x, enemy.y
-                    );
-                    
-                    // 각도 차이 계산 (360도 범위에서)
-                    let angleDiff = Math.abs(angleToMouse - angleToEnemy);
-                    // 360도 범위를 넘어가는 경우 처리
-                    if (angleDiff > Math.PI) {
-                        angleDiff = 2 * Math.PI - angleDiff;
-                    }
-                    const angleOffset = Math.PI / 3; // 60도
-                    
-                    // 부채꼴 범위 내에 있는지 확인
-                    if (angleDiff <= angleOffset) {
-                        enemy.takeDamage(damage);
-                        console.log(`휩쓸기로 적에게 ${damage} 데미지!`);
-                    }
-                }
-            }
-        });
+        // 서버에서 데미지 계산을 처리하므로 클라이언트에서는 시각적 효과만
+        console.log('휩쓸기 시각적 효과 처리');
     }
 
     /**
@@ -302,6 +235,8 @@ export default class WarriorJob extends BaseJob {
         
         // 찌르기 상태 활성화
         this.isThrusting = true;
+        
+        // 스프라이트 변경은 서버에서 처리됨
         
         // 찌르기 시각적 효과
         this.player.setTint(0xff0000);
@@ -389,10 +324,7 @@ export default class WarriorJob extends BaseJob {
             }
         });
 
-        // 찌르기 데미지 적용
-        this.applyThrustDamage();
-
-        // 네트워크 동기화
+        // 네트워크 동기화 (서버에서 데미지 계산)
         if (this.player.networkManager && !this.player.isOtherPlayer) {
             this.player.networkManager.useSkill('thrust', {
                 targetX: this.scene.input.mousePointer.worldX,
@@ -404,62 +336,12 @@ export default class WarriorJob extends BaseJob {
     }
 
     /**
-     * 찌르기 데미지 적용
+     * 찌르기 데미지 적용 (서버에서 처리됨)
+     * 클라이언트에서는 시각적 효과만 처리
      */
     applyThrustDamage() {
-        const skillInfo = this.jobInfo.skills[2];
-        const damage = this.calculateDamage(skillInfo.damage);
-        
-        // 직사각형 범위 내 적들과의 충돌 체크
-        this.scene.enemies.getChildren().forEach(enemy => {
-            if (!enemy.isDead) {
-                const distance = Phaser.Math.Distance.Between(
-                    this.player.x, this.player.y, 
-                    enemy.x, enemy.y
-                );
-                
-                // 찌르기 범위 내에 있으면 데미지 적용
-                if (distance <= skillInfo.range) {
-                    // 마우스 커서 위치 가져오기
-                    const mouseX = this.scene.input.mousePointer.worldX;
-                    const mouseY = this.scene.input.mousePointer.worldY;
-                    
-                    // 플레이어에서 마우스 커서까지의 각도 계산
-                    const angleToMouse = Phaser.Math.Angle.Between(
-                        this.player.x, this.player.y, 
-                        mouseX, mouseY
-                    );
-                    
-                    // 적까지의 각도 계산
-                    const angleToEnemy = Phaser.Math.Angle.Between(
-                        this.player.x, this.player.y, 
-                        enemy.x, enemy.y
-                    );
-                    
-                    // 각도 차이 계산 (360도 범위에서)
-                    let angleDiff = Math.abs(angleToMouse - angleToEnemy);
-                    // 360도 범위를 넘어가는 경우 처리
-                    if (angleDiff > Math.PI) {
-                        angleDiff = 2 * Math.PI - angleDiff;
-                    }
-                    const angleTolerance = Math.PI / 6; // 30도
-                    
-                    // 직사각형 범위 내에 있는지 확인 (플레이어에서 마우스 방향으로)
-                    if (angleDiff <= angleTolerance) {
-                        // 적이 플레이어에서 마우스 방향으로 직사각형 범위 내에 있는지 추가 확인
-                        const distanceFromPlayer = Phaser.Math.Distance.Between(
-                            this.player.x, this.player.y, 
-                            enemy.x, enemy.y
-                        );
-                        
-                        if (distanceFromPlayer <= skillInfo.range) {
-                            enemy.takeDamage(damage);
-                            console.log(`찌르기로 적에게 ${damage} 데미지!`);
-                        }
-                    }
-                }
-            }
-        });
+        // 서버에서 데미지 계산을 처리하므로 클라이언트에서는 시각적 효과만
+        console.log('찌르기 시각적 효과 처리');
     }
 
     /**
