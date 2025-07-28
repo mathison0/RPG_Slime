@@ -34,21 +34,21 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     setupEnemyType() {
         switch (this.type) {
             case 'fast':
-                this.maxHp = 50;
+                this.maxHp = 30;
                 this.hp = this.maxHp;
                 this.attack = 15;
                 this.moveSpeed = 150;
                 this.setTint(0xff6600); // 주황색
                 break;
             case 'tank':
-                this.maxHp = 200;
+                this.maxHp = 100;
                 this.hp = this.maxHp;
                 this.attack = 25;
                 this.moveSpeed = 60;
                 this.setTint(0x8b4513); // 갈색
                 break;
             case 'ranged':
-                this.maxHp = 80;
+                this.maxHp = 40;
                 this.hp = this.maxHp;
                 this.attack = 20;
                 this.moveSpeed = 80;
@@ -56,7 +56,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
                 this.setTint(0x9932cc); // 보라색
                 break;
             default: // basic
-                this.maxHp = 100;
+                this.maxHp = 50;
                 this.hp = this.maxHp;
                 this.attack = 20;
                 this.moveSpeed = 100;
@@ -71,6 +71,10 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         
         // 서버에서 관리되는 적은 클라이언트에서 AI 실행하지 않음
         if (this.isServerControlled) {
+            // 서버에서 받은 속도로 이동만 처리
+            if (this.vx !== undefined && this.vy !== undefined) {
+                this.setVelocity(this.vx, this.vy);
+            }
             return;
         }
         
@@ -283,5 +287,27 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     // 네트워크 ID 설정
     setNetworkId(id) {
         this.networkId = id;
+    }
+
+    /**
+     * 서버에서 받은 체력 정보로 업데이트
+     */
+    updateHealthFromServer() {
+        // 서버에서 이미 데미지가 적용되었으므로 클라이언트에서는 시각적 효과만 처리
+        if (this.hp <= 0 && !this.isDead) {
+            this.die();
+        }
+    }
+
+    /**
+     * 서버에서 체력 정보 설정
+     */
+    setHealthFromServer(hp, maxHp) {
+        this.hp = hp;
+        this.maxHp = maxHp;
+        
+        if (this.hp <= 0 && !this.isDead) {
+            this.die();
+        }
     }
 }

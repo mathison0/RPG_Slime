@@ -1,325 +1,154 @@
 import Phaser from 'phaser';
-import Player from '../entities/Player.js';
-import Enemy from '../entities/Enemy.js';
-import AssetLoader from '../utils/AssetLoader.js';
 import NetworkManager from '../utils/NetworkManager.js';
+import NetworkEventManager from '../managers/NetworkEventManager.js';
+import MapManager from '../managers/MapManager.js';
+import VisionManager from '../managers/VisionManager.js';
+import MinimapManager from '../managers/MinimapManager.js';
+import PingManager from '../managers/PingManager.js';
+import CheatManager from '../managers/CheatManager.js';
+import EffectManager from '../effects/EffectManager.js';
 
 export default class GameScene extends Phaser.Scene {
     constructor() {
         super({ key: 'GameScene' });
+        
+        // 기본 상태
+        this.playerNickname = 'Player';
+        this.isFirstJoin = true;
+        this.playerTeam = null;
+        this.playerId = null;
+        
+        // 게임 오브젝트
+        this.player = null;
+        this.otherPlayers = null;
+        this.enemies = null;
+        this.walls = null;
+        this.spawnBarriers = null;
+        this.activeWard = null;
+        
+        // 맵 정보
+        this.MAP_WIDTH = 0;
+        this.MAP_HEIGHT = 0;
+        this.TILE_SIZE = 0;
+        this.SPAWN_WIDTH = 0;
+        this.PLAZA_SIZE = 0;
+        this.PLAZA_X = 0;
+        this.PLAZA_Y = 0;
+        this.redSpawnRect = null;
+        this.blueSpawnRect = null;
+        this.plazaRect = null;
+        
+        // 탭 활성 상태
+        this.isTabActive = true;
+        this.wasJumping = false;
+        
+        // 스폰 구역 상태
+        this.inEnemySpawnZone = false;
+        
+        // 매니저들
+        this.networkManager = null;
+        this.networkEventManager = null;
+        this.mapManager = null;
+        this.visionManager = null;
+        this.minimapManager = null;
+        this.pingManager = null;
+        this.cheatManager = null;
+        this.effectManager = null;
     }
-
-    preload() {
-        console.log('GameScene preload() 시작');
-        AssetLoader.preload(this);
-        console.log('AssetLoader.preload() 완료');
+    
+    init(data) {
+        if (data?.playerNickname) {
+            this.playerNickname = data.playerNickname;
+            console.log('플레이어 닉네임:', this.playerNickname);
+        }
     }
     
     create() {
         console.log('GameScene create() 시작');
         
-        this.createGradientTexture();
-        AssetLoader.createAnimations(this);
-        this.createMaze();
-        
-        console.log('맵 생성 완료 (임시)');
-        
         // 네트워크 매니저 초기화
         this.networkManager = new NetworkManager();
+        
+        // 게임 상태 리셋
+        this.resetGameState();
+        
+        // 물리 그룹 초기화
         this.otherPlayers = this.physics.add.group();
         this.enemies = this.physics.add.group();
         
-        console.log('네트워크 매니저 초기화 완료');
+        // 매니저들 초기화
+        this.initializeManagers();
         
-        // 네트워크 이벤트 리스너 설정
-        this.setupNetworkListeners();
+        // 네트워크 이벤트 설정
+        this.networkEventManager.setupNetworkListeners();
         
         // 게임 입장 요청
-        this.networkManager.joinGame();
+        this.networkManager.joinGame({
+            nickname: this.playerNickname
+        });
         
-        console.log('게임 입장 요청 완료');
-        
-        // 물리 충돌은 플레이어가 생성된 후에 설정
-        // 충돌 객체들 초기화
-        this.playerWallCollider = null;
-        this.enemyWallCollider = null;
-        this.otherPlayerWallCollider = null;
-        this.playerEnemyCollider = null;
-
-        // 점프 상태 추적을 위한 변수
-        this.wasJumping = false;
-
+        // UI 설정
         this.setupUI();
-
-        // --- 시야 관련 로직 create 함수로 통합 ---
-        // 화면 전체를 덮는 RenderTexture 생성
-        this.visionTexture = this.make.renderTexture({
-            width: this.scale.width,
-            height: this.scale.height
-        }, false);
-        this.visionTexture.setDepth(999);
-        this.visionTexture.setOrigin(0, 0);
-        this.visionTexture.fill(0x000000, 0.95);
-        this.visionTexture.setScrollFactor(0);
-        this.add.existing(this.visionTexture);
-
-        // 서버에서 적 관리하므로 클라이언트 스폰 타이머 제거
         
-        // 초기 UI 스케일 설정
-        this.updateUIScale(this.cameras.main.zoom);
+        // 탭 포커스 이벤트 처리
+        this.setupTabFocusHandlers();
+        
+        console.log('GameScene 초기화 완료');
     }
-    
-    // (createMaze, spawnEnemies 등 다른 함수는 그대로 유지)
-    createMaze() {
-        // 임시 맵 생성 (서버 연결 전까지 사용)
-        console.log('임시 맵 생성 (서버에서 맵 데이터를 받기 전까지 사용)');
-        this.createTemporaryMap();
-    }
-    
-    createTemporaryMap() {
-        const MAP_WIDTH = 3000;
-        const MAP_HEIGHT = 3000;
-        const TILE_SIZE = 50;
-        const SPAWN_WIDTH = 300;
-        
-        this.MAP_WIDTH = MAP_WIDTH;
-        this.MAP_HEIGHT = MAP_HEIGHT;
-        this.TILE_SIZE = TILE_SIZE;
-        this.SPAWN_WIDTH = SPAWN_WIDTH;
 
-        this.physics.world.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
-        this.walls = this.physics.add.staticGroup();
-        
-        // 기본 외벽만 생성
-        for (let x = 0; x < MAP_WIDTH; x += TILE_SIZE) {
-            this.walls.create(x + TILE_SIZE / 2, TILE_SIZE/2, 'wall').setSize(TILE_SIZE, TILE_SIZE).refreshBody();
-            this.walls.create(x + TILE_SIZE / 2, MAP_HEIGHT - TILE_SIZE/2, 'wall').setSize(TILE_SIZE, TILE_SIZE).refreshBody();
-        }
-        for (let y = TILE_SIZE; y < MAP_HEIGHT - TILE_SIZE; y += TILE_SIZE) {
-            this.walls.create(TILE_SIZE/2, y + TILE_SIZE/2, 'wall').setSize(TILE_SIZE, TILE_SIZE).refreshBody();
-            this.walls.create(MAP_WIDTH - TILE_SIZE/2, y + TILE_SIZE/2, 'wall').setSize(TILE_SIZE, TILE_SIZE).refreshBody();
-        }
-        
-        this.redSpawnRect = new Phaser.Geom.Rectangle(0, 0, SPAWN_WIDTH, MAP_HEIGHT);
-        this.blueSpawnRect = new Phaser.Geom.Rectangle(MAP_WIDTH - SPAWN_WIDTH, 0, SPAWN_WIDTH, MAP_HEIGHT);
-        
-        this.wallLines = [];
-    }
-    
-    recreateMapFromServer(mapData) {
-        console.log('서버 맵 데이터로 맵 재생성:', mapData);
-        
-        // 기존 맵 제거
-        if (this.walls) {
-            this.walls.clear(true, true);
-        }
-        
-        // 기존 스폰 구역 표시 제거
-        this.children.list.forEach(child => {
-            if (child.type === 'Rectangle' && child.depth === -1) {
-                child.destroy();
-            }
-        });
-        
-        // 서버 맵 데이터 적용
-        this.MAP_WIDTH = mapData.MAP_WIDTH;
-        this.MAP_HEIGHT = mapData.MAP_HEIGHT;
-        this.TILE_SIZE = mapData.TILE_SIZE;
-        this.SPAWN_WIDTH = mapData.SPAWN_WIDTH;
-        this.PLAZA_SIZE = mapData.PLAZA_SIZE;
-        this.PLAZA_X = mapData.PLAZA_X;
-        this.PLAZA_Y = mapData.PLAZA_Y;
 
-        this.physics.world.setBounds(0, 0, this.MAP_WIDTH, this.MAP_HEIGHT);
-        this.walls = this.physics.add.staticGroup();
-
-        // 서버에서 받은 벽 데이터로 벽 생성
-        mapData.walls.forEach(wallPos => {
-            this.walls.create(wallPos.x, wallPos.y, 'wall').setSize(this.TILE_SIZE, this.TILE_SIZE).refreshBody();
-        });
-
-        // 스폰 및 광장 구역 시각화
-        this.add.rectangle(this.SPAWN_WIDTH / 2, this.MAP_HEIGHT / 2, this.SPAWN_WIDTH, this.MAP_HEIGHT, 0xff0000, 0.25).setDepth(-1);
-        this.add.rectangle(this.MAP_WIDTH - this.SPAWN_WIDTH / 2, this.MAP_HEIGHT / 2, this.SPAWN_WIDTH, this.MAP_HEIGHT, 0x0000ff, 0.25).setDepth(-1);
-        
-        this.plazaRect = new Phaser.Geom.Rectangle(this.PLAZA_X, this.PLAZA_Y, this.PLAZA_SIZE, this.PLAZA_SIZE);
-        this.add.rectangle(this.plazaRect.centerX, this.plazaRect.centerY, this.PLAZA_SIZE, this.PLAZA_SIZE, 0xffff00, 0.15).setDepth(-1);
-        
-        this.redSpawnRect = new Phaser.Geom.Rectangle(mapData.redSpawnRect.x, mapData.redSpawnRect.y, mapData.redSpawnRect.width, mapData.redSpawnRect.height);
-        this.blueSpawnRect = new Phaser.Geom.Rectangle(mapData.blueSpawnRect.x, mapData.blueSpawnRect.y, mapData.blueSpawnRect.width, mapData.blueSpawnRect.height);
-
-        // 시야 계산을 위해 모든 벽의 선분 정보를 미리 추출
-        this.wallLines = [];
-        this.walls.getChildren().forEach(wall => {
-            const bounds = wall.getBounds();
-            this.wallLines.push(new Phaser.Geom.Line(bounds.left, bounds.top, bounds.right, bounds.top));
-            this.wallLines.push(new Phaser.Geom.Line(bounds.right, bounds.top, bounds.right, bounds.bottom));
-            this.wallLines.push(new Phaser.Geom.Line(bounds.left, bounds.bottom, bounds.right, bounds.bottom));
-            this.wallLines.push(new Phaser.Geom.Line(bounds.left, bounds.top, bounds.left, bounds.bottom));
-        });
-        
-        console.log(`맵 재생성 완료: 벽 ${this.walls.getChildren().length}개`);
-        
-        // 맵 재생성 후 충돌 설정 업데이트
-        if (this.player) {
-            this.setupCollisions();
-        }
-    }
-    
-    // 물리 충돌 설정 (별도 함수로 분리)
-    setupCollisions() {
-        // 기존 충돌 제거
-        if (this.playerWallCollider) this.playerWallCollider.destroy();
-        if (this.enemyWallCollider) this.enemyWallCollider.destroy();
-        if (this.otherPlayerWallCollider) this.otherPlayerWallCollider.destroy();
-        if (this.playerEnemyCollider) this.playerEnemyCollider.destroy();
-        
-        // 새 충돌 설정
-        this.playerWallCollider = this.physics.add.collider(this.player, this.walls);
-        this.enemyWallCollider = this.physics.add.collider(this.enemies, this.walls);
-        this.otherPlayerWallCollider = this.physics.add.collider(this.otherPlayers, this.walls);
-        this.playerEnemyCollider = this.physics.add.collider(this.player, this.enemies, this.handlePlayerEnemyCollision, null, this);
-        
-        console.log('물리 충돌 설정 완료');
-    }
-    
-    updateVision() {
-        // 0. 필수 객체 확인
-        if (!this.player || !this.wallLines || !this.visionTexture) {
-            return;
-        }
-    
-        // =================================================================
-        // Part 1. 월드 좌표계에서 시야 폴리곤 계산
-        // =================================================================
-        const playerPos = new Phaser.Math.Vector2(this.player.x, this.player.y);
-        const visionRadius = this.player.visionRange || 300;
-        const cam = this.cameras.main;
-    
-        const playerCircle = new Phaser.Geom.Circle(playerPos.x, playerPos.y, visionRadius);
-        const nearbyWalls = this.wallLines.filter(line =>
-            Phaser.Geom.Intersects.LineToCircle(line, playerCircle)
-        );
-    
-        const rays = [];
-        nearbyWalls.forEach(line => {
-            [line.getPointA(), line.getPointB()].forEach(p => {
-                const angle = Phaser.Math.Angle.BetweenPoints(playerPos, p);
-                rays.push(angle - 0.0001, angle, angle + 0.0001); // 오차를 더 줄임
-            });
-        });
-        for (let i = 0; i < 360; i += 4) { // 레이를 더 촘촘하게 쏴서 부드럽게 만듬
-            rays.push(Phaser.Math.DegToRad(i));
-        }
-        rays.push(Phaser.Math.DegToRad(359.999999));
-    
-        const endpoints = [];
-        rays.forEach(angle => {
-            const rayLine = new Phaser.Geom.Line(
-                playerPos.x,
-                playerPos.y,
-                playerPos.x + Math.cos(angle) * visionRadius,
-                playerPos.y + Math.sin(angle) * visionRadius
-            );
-    
-            let closestIntersection = null;
-            let minDistanceSq = visionRadius * visionRadius;
-    
-            nearbyWalls.forEach(wallLine => {
-                const intersectPoint = new Phaser.Geom.Point();
-                if (Phaser.Geom.Intersects.LineToLine(rayLine, wallLine, intersectPoint)) {
-                    const dSq = Phaser.Math.Distance.Squared(playerPos.x, playerPos.y, intersectPoint.x, intersectPoint.y);
-                    if (dSq < minDistanceSq) {
-                        minDistanceSq = dSq;
-                        closestIntersection = intersectPoint;
-                    }
-                }
-            });
-            
-            // [수정 2] 시야를 막는 벽을 보이게 하기 위한 로직
-            let finalPoint;
-            if (closestIntersection) {
-                // 레이가 벽에 부딪혔을 경우, 해당 지점에서 1픽셀 더 나아가게 만듭니다.
-                finalPoint = new Phaser.Math.Vector2(closestIntersection.x, closestIntersection.y);
-                const direction = new Phaser.Math.Vector2(rayLine.x2 - rayLine.x1, rayLine.y2 - rayLine.y1).normalize();
-            } else {
-                // 벽에 부딪히지 않으면 레이의 최대 길이 지점을 사용합니다.
-                finalPoint = new Phaser.Math.Vector2(rayLine.x2, rayLine.y2);
-            }
-            endpoints.push(finalPoint);
-        });
-    
-        // [수정 1] 렌더링 실선(틈)을 없애기 위한 정규화된 각도 정렬
-        endpoints.sort(
-            (a, b) => 
-                Phaser.Math.Angle.Normalize(Phaser.Math.Angle.BetweenPoints(playerPos, a)) -
-                Phaser.Math.Angle.Normalize(Phaser.Math.Angle.BetweenPoints(playerPos, b))
-        );
-    
-        // =================================================================
-        // Part 2. 계산된 폴리곤으로 시야 지우기 (기존과 동일)
-        // =================================================================
-        this.visionTexture.clear();
-        this.visionTexture.fill(0x000000, 0.95);
-    
-        const visionMaskGraphics = this.make.graphics({ add: false });
-        visionMaskGraphics.fillStyle(0xffffff);
-        visionMaskGraphics.beginPath();
-        visionMaskGraphics.moveTo(playerPos.x - cam.scrollX, playerPos.y - cam.scrollY);
-        endpoints.forEach(p => {
-            visionMaskGraphics.lineTo(p.x - cam.scrollX, p.y - cam.scrollY);
-        });
-        visionMaskGraphics.closePath();
-        visionMaskGraphics.fillPath();
-    
-        this.visionTexture.erase(visionMaskGraphics);
-        
-        visionMaskGraphics.destroy();
-    }
-    // GameScene.js 클래스 내부에 추가
 
     /**
-     * 시야 효과를 위한 원형 그래디언트 텍스처를 생성하고 'vision_gradient' 키로 등록합니다.
+     * 매니저들 초기화
      */
-    createGradientTexture() {
-        const size = 512; // 텍스처의 크기 (플레이어 시야 반경보다 큰 것이 좋음)
-        const graphics = this.make.graphics({ width: size, height: size, add: false });
-
-        const radius = size / 2;
-        const gradient = graphics.fillGradientStyle(0xffffff, 0xffffff, 0x000000, 0x000000, 1, 1, 0, 0);
-
-        // 원형 그래디언트를 그립니다.
-        graphics.beginPath();
-        graphics.arc(radius, radius, radius, 0, 2 * Math.PI, false);
-        graphics.closePath();
-        graphics.fillPath();
-
-        // 생성된 그래픽을 'vision_gradient'라는 키의 텍스처로 만듭니다.
-        graphics.generateTexture('vision_gradient', size, size);
-        graphics.destroy(); // 임시 그래픽 객체는 파괴합니다.
+    initializeManagers() {
+        this.networkEventManager = new NetworkEventManager(this);
+        this.mapManager = new MapManager(this);
+        this.visionManager = new VisionManager(this);
+        this.minimapManager = new MinimapManager(this);
+        this.pingManager = new PingManager(this);
+        this.cheatManager = new CheatManager(this);
+        this.effectManager = new EffectManager(this);
+        
+        // 그래디언트 텍스처 생성
+        this.visionManager.createGradientTexture();
+        
+        console.log('모든 매니저 초기화 완료');
     }
     
-    // ... (spawnEnemies, handlePlayerEnemyCollision, setupUI, etc. functions remain the same) ...
-    // 서버에서 적을 관리하므로 클라이언트 스폰 메서드 제거
-    
-    handlePlayerEnemyCollision(player, enemy) {
-        // 본인 플레이어만 적과 상호작용
-        if (player === this.player && player.body.velocity.length() > 50) {
-            // 서버에 적 공격 알림
-            if (this.networkManager && enemy.networkId) {
-                this.networkManager.hitEnemy(enemy.networkId);
-            }
-            
-            // 넉백 효과 (즉시 표시)
-            const angle = Phaser.Math.Angle.Between(player.x, player.y, enemy.x, enemy.y);
-            const knockbackForce = 200;
-            enemy.setVelocity(
-                Math.cos(angle) * knockbackForce,
-                Math.sin(angle) * knockbackForce
-            );
+    /**
+     * 게임 상태 리셋
+     */
+    resetGameState() {
+        console.log('게임 상태 리셋 시작');
+        
+        // 기존 플레이어 제거
+        if (this.player) {
+            this.player.destroy();
+            this.player = null;
         }
+        
+        // 다른 플레이어들 제거
+        if (this.otherPlayers?.children) {
+            this.otherPlayers.clear(true, true);
+        }
+        
+        // 적들 제거
+        if (this.enemies?.children) {
+            this.enemies.clear(true, true);
+        }
+        
+        // 네트워크 상태 초기화
+        if (this.networkEventManager) {
+            this.networkEventManager.resetGameState();
+        }
+        
+        console.log('게임 상태 리셋 완료');
     }
     
+    /**
+     * UI 설정
+     */
     setupUI() {
         // 게임 UI 표시
         const gameUI = document.getElementById('game-ui');
@@ -333,585 +162,844 @@ export default class GameScene extends Phaser.Scene {
             fill: '#fff',
             fontFamily: 'Arial'
         }).setScrollFactor(0);
-
-        // 미니맵 & 빅맵 초기화
-        this.initMinimap();
     }
 
-    initMinimap() {
-        this.minimapSize = 200;
-        this.minimapViewSize = 1000;
-        this.minimapScale = this.minimapSize / this.minimapViewSize;
-        
-        this.bigMapSize = 800;
-        this.bigMapScale = this.bigMapSize / this.MAP_WIDTH;
-
-        this.mapCols = Math.ceil(this.MAP_WIDTH / this.TILE_SIZE);
-        this.mapRows = Math.ceil(this.MAP_HEIGHT / this.TILE_SIZE);
-
-        this.discovered = Array.from({ length: this.mapRows }, () => Array(this.mapCols).fill(false));
-
-        const spawnCols = Math.ceil(this.SPAWN_WIDTH / this.TILE_SIZE);
-        for (let y = 0; y < this.mapRows; y++) {
-            for (let x = 0; x < spawnCols + 2; x++) this.discovered[y][x] = true;
-            for (let x = this.mapCols - spawnCols - 2; x < this.mapCols; x++) this.discovered[y][x] = true;
-        }
-
-        this.minimap = this.add.graphics();
-        this.minimap.setScrollFactor(0);
-        this.minimap.setDepth(1000);
-        this.positionMinimap();
-
-        this.bigMap = this.add.graphics();
-        this.bigMap.setScrollFactor(0);
-        this.bigMap.setDepth(1001);
-        this.bigMap.setVisible(false);
-        this.bigMap.setPosition((this.scale.width - this.bigMapSize) / 2, (this.scale.height - this.bigMapSize) / 2);
-
-        this.mapToggleKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
-        this.bigMapVisible = false;
-    }
-
-    positionMinimap() {
-        if (!this.minimap) return;
-        const cam = this.cameras.main;
-        this.minimap.setPosition(
-            cam.width - this.minimapSize - 10,
-            65
-        );
-    }
-
-    updateMinimapVision() {
-        if (!this.player) return;
-        const radius = this.player.visionRange;
-        const startCol = Math.max(0, Math.floor((this.player.x - radius) / this.TILE_SIZE));
-        const endCol = Math.min(this.mapCols - 1, Math.floor((this.player.x + radius) / this.TILE_SIZE));
-        const startRow = Math.max(0, Math.floor((this.player.y - radius) / this.TILE_SIZE));
-        const endRow = Math.min(this.mapRows - 1, Math.floor((this.player.y + radius) / this.TILE_SIZE));
-
-        const radiusSq = radius * radius;
-        for (let row = startRow; row <= endRow; row++) {
-            for (let col = startCol; col <= endCol; col++) {
-                const cellCenterX = col * this.TILE_SIZE + this.TILE_SIZE / 2;
-                const cellCenterY = row * this.TILE_SIZE + this.TILE_SIZE / 2;
-                const dx = cellCenterX - this.player.x;
-                const dy = cellCenterY - this.player.y;
-                if (dx * dx + dy * dy <= radiusSq) {
-                    this.discovered[row][col] = true;
-                }
-            }
-        }
-    }
-
-    updateMinimap() {
-        if (!this.player) return;
-    
-        const size = this.minimapSize;
-        const scale = this.minimapScale;
-        
-        this.positionMinimap();
-        this.minimap.clear();
-        
-        // 1. 미니맵 배경 그리기
-        this.minimap.fillStyle(0x000000, 0.8);
-        this.minimap.fillRect(0, 0, size, size);
-    
-        // 2. 플레이어 위치를 중심으로 미니맵에 보일 월드 좌표의 시작점 계산
-        const offsetX = this.player.x - (size / 2) / scale;
-        const offsetY = this.player.y - (size / 2) / scale;
-    
-        // 3. 미니맵 경계와 클리핑을 위한 헬퍼 함수 정의
-        const minimapBounds = new Phaser.Geom.Rectangle(0, 0, size, size);
-        
-        // 월드 좌표의 사각형(rect)을 받아 미니맵 경계에 맞게 잘라 그리는 함수
-        const drawClippedRect = (rect, color, alpha) => {
-            const zoneInMinimap = new Phaser.Geom.Rectangle(
-                (rect.x - offsetX) * scale,
-                (rect.y - offsetY) * scale,
-                rect.width * scale,
-                rect.height * scale
-            );
-            // 미니맵 경계와 그릴 사각형의 겹치는 부분만 계산
-            const intersection = Phaser.Geom.Rectangle.Intersection(minimapBounds, zoneInMinimap);
-            
-            // 겹치는 부분이 있을 경우에만 그리기
-            if (!intersection.isEmpty()) {
-                this.minimap.fillStyle(color, alpha);
-                this.minimap.fillRect(intersection.x, intersection.y, intersection.width, intersection.height);
-            }
-        };
-    
-        // 4. 발견된 타일(회색 영역) 그리기
-        const startCol = Math.max(0, Math.floor(offsetX / this.TILE_SIZE));
-        const endCol = Math.min(this.mapCols - 1, Math.ceil((offsetX + this.minimapViewSize) / this.TILE_SIZE));
-        const startRow = Math.max(0, Math.floor(offsetY / this.TILE_SIZE));
-        const endRow = Math.min(this.mapRows - 1, Math.ceil((offsetY + this.minimapViewSize) / this.TILE_SIZE));
-    
-        for (let y = startRow; y <= endRow; y++) {
-            for (let x = startCol; x <= endCol; x++) {
-                if (this.discovered[y][x]) {
-                    // BUG FIX: 직접 그리는 대신 클리핑 함수를 사용
-                    const tileWorldRect = new Phaser.Geom.Rectangle(x * this.TILE_SIZE, y * this.TILE_SIZE, this.TILE_SIZE, this.TILE_SIZE);
-                    drawClippedRect(tileWorldRect, 0x333333, 0.8);
-                }
-            }
-        }
-    
-        // 5. 특별 구역 그리기 (기존과 동일하게 클리핑 함수 사용)
-        drawClippedRect(this.redSpawnRect, 0xff0000, 0.25);
-        drawClippedRect(this.blueSpawnRect, 0x0000ff, 0.25);
-        drawClippedRect(this.plazaRect, 0xffff00, 0.15);
-    
-        // 6. 벽 그리기
-        this.walls.getChildren().forEach(wall => {
-            const col = Math.floor(wall.x / this.TILE_SIZE);
-            const row = Math.floor(wall.y / this.TILE_SIZE);
-            
-            if (this.discovered[row] && this.discovered[row][col]) {
-                // BUG FIX: 잘못된 경계 체크 로직을 제거하고 클리핑 함수를 사용
-                // (wall의 x, y가 중앙 좌표라고 가정)
-                const wallWorldRect = new Phaser.Geom.Rectangle(
-                    wall.x - this.TILE_SIZE / 2, 
-                    wall.y - this.TILE_SIZE / 2, 
-                    this.TILE_SIZE, 
-                    this.TILE_SIZE
-                );
-                drawClippedRect(wallWorldRect, 0x8b4513, 1.0);
-            }
-        });
-    
-        // 7. 플레이어 아이콘 그리기 (항상 중앙에 위치)
-        this.minimap.fillStyle(0x00ff00);
-        this.minimap.fillCircle(size / 2, size / 2, 4);
-    }
-
-    drawBigMap() {
-        const size = this.bigMapSize;
-        const scale = this.bigMapScale;
-        this.bigMap.clear();
-
-        this.bigMap.fillStyle(0x000000, 0.9);
-        this.bigMap.fillRect(0, 0, size, size);
-
-        this.bigMap.fillStyle(0x333333, 0.9);
-        const tileW = this.TILE_SIZE * scale;
-        const tileH = this.TILE_SIZE * scale;
-        for (let y = 0; y < this.mapRows; y++) {
-            for (let x = 0; x < this.mapCols; x++) {
-                if (this.discovered[y][x]) {
-                    this.bigMap.fillRect(x * tileW, y * tileH, tileW, tileH);
-                }
-            }
-        }
-        
-        this.bigMap.fillStyle(0xff0000, 0.25);
-        this.bigMap.fillRect(this.redSpawnRect.x * scale, this.redSpawnRect.y * scale, this.redSpawnRect.width * scale, this.redSpawnRect.height * scale);
-        this.bigMap.fillStyle(0x0000ff, 0.25);
-        this.bigMap.fillRect(this.blueSpawnRect.x * scale, this.blueSpawnRect.y * scale, this.blueSpawnRect.width * scale, this.blueSpawnRect.height * scale);
-        this.bigMap.fillStyle(0xffff00, 0.15);
-        this.bigMap.fillRect(this.plazaRect.x * scale, this.plazaRect.y * scale, this.plazaRect.width * scale, this.plazaRect.height * scale);
-
-        this.bigMap.fillStyle(0x8b4513);
-        this.walls.getChildren().forEach(wall => {
-            const col = Math.floor(wall.x / this.TILE_SIZE);
-            const row = Math.floor(wall.y / this.TILE_SIZE);
-            if (this.discovered[row] && this.discovered[row][col]) {
-                const x = (wall.x - this.TILE_SIZE / 2) * scale;
-                const y = (wall.y - this.TILE_SIZE / 2) * scale;
-                this.bigMap.fillRect(x, y, this.TILE_SIZE * scale, this.TILE_SIZE * scale);
+    /**
+     * 탭 포커스 이벤트 핸들러 설정
+     */
+    setupTabFocusHandlers() {
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.onTabBlur();
+            } else {
+                this.onTabFocus();
             }
         });
 
-        this.bigMap.fillStyle(0x00ff00);
-        this.bigMap.fillCircle(this.player.x * scale, this.player.y * scale, 5);
+        this.game.events.on('pause', () => {
+            this.onGamePause();
+        });
+
+        this.game.events.on('resume', () => {
+            this.onGameResume();
+        });
+
+        console.log('탭 포커스 이벤트 핸들러 설정 완료');
+    }
+
+    /**
+     * 탭 비활성화 처리
+     */
+    onTabBlur() {
+        console.log('탭 비활성화 - 게임 일시정지');
+        this.isTabActive = false;
+        this.tweens.pauseAll();
+        this.savePlayerStates();
+    }
+
+    /**
+     * 탭 활성화 처리
+     */
+    onTabFocus() {
+        console.log('탭 활성화 - 게임 재개 및 동기화');
+        this.isTabActive = true;
+        this.requestGameStateSync();
+        
+        this.time.delayedCall(500, () => {
+            this.tweens.resumeAll();
+        });
+    }
+
+    /**
+     * 게임 일시정지 처리
+     */
+    onGamePause() {
+        console.log('게임 일시정지');
+        this.savePlayerStates();
+    }
+
+    /**
+     * 게임 재개 처리
+     */
+    onGameResume() {
+        console.log('게임 재개 - 상태 동기화');
+        this.requestGameStateSync();
+    }
+
+    /**
+     * 플레이어 상태 저장
+     */
+    savePlayerStates() {
+        if (this.player) {
+            this.playerStateBeforePause = {
+                x: this.player.x,
+                y: this.player.y,
+                isJumping: this.player.isJumping
+            };
+        }
+
+        this.otherPlayerStatesBeforePause = {};
+        if (this.otherPlayers?.children) {
+            this.otherPlayers.getChildren().forEach(otherPlayer => {
+                this.otherPlayerStatesBeforePause[otherPlayer.networkId] = {
+                    x: otherPlayer.x,
+                    y: otherPlayer.y,
+                    isJumping: otherPlayer.isJumping
+                };
+            });
+        }
+    }
+
+    /**
+     * 서버 상태 동기화 요청
+     */
+    requestGameStateSync() {
+        if (this.networkManager && this.playerId) {
+            console.log('서버 상태 동기화 요청');
+            this.networkManager.requestGameSync();
+        }
+    }
+
+    /**
+     * 플레이어 상태 복원
+     */
+    restorePlayerStates(syncData) {
+        // 본인 플레이어 상태 복원
+        if (this.player && syncData.players) {
+            const myPlayerData = syncData.players.find(p => p.id === this.playerId);
+            if (myPlayerData) {
+                // 기존 액션 중단
+                if (this.player.isJumping) {
+                    this.player.isJumping = false;
+                    this.tweens.killTweensOf(this.player);
+                }
+                
+                // 위치 및 기본 상태 복원
+                this.player.x = myPlayerData.x;
+                this.player.y = myPlayerData.y;
+                this.player.direction = myPlayerData.direction;
+                
+                // 크기 정보 복원
+                if (myPlayerData.size && myPlayerData.size !== this.player.size) {
+                    this.player.setSize(myPlayerData.size);
+                }
+                
+                // 액션 상태 복원
+                this.restorePlayerActions(this.player, myPlayerData.activeActions);
+                
+                console.log('본인 플레이어 상태 복원 완료');
+            }
+        }
+
+        // 다른 플레이어들 상태 복원
+        if (this.otherPlayers?.children && syncData.players) {
+            this.otherPlayers.getChildren().forEach(otherPlayer => {
+                const playerData = syncData.players.find(p => p.id === otherPlayer.networkId);
+                if (playerData) {
+                    // 기존 액션 중단
+                    if (otherPlayer.isJumping) {
+                        otherPlayer.isJumping = false;
+                        this.tweens.killTweensOf(otherPlayer);
+                        if (otherPlayer.nameText) {
+                            this.tweens.killTweensOf(otherPlayer.nameText);
+                        }
+                    }
+                    
+                    // 위치 및 기본 상태 복원
+                    otherPlayer.x = playerData.x;
+                    otherPlayer.y = playerData.y;
+                    otherPlayer.direction = playerData.direction;
+                    
+                    // 크기 정보 복원
+                    if (playerData.size && playerData.size !== otherPlayer.size) {
+                        otherPlayer.size = playerData.size;
+                        otherPlayer.updateSize();
+                    }
+                    
+                    // 액션 상태 복원
+                    this.restorePlayerActions(otherPlayer, playerData.activeActions);
+                    
+                    otherPlayer.updateNameTextPosition();
+                }
+            });
+            
+            console.log('다른 플레이어들 상태 복원 완료');
+        }
+
+        // 적들 상태 복원
+        if (this.enemies?.children && syncData.enemies) {
+            this.enemies.getChildren().forEach(enemy => {
+                const enemyData = syncData.enemies.find(e => e.id === enemy.networkId);
+                if (enemyData) {
+                    // 기존 이동 애니메이션 중단
+                    this.tweens.killTweensOf(enemy);
+                    
+                    // 즉시 위치 및 상태 업데이트
+                    enemy.x = enemyData.x;
+                    enemy.y = enemyData.y;
+                    enemy.hp = enemyData.hp;
+                    enemy.maxHp = enemyData.maxHp;
+                    
+                    // 물리 바디 위치 즉시 반영
+                    if (enemy.body) {
+                        enemy.body.setPosition(enemyData.x - enemy.width/2, enemyData.y - enemy.height/2);
+                        
+                        // 속도 정보도 복원
+                        if (enemyData.vx !== undefined && enemyData.vy !== undefined) {
+                            enemy.body.setVelocity(enemyData.vx, enemyData.vy);
+                        }
+                    }
+                    
+                    // HP 바 업데이트
+                    if (enemy.hpBar) {
+                        enemy.updateHpBar();
+                    }
+                    
+                    // 공격 상태 복원
+                    if (enemyData.isAttacking) {
+                        enemy.playAttackAnimation();
+                    }
+                }
+            });
+            
+            console.log('적들 상태 복원 완료');
+        }
+    }
+
+    /**
+     * 플레이어 액션 상태 복원
+     */
+    restorePlayerActions(player, activeActions) {
+        if (!activeActions) return;
+
+        // 점프 상태 복원
+        if (activeActions.jump && activeActions.jump.remainingTime > 0) {
+            player.isJumping = true;
+            
+            // 남은 시간만큼 점프 애니메이션 진행
+            const remainingTime = activeActions.jump.remainingTime;
+            this.tweens.add({
+                targets: player,
+                y: player.y - 40,
+                duration: remainingTime / 2,
+                ease: 'Power2.easeOut',
+                yoyo: true,
+                onComplete: () => {
+                    player.isJumping = false;
+                }
+            });
+            
+            console.log(`점프 상태 복원: ${remainingTime}ms 남음`);
+        }
+
+        // 스킬 상태 복원
+        if (activeActions.skills && activeActions.skills.length > 0) {
+            activeActions.skills.forEach(skillData => {
+                if (skillData.remainingTime > 0) {
+                    // 스킬 효과 복원 (남은 시간 고려)
+                    this.restoreSkillEffect(player, skillData);
+                    console.log(`스킬 ${skillData.skillType} 상태 복원: ${skillData.remainingTime}ms 남음`);
+                }
+            });
+        }
+    }
+
+    /**
+     * 스킬 효과 복원
+     */
+    restoreSkillEffect(player, skillData) {
+        // 스킬 타입별로 남은 시간만큼 효과 적용
+        switch (skillData.skillType) {
+            case 'stealth':
+                // 은신 효과 복원
+                player.setAlpha(0.3);
+                this.time.delayedCall(skillData.remainingTime, () => {
+                    player.setAlpha(1);
+                });
+                break;
+                
+            case 'ward':
+                // 와드 효과 복원
+                if (player.wardEffect) {
+                    player.wardEffect.destroy();
+                }
+                player.wardEffect = this.add.circle(player.x, player.y, 30, 0x00ff00, 0.3);
+                this.time.delayedCall(skillData.remainingTime, () => {
+                    if (player.wardEffect) {
+                        player.wardEffect.destroy();
+                        player.wardEffect = null;
+                    }
+                });
+                break;
+                
+            case 'charge':
+                // 차지 효과는 이미 완료되었을 가능성이 높으므로 스킵
+                break;
+                
+            default:
+                // 기타 스킬들은 남은 시간만큼 대기
+                this.time.delayedCall(skillData.remainingTime, () => {
+                    console.log(`스킬 ${skillData.skillType} 효과 종료`);
+                });
+                break;
+        }
+    }
+    
+    /**
+     * 스폰 구역 상태 체크 (경고 메시지용)
+     */
+    checkSpawnZoneStatus() {
+        if (!this.player) return;
+        
+        // 상대팀 스폰 배리어 구역에 있는지 체크
+        const playerX = this.player.x;
+        const playerY = this.player.y;
+        let inEnemyBarrierZone = false;
+        
+        // 서버 설정에서 스폰 배리어 구역 계산
+        const extraWidth = 4 * 100; // SPAWN_BARRIER_EXTRA_TILES * TILE_SIZE (서버와 동일)
+        const extraHeight = extraWidth;
+        
+        if (this.player.team === 'red' && this.blueSpawnRect) {
+            // 빨간팀 플레이어가 파란팀 스폰 배리어 구역에 있는지 체크
+            const blueBarrierZone = {
+                x: this.blueSpawnRect.x - extraWidth,
+                y: this.blueSpawnRect.y - extraHeight,
+                right: this.blueSpawnRect.right + extraWidth,
+                bottom: this.blueSpawnRect.bottom + extraHeight
+            };
+            
+            inEnemyBarrierZone = playerX >= blueBarrierZone.x && 
+                               playerX <= blueBarrierZone.right &&
+                               playerY >= blueBarrierZone.y && 
+                               playerY <= blueBarrierZone.bottom;
+                               
+        } else if (this.player.team === 'blue' && this.redSpawnRect) {
+            // 파란팀 플레이어가 빨간팀 스폰 배리어 구역에 있는지 체크
+            const redBarrierZone = {
+                x: this.redSpawnRect.x - extraWidth,
+                y: this.redSpawnRect.y - extraHeight,
+                right: this.redSpawnRect.right + extraWidth,
+                bottom: this.redSpawnRect.bottom + extraHeight
+            };
+            
+            inEnemyBarrierZone = playerX >= redBarrierZone.x && 
+                               playerX <= redBarrierZone.right &&
+                               playerY >= redBarrierZone.y && 
+                               playerY <= redBarrierZone.bottom;
+        }
+        
+        if (inEnemyBarrierZone) {
+            if (!this.inEnemySpawnZone) {
+                // 처음 들어갔을 때
+                this.inEnemySpawnZone = true;
+                this.showSpawnZoneWarning();
+                console.log('상대팀 스폰 배리어 구역 진입 - 경고 표시');
+            }
+        } else {
+            if (this.inEnemySpawnZone) {
+                // 스폰 구역에서 나갔을 때
+                this.inEnemySpawnZone = false;
+                this.hideSpawnZoneWarning();
+                console.log('상대팀 스폰 배리어 구역 탈출 - 경고 숨김');
+            }
+        }
+    }
+    
+    /**
+     * 스폰 구역 경고 메시지 표시
+     */
+    showSpawnZoneWarning() {
+        if (this.spawnZoneWarningText) {
+            this.spawnZoneWarningText.destroy();
+        }
+        
+        this.spawnZoneWarningText = this.add.text(
+            this.scale.width / 2,
+            100,
+            '⚠️ 적 스폰 구역! 체력이 감소합니다! ⚠️',
+            {
+                fontSize: '24px',
+                fill: '#ff0000',
+                fontStyle: 'bold',
+                stroke: '#000',
+                strokeThickness: 3
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(1000);
+        
+        // 깜빡이는 효과
+        this.tweens.add({
+            targets: this.spawnZoneWarningText,
+            alpha: 0.3,
+            duration: 500,
+            yoyo: true,
+            repeat: -1
+        });
+    }
+    
+    /**
+     * 스폰 구역 경고 메시지 숨기기
+     */
+    hideSpawnZoneWarning() {
+        if (this.spawnZoneWarningText) {
+            this.spawnZoneWarningText.destroy();
+            this.spawnZoneWarningText = null;
+        }
     }
     
     update(time, delta) {
-        // 플레이어가 아직 생성되지 않았으면 대기
+        // 플레이어가 생성되지 않았으면 대기
         if (!this.player) {
             return;
         }
         
+        // 치트 키 처리
+        this.cheatManager.handleCheatKeys();
+        
         // 점프 상태 변화 감지 및 카메라 제어
         if (this.player.isJumping && !this.wasJumping) {
-            // 점프 시작 - 카메라 추적 중단
             this.cameras.main.stopFollow();
             this.wasJumping = true;
         } else if (!this.player.isJumping && this.wasJumping) {
-            // 점프 종료 - 카메라 추적 재시작
             this.cameras.main.startFollow(this.player);
             this.wasJumping = false;
         }
         
+        // 벽 충돌 체크 (점프 중이 아닐 때만)
+        if (!this.player.isJumping) {
+            const collidingWalls = this.mapManager.checkPlayerWallCollision();
+            if (collidingWalls && collidingWalls.length > 0) {
+                this.mapManager.pushPlayerOutOfWall(collidingWalls);
+            }
+        }
+        
+        // 플레이어 업데이트
         this.player.update(time, delta);
         
-        this.enemies.getChildren().forEach(enemy => {
-            enemy.update(time, delta);
-        });
-
-        if (this.mapToggleKey && Phaser.Input.Keyboard.JustDown(this.mapToggleKey)) {
-            this.bigMapVisible = !this.bigMapVisible;
-            this.bigMap.setVisible(this.bigMapVisible);
-            this.minimap.setVisible(!this.bigMapVisible);
+        // 적들 업데이트
+        if (this.enemies?.children) {
+            this.enemies.getChildren().forEach(enemy => {
+                enemy.update(time, delta);
+            });
         }
 
-        if (!this.player.isJumping) {
-            this.updateMinimapVision();
-            this.updateVision();
+        // 맵 토글 처리
+        this.minimapManager.handleMapToggle();
 
-            if (this.bigMapVisible) {
-                this.drawBigMap();
+        // 점프 중이 아닐 때만 시야 및 미니맵 업데이트
+        if (!this.player.isJumping) {
+            this.minimapManager.updateMinimapVision();
+            this.visionManager.updateVision();
+
+            if (this.minimapManager.bigMapVisible) {
+                this.minimapManager.drawBigMap();
             } else {
-                this.updateMinimap();
+                this.minimapManager.updateMinimap();
             }
         }
 
-        this.restrictMovement();
+        // 핑 시스템 업데이트
+        this.pingManager.updatePingArrows();
+        this.pingManager.updateMinimapPingPositions();
+        
+        // 와드 탐지 시스템 업데이트
+        this.minimapManager.updateWardDetectedEnemies();
+
+        // 이동 제한
+        this.mapManager.restrictMovement();
+        
+        // 스폰 구역 상태 체크 (경고 메시지용)
+        this.checkSpawnZoneStatus();
     }
 
-    getRandomPointInRect(rect) {
-        return {
-            x: Phaser.Math.Between(rect.x + this.TILE_SIZE, rect.right - this.TILE_SIZE),
-            y: Phaser.Math.Between(rect.y + this.TILE_SIZE, rect.bottom - this.TILE_SIZE)
-        };
+    /**
+     * 카메라 줌 변경 시 UI 스케일 조정
+     */
+    updateUIScale(cameraZoom) {
+        this.visionManager.updateUIScale(cameraZoom);
+        this.minimapManager.updateUIScale(cameraZoom);
     }
 
-    restrictMovement() {
-        // 플레이어가 없으면 제한 없음
+    /**
+     * 정리 작업
+     */
+    destroy() {
+        // 매니저들 정리
+        if (this.networkEventManager) {
+            this.networkEventManager.destroy();
+        }
+        if (this.mapManager) {
+            this.mapManager.destroy();
+        }
+        if (this.visionManager) {
+            this.visionManager.destroy();
+        }
+        if (this.minimapManager) {
+            this.minimapManager.destroy();
+        }
+        if (this.pingManager) {
+            this.pingManager.destroy();
+        }
+        if (this.cheatManager) {
+            this.cheatManager.destroy();
+        }
+        
+        // 스폰 구역 경고 텍스트 정리
+        this.hideSpawnZoneWarning();
+        
+        // 리스폰 타이머 텍스트 정리
+        if (this.respawnTimerText) {
+            this.respawnTimerText.destroy();
+            this.respawnTimerText = null;
+        }
+        
+        // 사망 오버레이 정리
+        this.removeDeathOverlay();
+        
+        super.destroy();
+    }
+
+    /**
+     * 플레이어 사망 처리
+     */
+    handlePlayerDeath(cause = 'unknown') {
+        console.log('플레이어 사망 처리 시작:', cause);
+        
         if (!this.player) {
+            console.warn('플레이어가 존재하지 않아 사망 처리를 건너뜁니다');
+            return;
+        }
+
+        // 현재 위치 저장 (사망 메시지용)
+        const deathX = this.player.x;
+        const deathY = this.player.y;
+
+        // 즉시 캐릭터 숨기기 및 조작 불가능하게 만들기
+        this.player.isDead = true; // 사망 상태 설정
+        this.player.setVisible(false);
+        this.player.setActive(false);
+        
+        // 색상 초기화 (데미지로 인한 빨간색 제거)
+        this.player.clearTint();
+        
+        // 진행 중인 모든 타이머 정리 (데미지 틴트 타이머 등)
+        if (this.time && this.time.getAllEvents) {
+            this.time.getAllEvents().forEach(event => {
+                if (event.callback && event.callback.toString().includes('clearTint')) {
+                    event.remove();
+                }
+            });
+        }
+        
+        // 물리 바디 비활성화
+        if (this.player.body) {
+            this.player.body.setEnable(false);
+        }
+
+        // 사망 메시지 표시 (저장된 위치 사용)
+        let deathMessage = '사망!';
+        if (cause === 'spawn-barrier') {
+            deathMessage = '스폰 배리어로 사망!';
+        }
+        
+        this.effectManager.showMessage(
+            deathX, 
+            deathY, 
+            deathMessage, 
+            { fill: '#ff0000', fontSize: '24px' }
+        );
+        
+        // 사망 시퀀스 시작
+        this.startDeathSequence();
+    }
+
+    /**
+     * 사망 시퀀스 시작 (화면 효과 + 타이머)
+     */
+    startDeathSequence() {
+        console.log('사망 시퀀스 시작');
+        
+        // 화면 오버레이로 흑백 효과 구현
+        this.createDeathOverlay();
+        
+        // 3초 카운트다운 타이머 표시
+        this.showRespawnTimer(3);
+    }
+
+    /**
+     * 사망 시 화면 오버레이 생성
+     */
+    createDeathOverlay() {
+        // 기존 오버레이가 있다면 제거
+        if (this.deathOverlay) {
+            this.deathOverlay.destroy();
+        }
+        
+        // 반투명한 회색 오버레이 생성하여 흑백 효과 연출
+        this.deathOverlay = this.add.rectangle(
+            0, 0,
+            this.scale.width * 2, // 카메라가 움직여도 전체 화면을 덮도록 충분히 큰 크기
+            this.scale.height * 2,
+            0x000000, // 검은색
+            0.6 // 60% 투명도
+        ).setOrigin(0, 0).setScrollFactor(0).setDepth(1500);
+        
+                 // 추가로 회색 필터 효과
+         this.deathGrayOverlay = this.add.rectangle(
+             0, 0,
+             this.scale.width * 2,
+             this.scale.height * 2,
+             0x808080, // 회색
+             0.3 // 30% 투명도
+         ).setOrigin(0, 0).setScrollFactor(0).setDepth(1501);
+     }
+
+     /**
+      * 사망 오버레이 제거
+      */
+     removeDeathOverlay() {
+         if (this.deathOverlay) {
+             this.deathOverlay.destroy();
+             this.deathOverlay = null;
+         }
+         
+         if (this.deathGrayOverlay) {
+             this.deathGrayOverlay.destroy();
+             this.deathGrayOverlay = null;
+         }
+     }
+
+    /**
+     * 리스폰 타이머 표시
+     */
+    showRespawnTimer(seconds) {
+        // 기존 타이머 텍스트가 있다면 제거
+        if (this.respawnTimerText) {
+            this.respawnTimerText.destroy();
+        }
+        
+        // 타이머 텍스트 생성
+        this.respawnTimerText = this.add.text(
+            this.scale.width / 2,
+            this.scale.height / 2,
+            `리스폰까지: ${seconds}초`,
+            {
+                fontSize: '32px',
+                fill: '#ffffff',
+                fontStyle: 'bold',
+                stroke: '#000000',
+                strokeThickness: 4,
+                align: 'center'
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(2000);
+        
+        // 1초마다 카운트다운
+        const countdown = () => {
+            seconds--;
+            if (seconds > 0) {
+                this.respawnTimerText.setText(`리스폰까지: ${seconds}초`);
+                this.time.delayedCall(1000, countdown);
+            } else {
+                // 타이머 완료 - 즉시 리스폰 실행
+                this.respawnPlayer();
+            }
+        };
+        
+        // 첫 번째 카운트다운 시작
+        this.time.delayedCall(1000, countdown);
+    }
+
+    /**
+     * 플레이어 리스폰
+     */
+    respawnPlayer() {
+        console.log('플레이어 리스폰 시작');
+        
+        if (!this.player) {
+            console.warn('플레이어가 존재하지 않아 리스폰을 건너뜁니다');
             return;
         }
         
-        if (this.player.team === 'red' && this.blueSpawnRect.contains(this.player.x, this.player.y)) {
-            this.player.x = this.blueSpawnRect.x;
-        } 
-        else if (this.player.team === 'blue' && this.redSpawnRect.contains(this.player.x, this.player.y)) {
-            this.player.x = this.redSpawnRect.right;
-        }
-
-        this.enemies.getChildren().forEach(enemy => {
-            if (this.redSpawnRect.contains(enemy.x, enemy.y)) {
-                enemy.x = this.redSpawnRect.right + this.TILE_SIZE;
-            } 
-            else if (this.blueSpawnRect.contains(enemy.x, enemy.y)) {
-                enemy.x = this.blueSpawnRect.x - this.TILE_SIZE;
-            }
-        });
-    }
-
-    // 카메라 줌 변경 시 UI 스케일 조정 (안개와 미니맵이 영향받지 않도록)
-    updateUIScale(cameraZoom) {
-        const inverseZoom = 1 / cameraZoom;
+        // 화면 오버레이 제거
+        this.removeDeathOverlay();
         
-        // 안개 스케일 조정
-        if (this.visionTexture) {
-            this.visionTexture.setScale(inverseZoom);
+        // 타이머 텍스트 제거
+        if (this.respawnTimerText) {
+            this.respawnTimerText.destroy();
+            this.respawnTimerText = null;
         }
         
-        // 미니맵 스케일 조정
-        if (this.minimap) {
-            this.minimap.setScale(inverseZoom);
-        }
-        
-        // 빅맵 스케일 조정
-        if (this.bigMap) {
-            this.bigMap.setScale(inverseZoom);
-        }
-    }
-
-    // 네트워크 이벤트 리스너 설정
-    setupNetworkListeners() {
-        // 게임 입장 완료
-        this.networkManager.on('game-joined', (data) => {
-            console.log('게임 입장 완료:', data);
+        // 플레이어를 스폰 구역의 랜덤한 위치에 배치
+        const spawnPosition = this.getRandomSpawnPosition();
+        if (spawnPosition) {
+            // 플레이어 다시 활성화
+            this.player.isDead = false; // 사망 상태 해제
+            this.player.setVisible(true);
+            this.player.setActive(true);
             
-            // 서버 맵 데이터로 맵 재생성
-            if (data.mapData) {
-                console.log('서버 맵 데이터로 맵 재생성');
-                this.recreateMapFromServer(data.mapData);
+            // 색상 초기화 (데미지로 인한 빨간색 제거)
+            this.player.clearTint();
+            
+            // 위치 설정 (스프라이트와 물리 바디 모두)
+            this.player.setPosition(spawnPosition.x, spawnPosition.y);
+            if (this.player.body) {
+                this.player.body.setEnable(true);
+                this.player.body.reset(spawnPosition.x, spawnPosition.y);
             }
             
-            // 텍스처 존재 여부 확인
-            const testTexture = `player_${data.playerData.jobClass}_front`;
-            console.log(`텍스처 확인: ${testTexture} exists = ${this.textures.exists(testTexture)}`);
+            // 방향을 front로 초기화
+            this.player.direction = 'front';
+            this.player.updateJobSprite();
             
-            // 본인 플레이어 생성
-            this.player = new Player(this, data.playerData.x, data.playerData.y, data.playerData.team);
-            this.player.setNetworkId(data.playerId);
-            this.player.setNetworkManager(this.networkManager);
+            // 이름표도 다시 표시
+            if (this.player.nameText) {
+                this.player.nameText.setVisible(true);
+                this.player.updateNameTextPosition();
+            }
             
-            // 물리 충돌 설정 (맵 재생성 후에도 작동하도록)
-            this.setupCollisions();
+            // HP 완전 회복
+            this.player.hp = this.player.maxHp;
+            this.player.updateUI();
             
-            // 카메라 설정
+            // 서버에 리스폰 알림
+            this.networkManager.emit('player-respawned', {
+                x: spawnPosition.x,
+                y: spawnPosition.y
+            });
+            
+            // 카메라가 플레이어를 다시 따라가도록 설정
             this.cameras.main.startFollow(this.player);
-            this.cameras.main.setZoom(1);
             
-            // 기존 플레이어들 생성
-            data.players.forEach(playerData => {
-                if (playerData.id !== data.playerId) {
-                    this.createOtherPlayer(playerData);
-                }
-            });
+            // 리스폰 이펙트
+            this.effectManager.showExplosion(spawnPosition.x, spawnPosition.y, 0x00ff00, 50);
+            this.effectManager.showMessage(
+                spawnPosition.x, 
+                spawnPosition.y - 50, 
+                '리스폰!', 
+                { fill: '#00ff00', fontSize: '20px' }
+            );
             
-            // 기존 적들 생성
-            data.enemies.forEach(enemyData => {
-                this.createNetworkEnemy(enemyData);
-            });
-            
-            console.log('플레이어 생성 완료:', this.player);
-        });
-
-        // 다른 플레이어 입장
-        this.networkManager.on('player-joined', (playerData) => {
-            console.log('플레이어 입장:', playerData);
-            this.createOtherPlayer(playerData);
-        });
-
-        // 플레이어 퇴장
-        this.networkManager.on('player-left', (data) => {
-            console.log('플레이어 퇴장:', data);
-            const otherPlayer = this.otherPlayers.getChildren().find(p => p.networkId === data.playerId);
-            if (otherPlayer) {
-                otherPlayer.destroy();
-            }
-        });
-
-        // 플레이어 이동
-        this.networkManager.on('player-moved', (data) => {
-            const otherPlayer = this.otherPlayers.getChildren().find(p => p.networkId === data.id);
-            if (otherPlayer && !otherPlayer.isJumping) { // 점프 중이 아닐 때만 위치 업데이트
-                // 부드러운 이동을 위한 트윈
-                this.tweens.add({
-                    targets: otherPlayer,
-                    x: data.x,
-                    y: data.y,
-                    duration: 50,
-                    ease: 'Linear'
-                });
-                
-                // 상태 업데이트
-                otherPlayer.direction = data.direction;
-                if (data.jobClass && data.jobClass !== otherPlayer.jobClass) {
-                    otherPlayer.jobClass = data.jobClass;
-                }
-                if (data.level && data.level !== otherPlayer.level) {
-                    otherPlayer.level = data.level;
-                    otherPlayer.updateCharacterSize();
-                }
-                if (data.size && data.size !== otherPlayer.size) {
-                    otherPlayer.size = data.size;
-                    otherPlayer.updateSize();
-                }
-                
-                otherPlayer.updateJobSprite();
-            }
-        });
-
-        // 스킬 사용
-        this.networkManager.on('player-skill-used', (data) => {
-            const player = data.playerId === this.networkManager.playerId 
-                ? this.player 
-                : this.otherPlayers.getChildren().find(p => p.networkId === data.playerId);
-            
-            if (player) {
-                // 본인이 아닌 다른 플레이어의 스킬만 실행
-                if (data.playerId !== this.networkManager.playerId) {
-                    this.showSkillEffect(player, data.skillType);
-                }
-            }
-        });
-
-        // 플레이어 레벨업
-        this.networkManager.on('player-level-up', (data) => {
-            const player = data.playerId === this.networkManager.playerId 
-                ? this.player 
-                : this.otherPlayers.getChildren().find(p => p.networkId === data.playerId);
-            
-            if (player) {
-                const levelUpText = this.add.text(player.x, player.y - 50, 'LEVEL UP!', {
-                    fontSize: '24px',
-                    fill: '#ffff00'
-                }).setOrigin(0.5);
-                
-                this.time.delayedCall(2000, () => {
-                    levelUpText.destroy();
-                });
-            }
-        });
-
-        // 적 스폰
-        this.networkManager.on('enemy-spawned', (enemyData) => {
-            this.createNetworkEnemy(enemyData);
-        });
-
-        // 적 제거
-        this.networkManager.on('enemy-destroyed', (data) => {
-            const enemy = this.enemies.getChildren().find(e => e.networkId === data.enemyId);
-            if (enemy) {
-                enemy.destroy();
-            }
-        });
-
-        // 적 데미지
-        this.networkManager.on('enemy-damaged', (data) => {
-            const enemy = this.enemies.getChildren().find(e => e.networkId === data.enemyId);
-            if (enemy) {
-                enemy.hp = data.hp;
-                enemy.maxHp = data.maxHp;
-                
-                // 데미지 표시
-                const damageText = this.add.text(enemy.x, enemy.y - 30, `${enemy.hp}/${enemy.maxHp}`, {
-                    fontSize: '12px',
-                    fill: '#ff0000'
-                }).setOrigin(0.5);
-                
-                this.time.delayedCall(1000, () => {
-                    damageText.destroy();
-                });
-            }
-        });
-
-        // 적 위치 업데이트 (서버에서 관리)
-        this.networkManager.on('enemies-update', (enemiesData) => {
-            enemiesData.forEach(enemyData => {
-                const enemy = this.enemies.getChildren().find(e => e.networkId === enemyData.id);
-                if (enemy) {
-                    // 부드러운 이동을 위한 보간
-                    this.tweens.add({
-                        targets: enemy,
-                        x: enemyData.x,
-                        y: enemyData.y,
-                        duration: 50,
-                        ease: 'Linear'
-                    });
-                    
-                    // HP 업데이트
-                    enemy.hp = enemyData.hp;
-                    enemy.maxHp = enemyData.maxHp;
-                    
-                    // 공격 애니메이션
-                    if (enemyData.isAttacking) {
-                        this.showEnemyAttack(enemy);
-                    }
-                }
-                         });
-         });
-
-        // 플레이어 직업 변경
-        this.networkManager.on('player-job-changed', (data) => {
-            const otherPlayer = this.otherPlayers.getChildren().find(p => p.networkId === data.id);
-            if (otherPlayer) {
-                otherPlayer.jobClass = data.jobClass;
-                otherPlayer.updateJobSprite();
-                console.log(`플레이어 ${data.id} 직업 변경: ${data.jobClass}`);
-            }
-        });
+            console.log('플레이어 리스폰 완료:', spawnPosition);
+        } else {
+            console.error('스폰 위치를 찾을 수 없어 리스폰에 실패했습니다');
+        }
     }
 
-    // 다른 플레이어 생성
-    createOtherPlayer(playerData) {
-        const otherPlayer = new Player(this, playerData.x, playerData.y, playerData.team);
-        otherPlayer.setNetworkId(playerData.id);
-        otherPlayer.setIsOtherPlayer(true); // 다른 플레이어임을 표시
-        otherPlayer.level = playerData.level;
-        otherPlayer.hp = playerData.hp;
-        otherPlayer.maxHp = playerData.maxHp;
-        otherPlayer.jobClass = playerData.jobClass;
-        otherPlayer.direction = playerData.direction;
-        otherPlayer.size = playerData.size;
-        otherPlayer.updateJobSprite();
+    /**
+     * 랜덤한 스폰 위치 반환
+     */
+    getRandomSpawnPosition() {
+        if (!this.player?.team) {
+            console.warn('플레이어 팀 정보가 없어 기본 위치로 리스폰');
+            return { x: this.scale.width / 2, y: this.scale.height / 2 };
+        }
         
-        this.otherPlayers.add(otherPlayer);
+        let spawnRect = null;
+        if (this.player.team === 'red' && this.redSpawnRect) {
+            spawnRect = this.redSpawnRect;
+        } else if (this.player.team === 'blue' && this.blueSpawnRect) {
+            spawnRect = this.blueSpawnRect;
+        }
         
-        // 다른 플레이어 이름 표시
-        const nameText = this.add.text(playerData.x, playerData.y - 40, `Player ${playerData.id.slice(0, 6)}`, {
-            fontSize: '12px',
-            fill: playerData.team === 'red' ? '#ff0000' : '#0000ff'
-        }).setOrigin(0.5);
-        
-        otherPlayer.nameText = nameText;
-        
-        return otherPlayer;
+        if (spawnRect) {
+            // 스폰 구역 내 랜덤한 위치 생성
+            const padding = 200; // 벽에서 조금 떨어진 위치
+            const x = Phaser.Math.Between(
+                spawnRect.x + padding, 
+                spawnRect.right - padding
+            );
+            const y = Phaser.Math.Between(
+                spawnRect.y + padding, 
+                spawnRect.bottom - padding
+            );
+            
+            return { x, y };
+        } else {
+            console.warn('스폰 구역 정보가 없어 기본 위치로 리스폰');
+            return { x: this.scale.width / 2, y: this.scale.height / 2 };
+        }
     }
 
-    // 네트워크 적 생성
-    createNetworkEnemy(enemyData) {
-        const enemy = new Enemy(this, enemyData.x, enemyData.y, enemyData.type);
-        enemy.setNetworkId(enemyData.id);
-        enemy.hp = enemyData.hp;
-        enemy.maxHp = enemyData.maxHp;
-        enemy.isServerControlled = true; // 서버에서 관리됨을 표시
+    /**
+     * 게임 완전 초기화 (Player not found 에러 등으로 인한 강제 초기화)
+     */
+    forceResetGame() {
+        console.log('GameScene 강제 초기화 시작...');
         
-        this.enemies.add(enemy);
-        return enemy;
-    }
-
-    // 적 공격 애니메이션 표시
-    showEnemyAttack(enemy) {
-        // 간단한 공격 이펙트
-        enemy.setTint(0xff0000);
-        this.time.delayedCall(200, () => {
-            enemy.clearTint();
-        });
-        
-        // 공격 범위 표시
-        const attackRange = this.add.circle(enemy.x, enemy.y, 60, 0xff0000, 0.3);
-        this.time.delayedCall(300, () => {
-            attackRange.destroy();
-        });
-    }
-
-    // 스킬 이펙트 표시
-    showSkillEffect(player, skillType) {
-        switch (skillType) {
-            case 'stealth':
-                player.setAlpha(0.3);
-                player.setTint(0x888888);
-                this.time.delayedCall(3000, () => {
-                    player.setAlpha(1);
-                    player.clearTint();
-                });
-                break;
-            case 'jump':
-                // 다른 플레이어의 점프 애니메이션 (위치 동기화 없이 시각적 효과만)
-                if (player.isOtherPlayer) {
-                    const originalY = player.y;
-                    const originalNameY = player.nameText ? player.nameText.y : null;
-                    player.isJumping = true;
-                    
-                    // 플레이어와 이름 태그를 함께 애니메이션
-                    const targets = [player];
-                    if (player.nameText) {
-                        targets.push(player.nameText);
-                    }
-                    
-                    this.tweens.add({
-                        targets: targets,
-                        y: '-=50', // 현재 위치에서 50 위로
-                        duration: 200,
-                        yoyo: true,
-                        ease: 'Power2',
-                        onComplete: () => {
-                            // 원래 위치로 정확히 복원
-                            player.y = originalY;
-                            if (player.nameText && originalNameY !== null) {
-                                player.nameText.y = originalNameY;
-                            }
-                            player.isJumping = false;
-                        }
-                    });
-                }
-                break;
-            case 'charge':
-                // 돌진 이펙트
-                break;
-            case 'ward':
-                const ward = this.add.circle(player.x, player.y, 50, 0x00ffff, 0.3);
-                this.time.delayedCall(5000, () => {
-                    ward.destroy();
-                });
-                break;
+        try {
+            // 모든 타이머 정리
+            if (this.time) {
+                this.time.removeAllEvents();
+            }
+            
+            // 플레이어 완전 제거
+            if (this.player) {
+                this.player.destroy();
+                this.player = null;
+            }
+            
+            // 다른 플레이어들 제거
+            if (this.otherPlayers) {
+                this.otherPlayers.clear(true, true);
+            }
+            
+            // 적들 제거
+            if (this.enemies) {
+                this.enemies.clear(true, true);
+            }
+            
+            // 벽 제거
+            if (this.walls) {
+                this.walls.clear(true, true);
+            }
+            
+            // 스폰 배리어 제거
+            if (this.spawnBarriers) {
+                this.spawnBarriers.clear(true, true);
+            }
+            
+            // 와드 제거
+            if (this.activeWard) {
+                this.activeWard.destroy();
+                this.activeWard = null;
+            }
+            
+            // 매니저들 정리
+            if (this.networkEventManager) {
+                this.networkEventManager.destroy();
+                this.networkEventManager = null;
+            }
+            
+            if (this.visionManager) {
+                this.visionManager.destroy();
+                this.visionManager = null;
+            }
+            
+            if (this.minimapManager) {
+                this.minimapManager.destroy();
+                this.minimapManager = null;
+            }
+            
+            if (this.pingManager) {
+                this.pingManager.destroy();
+                this.pingManager = null;
+            }
+            
+            if (this.cheatManager) {
+                this.cheatManager.destroy();
+                this.cheatManager = null;
+            }
+            
+            // 상태 초기화
+            this.playerNickname = 'Player';
+            this.isFirstJoin = true;
+            this.playerTeam = null;
+            this.playerId = null;
+            this.inEnemySpawnZone = false;
+            
+            console.log('GameScene 강제 초기화 완료');
+        } catch (error) {
+            console.error('GameScene 강제 초기화 중 오류:', error);
         }
     }
 }

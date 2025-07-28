@@ -3,608 +3,379 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const cors = require('cors');
-const { v4: uuidv4 } = require('uuid');
 
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
+// 매니저들과 유틸리티 import
+const gameConfig = require('./src/config/GameConfig');
+const GameStateManager = require('./src/managers/GameStateManager');
+const SocketEventManager = require('./src/managers/SocketEventManager');
+const EnemyManager = require('./src/managers/EnemyManager');
+const ServerUtils = require('./src/utils/ServerUtils');
+const { generateMap } = require('./generateMap');
 
-const PORT = process.env.PORT || 3000;
-
-// 미들웨어
-app.use(cors());
-app.use(express.json());
-
-// 프로덕션 환경에서만 정적 파일 서빙
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../dist')));
-}
-
-// 게임 상태 관리
-const gameState = {
-  players: new Map(),
-  enemies: new Map(),
-  rooms: new Map(), // 나중에 방 시스템 확장 가능
-  mapData: null // 공통 맵 데이터
-};
-
-// 플레이어 클래스
-class ServerPlayer {
-  constructor(id, x, y, team) {
-    this.id = id;
-    this.x = x;
-    this.y = y;
-    this.team = team;
-    this.level = 1;
-    this.exp = 0;
-    this.expToNext = 100;
-    this.maxHp = 100;
-    this.hp = this.maxHp;
-    this.speed = 200;
-    this.attack = 20;
-    this.defense = 10;
-    this.jobClass = 'slime';
-    this.direction = 'front';
-    this.isJumping = false;
-    this.size = 64;
-    this.visionRange = 300;
-    this.lastUpdate = Date.now();
-  }
-
-  update(data) {
-    this.x = data.x;
-    this.y = data.y;
-    this.direction = data.direction;
-    this.isJumping = data.isJumping;
-    this.lastUpdate = Date.now();
-  }
-
-  getState() {
-    return {
-      id: this.id,
-      x: this.x,
-      y: this.y,
-      team: this.team,
-      level: this.level,
-      hp: this.hp,
-      maxHp: this.maxHp,
-      jobClass: this.jobClass,
-      direction: this.direction,
-      isJumping: this.isJumping,
-      size: this.size,
-      attack: this.attack,
-      defense: this.defense,
-      speed: this.speed
-    };
-  }
-}
-
-// 적 클래스
-class ServerEnemy {
-  constructor(id, x, y, type) {
-    this.id = id;
-    this.x = x;
-    this.y = y;
-    this.type = type;
-    this.hp = 50;
-    this.maxHp = 50;
-    this.attack = 15;
-    this.speed = 50;
-    this.lastUpdate = Date.now();
-    
-    // AI 관련
-    this.target = null; // 타겟 플레이어
-    this.aggroRange = 200; // 어그로 범위
-    this.attackRange = 60; // 공격 범위
-    this.lastAttack = 0;
-    this.attackCooldown = 1500; // 공격 쿨타임
-    
-    // 이동 관련
-    this.vx = 0;
-    this.vy = 0;
-    this.wanderDirection = Math.random() * Math.PI * 2;
-    this.wanderChangeTime = Date.now() + Math.random() * 3000 + 2000;
-  }
-  
-  update(players, delta) {
-    const now = Date.now();
-    this.lastUpdate = now;
-    
-    // 타겟 찾기
-    this.findTarget(players);
-    
-    if (this.target) {
-      // 타겟이 있으면 추적
-      this.chaseTarget(delta);
-    } else {
-      // 타겟이 없으면 배회
-      this.wander(delta, now);
-    }
-    
-    // 위치 업데이트
-    this.x += this.vx * delta / 1000;
-    this.y += this.vy * delta / 1000;
-    
-    // 맵 경계 체크
-    this.checkBounds();
-  }
-  
-  findTarget(players) {
-    let closestPlayer = null;
-    let closestDistance = this.aggroRange;
-    
-    for (const player of players.values()) {
-      const dx = player.x - this.x;
-      const dy = player.y - this.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      if (distance < closestDistance) {
-        closestPlayer = player;
-        closestDistance = distance;
+/**
+ * RPG Slime 멀티플레이어 서버
+ */
+class GameServer {
+  constructor() {
+    this.app = express();
+    this.server = http.createServer(this.app);
+    this.io = socketIo(this.server, {
+      cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
       }
-    }
+    });
     
-    this.target = closestPlayer;
+    this.port = process.env.PORT || gameConfig.SERVER.DEFAULT_PORT;
+    
+    // 매니저들 초기화
+    this.gameStateManager = new GameStateManager();
+    this.enemyManager = new EnemyManager(this.io, this.gameStateManager);
+    this.socketEventManager = new SocketEventManager(this.io, this.gameStateManager, this.enemyManager);
+    
+    // 게임 루프 타이머
+    this.gameLoopInterval = null;
+    
+    this.initialize();
   }
-  
-  chaseTarget(delta) {
-    if (!this.target) return;
+
+  /**
+   * 서버 초기화
+   */
+  initialize() {
+    console.log('🎮 RPG Slime 서버 초기화 시작...');
     
-    const dx = this.target.x - this.x;
-    const dy = this.target.y - this.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    // Express 미들웨어 설정
+    this.setupMiddleware();
     
-    if (distance > this.aggroRange) {
-      // 너무 멀면 타겟 해제
-      this.target = null;
-      this.vx = 0;
-      this.vy = 0;
-      return;
-    }
+    // 라우팅 설정
+    this.setupRoutes();
     
-    if (distance > this.attackRange) {
-      // 추적
-      this.vx = (dx / distance) * this.speed;
-      this.vy = (dy / distance) * this.speed;
-    } else {
-      // 공격 범위 내에서는 정지
-      this.vx = 0;
-      this.vy = 0;
-      
-      // 공격 시도
-      this.tryAttack();
-    }
+    // 맵 생성
+    this.generateGameMap();
+    
+    // 소켓 이벤트 설정
+    this.socketEventManager.setupSocketEvents();
+    
+    // 적 매니저 초기화
+    this.enemyManager.initialize();
+    
+    // 게임 루프 시작
+    this.startGameLoop();
+    
+    console.log('✅ 서버 초기화 완료');
   }
-  
-  wander(delta, now) {
-    // 방향을 주기적으로 변경
-    if (now > this.wanderChangeTime) {
-      this.wanderDirection = Math.random() * Math.PI * 2;
-      this.wanderChangeTime = now + Math.random() * 3000 + 2000;
-    }
+
+  /**
+   * Express 미들웨어 설정
+   */
+  setupMiddleware() {
+    this.app.use(cors());
+    this.app.use(express.json());
     
-    // 배회 이동
-    const wanderSpeed = this.speed * 0.3;
-    this.vx = Math.cos(this.wanderDirection) * wanderSpeed;
-    this.vy = Math.sin(this.wanderDirection) * wanderSpeed;
-  }
-  
-  tryAttack() {
-    const now = Date.now();
-    if (now - this.lastAttack > this.attackCooldown && this.target) {
-      this.lastAttack = now;
-      // 공격 이벤트를 클라이언트에 전송하기 위해 플래그 설정
-      this.isAttacking = true;
-      return true;
-    }
-    return false;
-  }
-  
-  checkBounds() {
-    const MAP_WIDTH = 3000;
-    const MAP_HEIGHT = 3000;
-    
-    if (this.x < 50) {
-      this.x = 50;
-      this.vx = Math.abs(this.vx);
-    }
-    if (this.x > MAP_WIDTH - 50) {
-      this.x = MAP_WIDTH - 50;
-      this.vx = -Math.abs(this.vx);
-    }
-    if (this.y < 50) {
-      this.y = 50;
-      this.vy = Math.abs(this.vy);
-    }
-    if (this.y > MAP_HEIGHT - 50) {
-      this.y = MAP_HEIGHT - 50;
-      this.vy = -Math.abs(this.vy);
+    // 프로덕션 환경에서만 정적 파일 서빙
+    if (process.env.NODE_ENV === 'production') {
+      this.app.use(express.static(path.join(__dirname, '../dist')));
     }
   }
 
-  getState() {
-    const state = {
-      id: this.id,
-      x: this.x,
-      y: this.y,
-      type: this.type,
-      hp: this.hp,
-      maxHp: this.maxHp,
-      vx: this.vx,
-      vy: this.vy
-    };
-    
-    // 공격 상태가 있으면 포함하고 리셋
-    if (this.isAttacking) {
-      state.isAttacking = true;
-      this.isAttacking = false;
-    }
-    
-    return state;
-  }
-}
-
-// 소켓 연결 처리
-io.on('connection', (socket) => {
-  console.log(`플레이어 연결: ${socket.id}`);
-
-  // 플레이어 입장
-  socket.on('join-game', (data) => {
-    const playerId = socket.id;
-    const team = getPlayerTeam();
-    const spawnPoint = getSpawnPoint(team);
-    
-    const player = new ServerPlayer(playerId, spawnPoint.x, spawnPoint.y, team);
-    gameState.players.set(playerId, player);
-
-    // 본인에게 게임 상태 전송 (맵 데이터 포함)
-    socket.emit('game-joined', {
-      playerId: playerId,
-      playerData: player.getState(),
-      players: Array.from(gameState.players.values()).map(p => p.getState()),
-      enemies: Array.from(gameState.enemies.values()).map(e => e.getState()),
-      mapData: gameState.mapData // 맵 데이터 추가
+  /**
+   * 라우팅 설정
+   */
+  setupRoutes() {
+    // API 라우트
+    this.app.get('/api/status', (req, res) => {
+      res.json({
+        server: 'RPG Slime Multiplayer Server',
+        status: 'running',
+        uptime: process.uptime(),
+        players: this.gameStateManager.players.size,
+        enemies: this.gameStateManager.enemies.size,
+        memory: ServerUtils.getMemoryUsage(),
+        timestamp: Date.now()
+      });
     });
 
-    // 다른 플레이어들에게 새 플레이어 알림
-    socket.broadcast.emit('player-joined', player.getState());
+    this.app.get('/api/stats', (req, res) => {
+      res.json(this.gameStateManager.getStats());
+    });
 
-    console.log(`플레이어 ${playerId} 게임 입장 (팀: ${team})`);
-  });
+    this.app.get('/api/config', (req, res) => {
+      res.json({
+        mapSize: {
+          width: gameConfig.MAP_WIDTH,
+          height: gameConfig.MAP_HEIGHT,
+          widthTiles: gameConfig.MAP_WIDTH_TILES,
+          heightTiles: gameConfig.MAP_HEIGHT_TILES
+        },
+        tileSize: gameConfig.TILE_SIZE,
+        spawnWidth: gameConfig.SPAWN_WIDTH,
+        plazaSize: gameConfig.PLAZA_SIZE,
+        spawnWidthTiles: gameConfig.SPAWN_WIDTH_TILES,
+        plazaSizeTiles: gameConfig.PLAZA_SIZE_TILES
+      });
+    });
 
-  // 플레이어 위치 업데이트
-  socket.on('player-update', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player) {
-      player.update(data);
-      
-      // 다른 플레이어들에게 위치 업데이트 브로드캐스트
-      socket.broadcast.emit('player-moved', {
-        id: socket.id,
-        x: player.x,
-        y: player.y,
-        direction: player.direction,
-        isJumping: player.isJumping,
-        jobClass: player.jobClass,
-        level: player.level,
-        size: player.size
+    // 프로덕션/개발 환경 라우팅
+    if (process.env.NODE_ENV === 'production') {
+      this.app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, '../dist/index.html'));
+      });
+    } else {
+      this.app.get('/', (req, res) => {
+        res.json({ 
+          message: '개발 모드입니다. 클라이언트는 http://localhost:5173에서 실행하세요.',
+          server: 'RPG Slime Multiplayer Server',
+          status: 'running',
+          endpoints: {
+            status: '/api/status',
+            stats: '/api/stats',
+            config: '/api/config'
+          }
+        });
       });
     }
-  });
+  }
 
-  // 플레이어 직업 변경
-  socket.on('player-job-change', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player) {
-      player.jobClass = data.jobClass;
-      
-      // 모든 플레이어에게 직업 변경 알림
-      io.emit('player-job-changed', {
-        id: socket.id,
-        jobClass: data.jobClass
-      });
-    }
-  });
+  /**
+   * 게임 맵 생성
+   */
+  generateGameMap() {
+    console.log('🗺️  게임 맵 생성 중...');
+    const mapData = generateMap(gameConfig);
+    this.gameStateManager.setMapData(mapData);
+    console.log('✅ 게임 맵 생성 완료');
+  }
 
-  // 플레이어 스킬 사용
-  socket.on('player-skill', (data) => {
-    const player = gameState.players.get(socket.id);
-    if (player) {
-      // 스킬 효과를 모든 플레이어에게 브로드캐스트
-      io.emit('player-skill-used', {
-        playerId: socket.id,
-        skillType: data.skillType,
-        x: player.x,
-        y: player.y
-      });
-    }
-  });
-
-  // 적과의 충돌
-  socket.on('enemy-hit', (data) => {
-    const enemy = gameState.enemies.get(data.enemyId);
-    const player = gameState.players.get(socket.id);
+  /**
+   * 게임 루프 시작
+   */
+  startGameLoop() {
+    console.log('🔄 게임 루프 시작...');
     
-    if (enemy && player) {
-      enemy.hp -= player.attack;
+    this.gameLoopInterval = setInterval(() => {
+      this.gameLoop();
+    }, gameConfig.SERVER.GAME_LOOP_INTERVAL);
+    
+    console.log(`✅ 게임 루프 시작됨 (${gameConfig.SERVER.GAME_LOOP_INTERVAL}ms 간격)`);
+  }
+
+  /**
+   * 게임 루프 중지
+   */
+  stopGameLoop() {
+    if (this.gameLoopInterval) {
+      clearInterval(this.gameLoopInterval);
+      this.gameLoopInterval = null;
+      console.log('🛑 게임 루프 중지됨');
+    }
+  }
+
+  /**
+   * 메인 게임 루프
+   */
+  gameLoop() {
+    try {
+      const deltaTime = gameConfig.SERVER.GAME_LOOP_INTERVAL;
       
-      if (enemy.hp <= 0) {
-        gameState.enemies.delete(data.enemyId);
-        player.exp += 25;
-        
-        // 경험치 업데이트
-        if (player.exp >= player.expToNext) {
-          player.level++;
-          player.exp -= player.expToNext;
-          player.expToNext = Math.floor(player.expToNext * 1.2);
-          player.maxHp += 20;
-          player.hp = player.maxHp;
-          player.attack += 5;
-          player.defense += 2;
-          player.speed += 10;
+      // 연결 해제된 플레이어들 정리
+      const disconnectedPlayers = this.gameStateManager.cleanupDisconnectedPlayers();
+      disconnectedPlayers.forEach(playerId => {
+        this.io.emit('player-left', { playerId });
+      });
+      
+      // 적 AI 업데이트
+      this.enemyManager.updateEnemies(deltaTime);
+      
+      // 스폰 배리어 데미지 체크
+      const damagedPlayers = this.gameStateManager.checkSpawnBarrierDamage();
+      if (damagedPlayers.length > 0) {
+        damagedPlayers.forEach(damageInfo => {
+          // 모든 플레이어에게 데미지 이벤트 전송 (다른 플레이어들도 데미지 이펙트를 볼 수 있도록)
+          this.io.emit('spawn-barrier-damage', damageInfo);
+          console.log(`스폰 배리어 데미지 이벤트 전송: ${damageInfo.playerId}, -${damageInfo.damage}HP`);
           
-          io.emit('player-level-up', {
-            playerId: socket.id,
-            level: player.level
-          });
-        }
-        
-        // 적 제거
-        io.emit('enemy-destroyed', { enemyId: data.enemyId });
-        
-        // 새 적 스폰
-        setTimeout(() => spawnEnemy(), 2000);
-      } else {
-        // 적 HP 업데이트
-        io.emit('enemy-damaged', {
-          enemyId: data.enemyId,
-          hp: enemy.hp,
-          maxHp: enemy.maxHp
+          // 사망 처리
+          if (damageInfo.isDead) {
+            this.io.emit('player-died', {
+              playerId: damageInfo.playerId,
+              cause: 'spawn-barrier'
+            });
+            console.log(`플레이어 사망 이벤트 전송: ${damageInfo.playerId} (스폰 배리어)`);
+          }
         });
       }
+      
+      this.syncPlayerStatus();
+      
+    } catch (error) {
+      ServerUtils.errorLog('게임 루프 오류', { error: error.message, stack: error.stack });
     }
-  });
+  }
 
-  // 플레이어 연결 해제
-  socket.on('disconnect', () => {
-    console.log(`플레이어 연결 해제: ${socket.id}`);
+  /**
+   * 플레이어 상태 동기화
+   */
+  syncPlayerStatus() {
+    const players = this.gameStateManager.getAllPlayers();
+    if (players.length > 0) {
+      const playerStates = players.map(player => ({
+        id: player.id,
+        x: player.x,
+        y: player.y,
+        hp: player.hp,
+        maxHp: player.maxHp,
+        level: player.level,
+        jobClass: player.jobClass,
+        team: player.team,
+        size: player.size  // size 정보 추가
+      }));
+      
+      this.io.emit('players-state-update', playerStates);
+    }
+  }
+
+  /**
+   * 서버 시작
+   */
+  start() {
+    this.server.listen(this.port, () => {
+      console.log(`\n🚀 서버가 포트 ${this.port}에서 실행 중입니다.`);
+      console.log(`📊 현재 설정:`);
+      console.log(`   - 맵 크기: ${gameConfig.MAP_WIDTH_TILES}x${gameConfig.MAP_HEIGHT_TILES} 타일 (${gameConfig.MAP_WIDTH}x${gameConfig.MAP_HEIGHT} 픽셀)`);
+      console.log(`   - 최대 적 수: ${gameConfig.ENEMY.MAX_COUNT}`);
+      console.log(`   - 게임 루프: ${gameConfig.SERVER.GAME_LOOP_INTERVAL}ms`);
+      console.log(`   - 환경: ${process.env.NODE_ENV || 'development'}`);
+      
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`\n🌐 개발 모드 접속:`);
+        console.log(`   - 클라이언트: http://localhost:5173`);
+        console.log(`   - 서버 상태: http://localhost:${this.port}/api/status`);
+        console.log(`   - 서버 통계: http://localhost:${this.port}/api/stats`);
+      }
+      
+      console.log(`\n⚡ 서버 준비 완료! 플레이어 접속 대기 중...\n`);
+    });
+  }
+
+  /**
+   * 서버 종료 처리
+   */
+  shutdown() {
+    console.log('\n🛑 서버 종료 중...');
     
-    gameState.players.delete(socket.id);
+    // 게임 루프 중지
+    this.stopGameLoop();
     
-    // 다른 플레이어들에게 플레이어 퇴장 알림
-    socket.broadcast.emit('player-left', { playerId: socket.id });
-  });
+    // 모든 플레이어에게 서버 종료 알림
+    this.io.emit('server-shutdown', { 
+      message: '서버가 종료됩니다.',
+      timestamp: Date.now()
+    });
+    
+    // 매니저들 정리
+    if (this.enemyManager) {
+      this.enemyManager.destroy();
+    }
+    
+    if (this.gameStateManager) {
+      this.gameStateManager.reset();
+    }
+    
+    // 서버 종료
+    this.server.close(() => {
+      console.log('✅ 서버 종료 완료');
+      process.exit(0);
+    });
+  }
+
+  /**
+   * 관리자 명령어 처리
+   */
+  handleAdminCommand(command, args = []) {
+    switch (command) {
+      case 'stats':
+        console.log('📊 서버 통계:', this.gameStateManager.getStats());
+        break;
+      case 'memory':
+        console.log('💾 메모리 사용량:', ServerUtils.getMemoryUsage());
+        break;
+      case 'players':
+        console.log('👥 플레이어 목록:', this.gameStateManager.getPlayersState());
+        break;
+      case 'enemies':
+        console.log('👹 적 통계:', this.enemyManager.getEnemyStats());
+        break;
+      case 'clear-enemies':
+        this.enemyManager.clearAllEnemies();
+        console.log('🧹 모든 적 제거됨');
+        break;
+      case 'spawn-enemy':
+        const type = args[0] || 'basic';
+        const enemy = this.enemyManager.spawnEnemyOfType(type, gameConfig.MAP_WIDTH_TILES * gameConfig.TILE_SIZE / 2, gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE / 2);
+        console.log(`👹 적 스폰: ${enemy ? enemy.type : '실패'}`);
+        break;
+      default:
+        console.log('❓ 알 수 없는 명령어:', command);
+        console.log('📋 사용 가능한 명령어: stats, memory, players, enemies, clear-enemies, spawn-enemy');
+    }
+  }
+}
+
+// 서버 인스턴스 생성 및 시작
+const gameServer = new GameServer();
+
+// 우아한 종료 처리
+process.on('SIGINT', () => {
+  console.log('\n⚠️  SIGINT 신호 받음...');
+  gameServer.shutdown();
 });
 
-// 유틸리티 함수들
-function getPlayerTeam() {
-  const players = Array.from(gameState.players.values());
-  const redCount = players.filter(p => p.team === 'red').length;
-  const blueCount = players.filter(p => p.team === 'blue').length;
-  
-  return redCount <= blueCount ? 'red' : 'blue';
-}
+process.on('SIGTERM', () => {
+  console.log('\n⚠️  SIGTERM 신호 받음...');
+  gameServer.shutdown();
+});
 
-function getSpawnPoint(team) {
-  const MAP_WIDTH = 3000;
-  const MAP_HEIGHT = 3000;
-  const SPAWN_WIDTH = 300;
-  const TILE_SIZE = 50;
-  
-  if (team === 'red') {
-    return {
-      x: Math.random() * (SPAWN_WIDTH - TILE_SIZE * 2) + TILE_SIZE,
-      y: Math.random() * (MAP_HEIGHT - TILE_SIZE * 2) + TILE_SIZE
-    };
-  } else {
-    return {
-      x: MAP_WIDTH - Math.random() * (SPAWN_WIDTH - TILE_SIZE * 2) - TILE_SIZE,
-      y: Math.random() * (MAP_HEIGHT - TILE_SIZE * 2) + TILE_SIZE
-    };
-  }
-}
+// 예외 처리
+process.on('uncaughtException', (error) => {
+  ServerUtils.errorLog('처리되지 않은 예외', { error: error.message, stack: error.stack });
+  gameServer.shutdown();
+});
 
-function spawnEnemy() {
-  const enemyTypes = ['basic', 'fast', 'tank', 'ranged'];
-  const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
-  const enemyId = uuidv4();
-  
-  const MAP_WIDTH = 3000;
-  const MAP_HEIGHT = 3000;
-  const SPAWN_WIDTH = 300;
-  
-  let x, y;
-  let attempts = 0;
-  do {
-    x = Math.random() * (MAP_WIDTH - SPAWN_WIDTH * 2) + SPAWN_WIDTH;
-    y = Math.random() * MAP_HEIGHT;
-    attempts++;
-  } while (attempts < 10 && isWallPosition(x, y)); // 벽 위치 체크
-  
-  const enemy = new ServerEnemy(enemyId, x, y, type);
-  gameState.enemies.set(enemyId, enemy);
-  
-  io.emit('enemy-spawned', enemy.getState());
-}
-
-// 초기 적 스폰
-function initializeEnemies() {
-  for (let i = 0; i < 10; i++) {
-    spawnEnemy();
-  }
-}
-
-// 게임 루프
-function gameLoop() {
-  const now = Date.now();
-  const deltaTime = 50; // 50ms 간격으로 업데이트
-  
-  // 비활성 플레이어 정리 (5분 이상 업데이트 없음)
-  for (const [id, player] of gameState.players) {
-    if (now - player.lastUpdate > 300000) { // 5분
-      gameState.players.delete(id);
-      io.emit('player-left', { playerId: id });
-    }
-  }
-  
-  // 적 AI 업데이트
-  const enemyUpdates = [];
-  for (const [id, enemy] of gameState.enemies) {
-    enemy.update(gameState.players, deltaTime);
-    enemyUpdates.push(enemy.getState());
-  }
-  
-  // 적 위치 업데이트를 모든 클라이언트에 전송
-  if (enemyUpdates.length > 0) {
-    io.emit('enemies-update', enemyUpdates);
-  }
-}
-
-// 맵 생성 함수
-function generateMap() {
-  const MAP_WIDTH = 3000;
-  const MAP_HEIGHT = 3000;
-  const TILE_SIZE = 50;
-  const SPAWN_WIDTH = 300;
-  const PLAZA_SIZE = 1000;
-  const PLAZA_X = (MAP_WIDTH - PLAZA_SIZE) / 2;
-  const PLAZA_Y = (MAP_HEIGHT - PLAZA_SIZE) / 2;
-
-  console.log('서버에서 맵 생성 중...');
-
-  // 맵 기본 정보
-  const mapData = {
-    MAP_WIDTH,
-    MAP_HEIGHT,
-    TILE_SIZE,
-    SPAWN_WIDTH,
-    PLAZA_SIZE,
-    PLAZA_X,
-    PLAZA_Y,
-    walls: [],
-    redSpawnRect: { x: 0, y: 0, width: SPAWN_WIDTH, height: MAP_HEIGHT },
-    blueSpawnRect: { x: MAP_WIDTH - SPAWN_WIDTH, y: 0, width: SPAWN_WIDTH, height: MAP_HEIGHT },
-    plazaRect: { x: PLAZA_X, y: PLAZA_Y, width: PLAZA_SIZE, height: PLAZA_SIZE }
-  };
-
-  // 외벽 생성
-  for (let x = 0; x < MAP_WIDTH; x += TILE_SIZE) {
-    mapData.walls.push({ x: x + TILE_SIZE / 2, y: TILE_SIZE / 2 });
-    mapData.walls.push({ x: x + TILE_SIZE / 2, y: MAP_HEIGHT - TILE_SIZE / 2 });
-  }
-  for (let y = TILE_SIZE; y < MAP_HEIGHT - TILE_SIZE; y += TILE_SIZE) {
-    mapData.walls.push({ x: TILE_SIZE / 2, y: y + TILE_SIZE / 2 });
-    mapData.walls.push({ x: MAP_WIDTH - TILE_SIZE / 2, y: y + TILE_SIZE / 2 });
-  }
-
-  // 광장 테두리 벽 생성
-  const borderPositions = [];
-  for (let x = PLAZA_X; x < PLAZA_X + PLAZA_SIZE; x += TILE_SIZE) {
-    borderPositions.push({ x: x + TILE_SIZE / 2, y: PLAZA_Y - TILE_SIZE / 2 });
-    borderPositions.push({ x: x + TILE_SIZE / 2, y: PLAZA_Y + PLAZA_SIZE + TILE_SIZE / 2 });
-  }
-  for (let y = PLAZA_Y; y < PLAZA_Y + PLAZA_SIZE; y += TILE_SIZE) {
-    borderPositions.push({ x: PLAZA_X - TILE_SIZE / 2, y: y + TILE_SIZE / 2 });
-    borderPositions.push({ x: PLAZA_X + PLAZA_SIZE + TILE_SIZE / 2, y: y + TILE_SIZE / 2 });
-  }
-
-  // 랜덤 오프닝 생성 (고정 시드 사용)
-  const openings = new Set();
-  const openingCount = 10;
-  for (let i = 0; i < openingCount; i++) {
-    const randomIndex = Math.floor(Math.random() * borderPositions.length);
-    const pos = borderPositions[randomIndex];
-    openings.add(`${pos.x}_${pos.y}`);
-  }
-
-  borderPositions.forEach(pos => {
-    if (!openings.has(`${pos.x}_${pos.y}`)) {
-      mapData.walls.push(pos);
-    }
-  });
-
-  // 미로 생성 (고정 시드 사용)
-  const borderSet = new Set(borderPositions.map(p => `${p.x}_${p.y}`));
-  for (let x = SPAWN_WIDTH; x < MAP_WIDTH - SPAWN_WIDTH; x += TILE_SIZE) {
-    for (let y = 0; y < MAP_HEIGHT; y += TILE_SIZE) {
-      const centerX = x + TILE_SIZE / 2;
-      const centerY = y + TILE_SIZE / 2;
-      
-      // 광장이나 테두리 위치가 아닌 곳에만 벽 생성
-      if (!isInPlaza(centerX, centerY, PLAZA_X, PLAZA_Y, PLAZA_SIZE) && 
-          !borderSet.has(`${centerX}_${centerY}`)) {
-        
-        // 고정된 패턴으로 벽 생성 (완전 랜덤 대신)
-        const wallProbability = 0.3;
-        const hash = simpleHash(x + y * MAP_WIDTH); // 위치 기반 해시
-        if ((hash % 100) / 100 < wallProbability) {
-          mapData.walls.push({ x: centerX, y: centerY });
-        }
-      }
-    }
-  }
-
-  console.log(`맵 생성 완료: 벽 ${mapData.walls.length}개`);
-  return mapData;
-}
-
-// 간단한 해시 함수 (결정적 랜덤)
-function simpleHash(num) {
-  num = ((num >> 16) ^ num) * 0x45d9f3b;
-  num = ((num >> 16) ^ num) * 0x45d9f3b;
-  num = (num >> 16) ^ num;
-  return Math.abs(num);
-}
-
-// 광장 내부인지 확인
-function isInPlaza(x, y, plazaX, plazaY, plazaSize) {
-  return x >= plazaX && x < plazaX + plazaSize && 
-         y >= plazaY && y < plazaY + plazaSize;
-}
-
-// 벽 위치인지 확인
-function isWallPosition(x, y) {
-  if (!gameState.mapData) return false;
-  
-  const TILE_SIZE = gameState.mapData.TILE_SIZE;
-  return gameState.mapData.walls.some(wall => {
-    const dx = Math.abs(wall.x - x);
-    const dy = Math.abs(wall.y - y);
-    return dx < TILE_SIZE && dy < TILE_SIZE;
-  });
-}
+process.on('unhandledRejection', (reason, promise) => {
+  ServerUtils.errorLog('처리되지 않은 Promise 거부', { reason, promise });
+});
 
 // 서버 시작
-server.listen(PORT, () => {
-  console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
-  
-  // 맵 생성 (서버 시작시 한 번만)
-  gameState.mapData = generateMap();
-  
-  // 적 초기화
-  initializeEnemies();
-  
-  // 게임 루프 시작 (50ms마다 - 20 FPS)
-  setInterval(gameLoop, 50);
-});
+gameServer.start();
 
-// 프로덕션에서 클라이언트 서빙
-if (process.env.NODE_ENV === 'production') {
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
+// 개발 모드에서 관리자 명령어 지원
+if (process.env.NODE_ENV !== 'production') {
+  const readline = require('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
   });
-} else {
-  // 개발 환경에서는 기본 응답
-  app.get('/', (req, res) => {
-    res.json({ 
-      message: '개발 모드입니다. 클라이언트는 http://localhost:5173에서 실행하세요.',
-      server: 'RPG Slime Multiplayer Server',
-      status: 'running'
-    });
+
+  console.log('💡 관리자 명령어를 입력하세요 (help 입력 시 도움말):');
+  
+  rl.on('line', (input) => {
+    const [command, ...args] = input.trim().split(' ');
+    
+    if (command === 'help') {
+      console.log('📋 사용 가능한 명령어:');
+      console.log('  stats        - 서버 통계 조회');
+      console.log('  memory       - 메모리 사용량 조회');
+      console.log('  players      - 플레이어 목록 조회');
+      console.log('  enemies      - 적 통계 조회');
+      console.log('  clear-enemies - 모든 적 제거');
+      console.log('  spawn-enemy [type] - 특정 타입 적 스폰');
+      console.log('  exit         - 서버 종료');
+    } else if (command === 'exit') {
+      rl.close();
+      gameServer.shutdown();
+    } else if (command) {
+      gameServer.handleAdminCommand(command, args);
+    }
   });
-} 
+}
