@@ -427,7 +427,21 @@ function createSkillTypeMap() {
     return skillMap;
 }
 
-// ES6 exports
+// UMD 패턴 - CommonJS와 ES6 모듈 둘 다 지원
+// CommonJS export (서버용)
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        JobClasses,
+        JobRequirements,
+        getJobInfo,
+        canChangeJob,
+        calculateStats,
+        getSkillInfo,
+        createSkillTypeMap
+    };
+}
+
+// ES6 exports (클라이언트용)
 export {
     JobClasses,
     JobRequirements,
