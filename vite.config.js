@@ -15,7 +15,7 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: false,
-    minify: 'esbuild', // terser 대신 esbuild 사용 (더 빠르고 기본 포함)
+    minify: 'esbuild',
     rollupOptions: {
       input: 'index.html'
     }

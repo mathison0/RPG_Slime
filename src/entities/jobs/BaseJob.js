@@ -215,7 +215,7 @@ export default class BaseJob {
             
             if (damageFormula.includes('attack')) {
                 try {
-                    return eval(damageFormula.replace('attack', attack));
+                    return this.parseFormula(damageFormula, attack);
                 } catch (e) {
                     console.warn('데미지 공식 파싱 실패:', damageFormula);
                     return attack;
@@ -224,6 +224,42 @@ export default class BaseJob {
         }
         
         return 0;
+    }
+
+    /**
+     * 안전한 수식 파싱 (eval 대신 사용)
+     * 'attack * 1.5', 'attack + 10' 등의 간단한 수식을 파싱
+     */
+    parseFormula(formula, attackValue) {
+        // 공백 제거
+        const cleanFormula = formula.replace(/\s/g, '');
+        
+        // attack 값으로 치환
+        const withValue = cleanFormula.replace(/attack/g, attackValue);
+        
+        // 간단한 수식 파싱 (*, +, -, / 지원)
+        const match = withValue.match(/^(\d+(?:\.\d+)?)\s*([+\-*/])\s*(\d+(?:\.\d+)?)$/);
+        if (match) {
+            const [, left, operator, right] = match;
+            const leftNum = parseFloat(left);
+            const rightNum = parseFloat(right);
+            
+            switch (operator) {
+                case '*': return Math.round(leftNum * rightNum);
+                case '/': return Math.round(leftNum / rightNum);
+                case '+': return Math.round(leftNum + rightNum);
+                case '-': return Math.round(leftNum - rightNum);
+                default: return attackValue;
+            }
+        }
+        
+        // 단순 숫자인 경우
+        const numMatch = withValue.match(/^(\d+(?:\.\d+)?)$/);
+        if (numMatch) {
+            return Math.round(parseFloat(numMatch[1]));
+        }
+        
+        return attackValue;
     }
 
     /**
