@@ -9,6 +9,7 @@ class SocketEventManager {
     this.io = io;
     this.gameStateManager = gameStateManager;
     this.enemyManager = enemyManager;
+    this.playerSockets = new Map(); // 플레이어 ID -> 소켓 매핑
     this.skillManager = new SkillManager(gameStateManager);
   }
 
@@ -20,6 +21,9 @@ class SocketEventManager {
       console.log(`\n=== 새로운 소켓 연결: ${socket.id} ===`);
       console.log(`현재 연결된 플레이어 수: ${this.gameStateManager.players.size}`);
 
+      // 소켓을 맵에 저장
+      this.playerSockets.set(socket.id, socket);
+
       // 각 이벤트 핸들러 등록
       this.setupJoinGameHandler(socket);
       this.setupPlayerUpdateHandler(socket);
@@ -28,6 +32,7 @@ class SocketEventManager {
       this.setupPlayerPingHandler(socket);
       this.setupEnemyHitHandler(socket);
       this.setupGameSyncHandler(socket);
+      this.setupPlayerRespawnHandler(socket);
       this.setupDisconnectHandler(socket);
     });
   }
@@ -90,7 +95,7 @@ class SocketEventManager {
   setupPlayerUpdateHandler(socket) {
     socket.on('player-update', (data) => {
       const player = this.gameStateManager.getPlayer(socket.id);
-      if (player) {
+      if (player && !player.isDead) { // 죽은 플레이어의 업데이트는 무시
         player.update(data);
         
         // 크기 정보가 있으면 업데이트
@@ -107,6 +112,7 @@ class SocketEventManager {
           jobClass: player.jobClass,
           level: player.level,
           size: player.size,
+          isDead: player.isDead // 사망 상태도 전송
           hp: player.hp,
           maxHp: player.maxHp
         });
@@ -325,8 +331,36 @@ class SocketEventManager {
     socket.on('disconnect', () => {
       console.log(`플레이어 연결 해제: ${socket.id}`);
       this.gameStateManager.removePlayer(socket.id);
+      this.playerSockets.delete(socket.id); // 소켓 맵에서 제거
       socket.broadcast.emit('player-left', { playerId: socket.id });
     });
+  }
+
+  /**
+   * 개별 플레이어에게 이벤트 전송
+   */
+  emitToPlayer(playerId, event, data) {
+    const socket = this.playerSockets.get(playerId);
+    if (socket) {
+      socket.emit(event, data);
+      return true;
+    } else {
+      console.warn(`플레이어 소켓을 찾을 수 없음: ${playerId}`);
+      return false;
+    }
+  }
+
+  /**
+   * 여러 플레이어에게 이벤트 전송
+   */
+  emitToPlayers(playerIds, event, data) {
+    let successCount = 0;
+    playerIds.forEach(playerId => {
+      if (this.emitToPlayer(playerId, event, data)) {
+        successCount++;
+      }
+    });
+    return successCount;
   }
 
   /**
@@ -335,6 +369,44 @@ class SocketEventManager {
   broadcastServerStats() {
     const stats = this.gameStateManager.getStats();
     this.io.emit('server-stats', stats);
+  }
+
+  /**
+   * 플레이어 리스폰 이벤트 핸들러
+   */
+  setupPlayerRespawnHandler(socket) {
+    socket.on('player-respawned', (data) => {
+      const player = this.gameStateManager.getPlayer(socket.id);
+      if (player) {
+        // 플레이어 위치 업데이트
+        player.x = data.x;
+        player.y = data.y;
+        
+        // 사망 상태 해제 및 HP 회복
+        player.respawn();
+        
+        // 플레이어가 활성 상태인지 확인
+        player.lastUpdateTime = Date.now();
+        
+        console.log(`플레이어 ${socket.id} 리스폰: (${data.x}, ${data.y}), HP: ${player.hp}/${player.maxHp}`);
+        
+        // 다른 플레이어들에게 리스폰 알림
+        socket.broadcast.emit('player-respawned', {
+          playerId: socket.id,
+          x: data.x,
+          y: data.y,
+          hp: player.hp,
+          maxHp: player.maxHp
+        });
+        
+        // 리스폰 후 즉시 플레이어 상태 동기화
+        const playerState = player.getState();
+        socket.emit('player-state-sync', {
+          playerId: socket.id,
+          playerData: playerState
+        });
+      }
+    });
   }
 
   /**

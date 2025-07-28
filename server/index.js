@@ -187,7 +187,25 @@ class GameServer {
       // 적 AI 업데이트
       this.enemyManager.updateEnemies(deltaTime);
       
-      // 플레이어 상태 동기화 (HP 등)
+      // 스폰 배리어 데미지 체크
+      const damagedPlayers = this.gameStateManager.checkSpawnBarrierDamage();
+      if (damagedPlayers.length > 0) {
+        damagedPlayers.forEach(damageInfo => {
+          // 모든 플레이어에게 데미지 이벤트 전송 (다른 플레이어들도 데미지 이펙트를 볼 수 있도록)
+          this.io.emit('spawn-barrier-damage', damageInfo);
+          console.log(`스폰 배리어 데미지 이벤트 전송: ${damageInfo.playerId}, -${damageInfo.damage}HP`);
+          
+          // 사망 처리
+          if (damageInfo.isDead) {
+            this.io.emit('player-died', {
+              playerId: damageInfo.playerId,
+              cause: 'spawn-barrier'
+            });
+            console.log(`플레이어 사망 이벤트 전송: ${damageInfo.playerId} (스폰 배리어)`);
+          }
+        });
+      }
+      
       this.syncPlayerStates();
       
     } catch (error) {

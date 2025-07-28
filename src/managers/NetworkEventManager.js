@@ -124,6 +124,26 @@ export default class NetworkEventManager {
         this.networkManager.on('player-ping', (data) => {
             this.handlePlayerPing(data);
         });
+        
+        this.networkManager.on('spawn-barrier-damage', (data) => {
+            console.log('spawn-barrier-damage 이벤트 수신:', data);
+            this.handleSpawnBarrierDamage(data);
+        });
+        
+        this.networkManager.on('player-died', (data) => {
+            console.log('player-died 이벤트 수신:', data);
+            this.handlePlayerDied(data);
+        });
+        
+        this.networkManager.on('player-respawned', (data) => {
+            console.log('player-respawned 이벤트 수신:', data);
+            this.handlePlayerRespawned(data);
+        });
+        
+        this.networkManager.on('player-state-sync', (data) => {
+            console.log('player-state-sync 이벤트 수신:', data);
+            this.handlePlayerStateSync(data);
+        });
     }
 
     /**
@@ -170,6 +190,17 @@ export default class NetworkEventManager {
         this.scene.player.setNetworkId(data.playerId);
         this.scene.player.setNetworkManager(this.networkManager);
         this.scene.player.setDepth(950);
+        
+        // 서버의 사망 상태 동기화
+        this.scene.player.isDead = data.playerData.isDead || false;
+        if (this.scene.player.isDead) {
+            this.scene.player.setVisible(false);
+            this.scene.player.setActive(false);
+            if (this.scene.player.body) {
+                this.scene.player.body.setEnable(false);
+            }
+            console.log('게임 입장 시 사망 상태로 설정됨');
+        }
         
         // 플레이어 이름표 생성
         this.scene.player.createNameText(this.scene.playerNickname, data.playerData.team, 960);
@@ -225,33 +256,56 @@ export default class NetworkEventManager {
         if (!this.scene.otherPlayers?.children) return;
         
         const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === data.id);
-        if (otherPlayer && !otherPlayer.isJumping) {
-            // 부드러운 이동
-            this.scene.tweens.add({
-                targets: otherPlayer,
-                x: data.x,
-                y: data.y,
-                duration: 50,
-                ease: 'Linear',
-                onUpdate: () => {
-                    otherPlayer.updateNameTextPosition();
+        if (otherPlayer) {
+            // 사망 상태 업데이트
+            if (data.isDead !== undefined && data.isDead !== otherPlayer.isDead) {
+                otherPlayer.isDead = data.isDead;
+                
+                if (data.isDead) {
+                    // 다른 플레이어가 죽었을 때 숨김
+                    otherPlayer.setVisible(false);
+                    console.log(`다른 플레이어 ${data.id} 사망으로 숨김`);
+                } else {
+                    // 다른 플레이어가 리스폰했을 때 표시
+                    otherPlayer.setVisible(true);
+                    console.log(`다른 플레이어 ${data.id} 리스폰으로 표시`);
                 }
-            });
-            
-            // 상태 업데이트
-            otherPlayer.direction = data.direction;
-            if (data.jobClass && data.jobClass !== otherPlayer.jobClass) {
-                otherPlayer.jobClass = data.jobClass;
-            }
-            if (data.level && data.level !== otherPlayer.level) {
-                otherPlayer.level = data.level;
-                otherPlayer.updateCharacterSize();
-            }
-            if (data.size && data.size !== otherPlayer.size) {
-                otherPlayer.size = data.size;
-                otherPlayer.updateSize();
             }
             
+            // 죽은 플레이어는 움직임 처리 안함
+            if (otherPlayer.isDead) {
+                return;
+            }
+            
+            if (!otherPlayer.isJumping) {
+                // 부드러운 이동
+                this.scene.tweens.add({
+                    targets: otherPlayer,
+                    x: data.x,
+                    y: data.y,
+                    duration: 50,
+                    ease: 'Linear',
+                    onUpdate: () => {
+                        otherPlayer.updateNameTextPosition();
+                    }
+                });
+                
+                // 상태 업데이트
+                otherPlayer.direction = data.direction;
+                if (data.jobClass && data.jobClass !== otherPlayer.jobClass) {
+                    otherPlayer.jobClass = data.jobClass;
+                }
+                if (data.level && data.level !== otherPlayer.level) {
+                    otherPlayer.level = data.level;
+                    otherPlayer.updateCharacterSize();
+                }
+                if (data.size && data.size !== otherPlayer.size) {
+                    otherPlayer.size = data.size;
+                    otherPlayer.updateSize();
+                }
+                
+                otherPlayer.updateJobSprite();
+            }
             // HP 정보 업데이트
             if (data.hp !== undefined && data.hp !== otherPlayer.hp) {
                 otherPlayer.hp = data.hp;
@@ -604,6 +658,169 @@ export default class NetworkEventManager {
             this.scene.pingManager.checkAndShowPingArrow(data.x, data.y, pingId);
         }
     }
+    
+    /**
+     * 스폰 배리어 데미지 처리
+     */
+    handleSpawnBarrierDamage(data) {
+        if (data.playerId === this.networkManager.playerId) {
+            // 본인이 데미지를 받은 경우
+            if (this.scene.player) {
+                this.scene.player.hp = data.currentHp;
+                this.scene.player.updateUI();
+                
+                // 데미지 이펙트
+                this.scene.effectManager.showDamageText(
+                    this.scene.player.x, 
+                    this.scene.player.y - 60, 
+                    `-${data.damage} (스폰 배리어)`, 
+                    '#ff0000'
+                );
+                
+                // 플레이어 빨간색 깜빡임
+                this.scene.player.setTint(0xff0000);
+                this.scene.time.delayedCall(200, () => {
+                    if (this.scene.player && this.scene.player.active && !this.scene.player.isDead) {
+                        this.scene.player.clearTint();
+                    }
+                });
+                
+                console.log(`스폰 배리어 데미지 받음: -${data.damage} HP (${data.currentHp}/${data.maxHp})`);
+            }
+        } else {
+            // 다른 플레이어가 데미지를 받은 경우
+            const otherPlayer = this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
+            if (otherPlayer) {
+                otherPlayer.hp = data.currentHp;
+                
+                // 다른 플레이어에게도 데미지 이펙트 표시
+                this.scene.effectManager.showDamageText(
+                    otherPlayer.x, 
+                    otherPlayer.y - 60, 
+                    `-${data.damage}`, 
+                    '#ff0000'
+                );
+                
+                otherPlayer.setTint(0xff0000);
+                this.scene.time.delayedCall(200, () => {
+                    if (otherPlayer && otherPlayer.active && !otherPlayer.isDead) {
+                        otherPlayer.clearTint();
+                    }
+                });
+            }
+        }
+    }
+    
+    /**
+     * 플레이어 사망 처리
+     */
+    handlePlayerDied(data) {
+        if (data.playerId === this.networkManager.playerId) {
+            // 본인이 사망한 경우 - 새로운 사망 처리 로직 사용
+            console.log('본인 사망 이벤트 수신:', data.cause);
+            this.scene.handlePlayerDeath(data.cause);
+        } else {
+            // 다른 플레이어가 사망한 경우
+            const otherPlayer = this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
+            if (otherPlayer) {
+                this.scene.effectManager.showMessage(
+                    otherPlayer.x, 
+                    otherPlayer.y, 
+                    '사망!', 
+                    { fill: '#ff0000', fontSize: '20px' }
+                );
+                
+                // 사망 이펙트
+                this.scene.effectManager.showExplosion(otherPlayer.x, otherPlayer.y, 0xff0000, 100);
+                
+                // 다른 플레이어도 사망 상태로 설정
+                otherPlayer.isDead = true;
+                otherPlayer.setVisible(false);
+                
+                // 색상 초기화 (데미지로 인한 빨간색 제거)
+                otherPlayer.clearTint();
+                
+                // 이름표도 숨기기
+                if (otherPlayer.nameText) {
+                    otherPlayer.nameText.setVisible(false);
+                }
+            }
+        }
+    }
+
+    /**
+     * 플레이어 리스폰 처리
+     */
+    handlePlayerRespawned(data) {
+        // 다른 플레이어의 리스폰만 처리 (본인 리스폰은 GameScene에서 직접 처리)
+        if (data.playerId !== this.networkManager.playerId) {
+            const otherPlayer = this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
+            if (otherPlayer) {
+                // 플레이어 상태 복원
+                otherPlayer.isDead = false;
+                otherPlayer.x = data.x;
+                otherPlayer.y = data.y;
+                otherPlayer.hp = data.hp;
+                otherPlayer.maxHp = data.maxHp;
+                otherPlayer.setVisible(true);
+                
+                // 색상 초기화 (데미지로 인한 빨간색 제거)
+                otherPlayer.clearTint();
+                
+                // 이름표 다시 표시 및 위치 업데이트
+                if (otherPlayer.nameText) {
+                    otherPlayer.nameText.setVisible(true);
+                    otherPlayer.updateNameTextPosition();
+                }
+                
+                // 리스폰 이펙트
+                this.scene.effectManager.showExplosion(data.x, data.y, 0x00ff00, 50);
+                this.scene.effectManager.showMessage(
+                    data.x, 
+                    data.y - 50, 
+                    '리스폰!', 
+                    { fill: '#00ff00', fontSize: '20px' }
+                );
+                
+                console.log(`다른 플레이어 ${data.playerId} 리스폰 처리 완료`);
+            }
+        }
+    }
+
+    /**
+     * 플레이어 상태 동기화 처리
+     */
+    handlePlayerStateSync(data) {
+        if (data.playerId === this.networkManager.playerId && this.scene.player) {
+            const player = this.scene.player;
+            const playerData = data.playerData;
+            
+            console.log('본인 플레이어 상태 동기화:', playerData);
+            
+            // 위치 동기화
+            player.x = playerData.x;
+            player.y = playerData.y;
+            if (player.body) {
+                player.body.reset(playerData.x, playerData.y);
+            }
+            
+            // 상태 동기화
+            player.isDead = playerData.isDead;
+            player.hp = playerData.hp;
+            player.maxHp = playerData.maxHp;
+            player.level = playerData.level;
+            player.size = playerData.size || 64;
+            
+            // UI 및 스프라이트 업데이트
+            player.updateCharacterSize();
+            player.updateSize();
+            player.updateJobSprite();
+            player.updateNameTextPosition();
+            player.updateUI();
+            
+            console.log(`플레이어 상태 동기화 완료: 위치(${player.x}, ${player.y}), HP: ${player.hp}/${player.maxHp}, 사망: ${player.isDead}`);
+        }
+    }
 
     /**
      * 다른 플레이어 생성
@@ -618,6 +835,14 @@ export default class NetworkEventManager {
         otherPlayer.jobClass = playerData.jobClass;
         otherPlayer.direction = playerData.direction;
         otherPlayer.size = playerData.size || 64; // 기본값 설정
+        
+        // 사망 상태 설정
+        otherPlayer.isDead = playerData.isDead || false;
+        if (otherPlayer.isDead) {
+            otherPlayer.setVisible(false);
+            console.log(`다른 플레이어 ${playerData.id} 생성 시 사망 상태로 숨김`);
+        }
+        
         otherPlayer.updateSize(); // 크기 업데이트 적용
         otherPlayer.updateJobSprite();
         
@@ -1137,17 +1362,17 @@ export default class NetworkEventManager {
         
         let finalTargetX = data.targetX;
         let finalTargetY = data.targetY;
-        const maxRange = data.maxRange || 400;
+        const maxRange = data.skillInfo?.range || 400;
         
-        const distance = Phaser.Math.Distance.Between(data.startX, data.startY, data.targetX, data.targetY);
+        const distance = Phaser.Math.Distance.Between(data.x, data.y, data.targetX, data.targetY);
         
         if (distance > maxRange) {
-            const angle = Phaser.Math.Angle.Between(data.startX, data.startY, data.targetX, data.targetY);
-            finalTargetX = data.startX + Math.cos(angle) * maxRange;
-            finalTargetY = data.startY + Math.sin(angle) * maxRange;
+            const angle = Phaser.Math.Angle.Between(data.x, data.y, data.targetX, data.targetY);
+            finalTargetX = data.x + Math.cos(angle) * maxRange;
+            finalTargetY = data.y + Math.sin(angle) * maxRange;
         }
         
-        const missile = this.scene.add.circle(data.startX, data.startY, 8, 0xff00ff, 0.3);
+        const missile = this.scene.add.circle(data.x, data.y, 8, 0xff00ff, 0.3);
         missile.team = data.team;
         
         this.scene.physics.add.existing(missile);
@@ -1164,7 +1389,7 @@ export default class NetworkEventManager {
         });
         
         // 투사체 이동
-        const finalDistance = Phaser.Math.Distance.Between(data.startX, data.startY, finalTargetX, finalTargetY);
+        const finalDistance = Phaser.Math.Distance.Between(data.x, data.y, finalTargetX, finalTargetY);
         const velocity = 400;
         const duration = (finalDistance / velocity) * 1000;
         
@@ -1252,6 +1477,9 @@ export default class NetworkEventManager {
             this.networkManager.off('player-skill-used');
             this.networkManager.off('enemies-update');
             this.networkManager.off('player-job-changed');
+            this.networkManager.off('spawn-barrier-damage');
+            this.networkManager.off('player-died');
+            this.networkManager.off('player-state-sync');
         }
     }
 } 
