@@ -31,7 +31,7 @@ export default class ArcherJob extends BaseJob {
     }
 
     useRoll() {
-        if (this.isSkillOnCooldown('roll')) {
+        if (this.isSkillAvailable('skill1')) {
             this.showCooldownMessage('구르기');
             return;
         }
@@ -82,7 +82,7 @@ export default class ArcherJob extends BaseJob {
     }
 
     useFocus() {
-        if (this.isSkillOnCooldown('focus')) {
+        if (this.isSkillAvailable('skill2')) {
             this.showCooldownMessage('궁사의 집중');
             return;
         }

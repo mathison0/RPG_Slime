@@ -552,7 +552,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         if (this.scene.textures.exists(spriteKey)) {
             this.setTexture(spriteKey);
-            console.log(`스프라이트 업데이트: ${spriteKey} (${this.jobClass})`);
         } else {
             console.warn(`텍스처가 존재하지 않음: ${spriteKey}`);
             this.createFallbackTexture();

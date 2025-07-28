@@ -40,7 +40,7 @@ export default class SupporterJob extends BaseJob {
     }
 
     useWard() {
-        if (this.isSkillOnCooldown('ward')) {
+        if (this.isSkillAvailable('skill1')) {
             this.showCooldownMessage('와드 설치');
             return;
         }
@@ -88,7 +88,7 @@ export default class SupporterJob extends BaseJob {
     }
 
     useBuffField() {
-        if (this.isSkillOnCooldown('buff_field')) {
+        if (this.isSkillAvailable('skill2')) {
             this.showCooldownMessage('버프 장판');
             return;
         }
@@ -131,7 +131,7 @@ export default class SupporterJob extends BaseJob {
     }
 
     useHealField() {
-        if (this.isSkillOnCooldown('heal_field')) {
+        if (this.isSkillAvailable('skill3')) {
             this.showCooldownMessage('힐 장판');
             return;
         }
