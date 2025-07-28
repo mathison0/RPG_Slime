@@ -24,7 +24,6 @@ class ServerEnemy {
     this.hp = 50;
     this.maxHp = 50;
     this.attack = 15;
-    this.defense = 0; // 방어력 추가
     this.speed = 50;
     this.lastUpdate = Date.now();
     
@@ -55,26 +54,22 @@ class ServerEnemy {
         this.hp = 30;
         this.maxHp = 30;
         this.attack = 12;
-        this.defense = 0;
         break;
       case 'tank':
         this.speed = 30;
         this.hp = 100;
         this.maxHp = 100;
         this.attack = 25;
-        this.defense = 0;
         break;
       case 'ranged':
         this.speed = 40;
         this.hp = 40;
         this.maxHp = 40;
         this.attack = 18;
-        this.defense = 0;
         this.aggroRange = 300;
         this.attackRange = 150;
         break;
       default: // basic
-        this.defense = 0;
         break;
     }
   }

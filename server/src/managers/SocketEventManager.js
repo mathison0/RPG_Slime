@@ -287,8 +287,7 @@ class SocketEventManager {
               stats: {
                 hp: player.hp,
                 maxHp: player.maxHp,
-                attack: player.attack,
-                defense: player.defense
+                attack: player.attack
               }
             });
           }

@@ -37,7 +37,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.hp = this.maxHp;
         this.speed = 200;
         this.attack = 20;
-        this.defense = 10;
         
         // 직업 관련
         this.jobClass = 'slime';
@@ -186,7 +185,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.maxHp = stats.hp;
         this.hp = Math.min(this.hp, this.maxHp); // 현재 체력이 최대체력을 넘지 않도록
         this.attack = stats.attack;
-        this.defense = stats.defense;
         this.speed = stats.speed;
         this.visionRange = stats.visionRange;
     }

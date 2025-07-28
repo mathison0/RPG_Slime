@@ -29,7 +29,6 @@ class ServerPlayer {
     this.hp = this.maxHp;
     this.speed = gameConfig.PLAYER.DEFAULT_SPEED;
     this.attack = gameConfig.PLAYER.DEFAULT_ATTACK;
-    this.defense = gameConfig.PLAYER.DEFAULT_DEFENSE;
     this.jobClass = 'slime';
     this.direction = 'front';
     this.isJumping = false;
@@ -123,7 +122,6 @@ class ServerPlayer {
       isJumping: this.isJumping,
       size: this.size,
       attack: this.attack,
-      defense: this.defense,
       speed: this.speed,
       nickname: this.nickname,
       isDead: this.isDead, // 사망 상태 추가
@@ -151,7 +149,6 @@ class ServerPlayer {
     this.maxHp += 20;
     this.hp = this.maxHp; // 풀피로 회복
     this.attack += 5;
-    this.defense += 2;
     
     console.log(`플레이어 ${this.id} 레벨업! 레벨: ${this.level}`);
   }
@@ -176,8 +173,7 @@ class ServerPlayer {
       return false; // 이미 죽은 상태면 데미지 처리 안함
     }
     
-    const actualDamage = Math.max(1, damage - this.defense);
-    this.hp = Math.max(0, this.hp - actualDamage);
+    this.hp = Math.max(0, this.hp - damage);
     
     if (this.hp <= 0) {
       this.isDead = true;
