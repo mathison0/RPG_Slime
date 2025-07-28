@@ -20,14 +20,12 @@ const JobClasses = {
         baseStats: {
             hp: 100,
             attack: 20,
-            defense: 10,
             speed: 200,
             visionRange: 300
         },
         levelGrowth: {
             hp: 20,
             attack: 5,
-            defense: 2,
             speed: 10
         },
         skills: [
@@ -53,14 +51,12 @@ const JobClasses = {
         baseStats: {
             hp: 80,
             attack: 25,
-            defense: 5,
             speed: 250,
             visionRange: 320
         },
         levelGrowth: {
             hp: 15,
             attack: 7,
-            defense: 1,
             speed: 15
         },
         skills: [
@@ -85,14 +81,12 @@ const JobClasses = {
         baseStats: {
             hp: 75,
             attack: 28,
-            defense: 3,
             speed: 260,
             visionRange: 340
         },
         levelGrowth: {
             hp: 12,
             attack: 8,
-            defense: 1,
             speed: 18
         },
         skills: [
@@ -117,14 +111,12 @@ const JobClasses = {
         baseStats: {
             hp: 150,
             attack: 30,
-            defense: 20,
             speed: 180,
             visionRange: 250
         },
         levelGrowth: {
             hp: 30,
             attack: 6,
-            defense: 4,
             speed: 8
         },
         skills: [
@@ -142,8 +134,11 @@ const JobClasses = {
                 name: '휩쓸기',
                 description: '부채꼴 범위 공격으로 적을 기절시킵니다.',
                 cooldown: 3000,
-                damage: 'attack * 1.2',
-                range: 80,
+                damage: 'attack',
+                range: 100,
+                angleOffset: Math.PI / 4, 
+                delay: 1000, // 1초 시전 시간
+                stunDuration: 2000, // 2초 기절 지속시간
                 key: 'E',
                 type: 'sweep'
             },
@@ -151,8 +146,10 @@ const JobClasses = {
                 name: '찌르기',
                 description: '직사각형 범위 공격으로 강력한 데미지를 입힙니다.',
                 cooldown: 4000,
-                damage: 'attack * 2.0',
-                range: 120,
+                damage: 'attack * 3',
+                range: 200,
+                width: 50, // 직사각형의 가로 길이
+                delay: 1500, // 1.5초 지연 데미지
                 key: 'R',
                 type: 'thrust'
             }
@@ -168,14 +165,12 @@ const JobClasses = {
         baseStats: {
             hp: 70,
             attack: 35,
-            defense: 5,
             speed: 160,
             visionRange: 400
         },
         levelGrowth: {
             hp: 10,
             attack: 8,
-            defense: 1,
             speed: 5
         },
         skills: [
@@ -221,14 +216,12 @@ const JobClasses = {
         baseStats: {
             hp: 90,
             attack: 22,
-            defense: 8,
             speed: 190,
             visionRange: 280
         },
         levelGrowth: {
             hp: 18,
             attack: 6,
-            defense: 2,
             speed: 12
         },
         skills: [
@@ -253,14 +246,12 @@ const JobClasses = {
         baseStats: {
             hp: 85,
             attack: 30,
-            defense: 5,
             speed: 200,
             visionRange: 350
         },
         levelGrowth: {
             hp: 15,
             attack: 8,
-            defense: 1,
             speed: 10
         },
         skills: [
@@ -295,14 +286,12 @@ const JobClasses = {
         baseStats: {
             hp: 90,
             attack: 15,
-            defense: 8,
             speed: 180,
             visionRange: 320
         },
         levelGrowth: {
             hp: 20,
             attack: 3,
-            defense: 2,
             speed: 8
         },
         skills: [
@@ -405,7 +394,6 @@ function calculateStats(jobClass, level) {
     const levelDiff = level - 1;
     stats.hp += jobInfo.levelGrowth.hp * levelDiff;
     stats.attack += jobInfo.levelGrowth.attack * levelDiff;
-    stats.defense += jobInfo.levelGrowth.defense * levelDiff;
     stats.speed += jobInfo.levelGrowth.speed * levelDiff;
     
     return stats;

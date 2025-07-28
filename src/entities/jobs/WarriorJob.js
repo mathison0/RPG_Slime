@@ -133,8 +133,9 @@ export default class WarriorJob extends BaseJob {
             });
         }
 
-        // 휩쓸기 상태 자동 해제 (500ms 후)
-        this.player.scene.time.delayedCall(500, () => {
+        // 휩쓸기 상태 자동 해제 (지연 시간 후)
+        const delay = skillInfo.delay || 1000; // 기본값 1초
+        this.player.scene.time.delayedCall(delay, () => {
             if (this.isSweeping) {
                 console.log('휩쓸기 상태 자동 해제 실행');
                 this.endSweep();
@@ -193,10 +194,10 @@ export default class WarriorJob extends BaseJob {
         // 찌르기 시각적 효과
         this.player.setTint(0xff0000);
         
-        // 직사각형 모양의 찌르기 그래픽 생성
+        // 직사각형 모양의 찌르기 그래픽 생성 (처음에는 덜 진한 색상)
         this.thrustGraphics = this.scene.add.graphics();
-        this.thrustGraphics.fillStyle(0xff0000, 0.3);
-        this.thrustGraphics.lineStyle(2, 0xff0000, 1);
+        this.thrustGraphics.fillStyle(0xff0000, 0.1); // 덜 진한 색상
+        this.thrustGraphics.lineStyle(2, 0xff0000, 0.3); // 덜 진한 테두리
         
         // 플레이어 몸에서 마우스 커서 방향으로 직사각형 그리기
         const centerX = this.player.x;
@@ -249,14 +250,45 @@ export default class WarriorJob extends BaseJob {
         this.thrustGraphics.fill();
         this.thrustGraphics.stroke();
         
-        // 찌르기 애니메이션
-        this.scene.tweens.add({
-            targets: this.thrustGraphics,
-            alpha: 0,
-            duration: 800,
-            onComplete: () => {
-                this.endThrust();
+        // 찌르기 애니메이션 (지연 시간 동안 유지)
+        const delay = skillInfo.delay || 1500; // 기본값 1.5초
+        
+        // 지연 시간 동안 이펙트 유지
+        this.scene.time.delayedCall(delay, () => {
+            // 지연 시간 후 색상을 진하게 변경 (데미지 적용 시점)
+            this.thrustGraphics.clear();
+            this.thrustGraphics.fillStyle(0xff0000, 0.8); // 진한 색상으로 변경
+            this.thrustGraphics.lineStyle(3, 0xff0000, 1); // 진한 테두리로 변경
+            
+            // 직사각형 다시 그리기
+            this.thrustGraphics.beginPath();
+            this.thrustGraphics.moveTo(bottomLeftX, bottomLeftY);
+            this.thrustGraphics.lineTo(topLeftX, topLeftY);
+            this.thrustGraphics.lineTo(topRightX, topRightY);
+            this.thrustGraphics.lineTo(bottomRightX, bottomRightY);
+            this.thrustGraphics.closePath();
+            this.thrustGraphics.fill();
+            this.thrustGraphics.stroke();
+            
+            // 지연 시간 후 데미지 적용
+            if (this.isThrusting && this.player.networkManager && !this.player.isOtherPlayer) {
+                console.log('찌르기 지연 데미지 적용!');
+                this.player.networkManager.useSkill('thrust', {
+                    targetX: mouseX,
+                    targetY: mouseY,
+                    delayed: true // 지연 데미지임을 표시
+                });
             }
+            
+            // 이펙트 페이드 아웃
+            this.scene.tweens.add({
+                targets: this.thrustGraphics,
+                alpha: 0,
+                duration: 300,
+                onComplete: () => {
+                    this.endThrust();
+                }
+            });
         });
         
         // 찌르기 효과 메시지
@@ -276,15 +308,14 @@ export default class WarriorJob extends BaseJob {
             }
         });
 
-        // 네트워크 동기화 (서버에서 데미지 계산)
+        // 네트워크 동기화 (즉시 이펙트만 전송, 데미지는 지연 후)
         if (this.player.networkManager && !this.player.isOtherPlayer) {
             this.player.networkManager.useSkill('thrust', {
-                targetX: this.scene.input.mousePointer.worldX,
-                targetY: this.scene.input.mousePointer.worldY
+                targetX: mouseX,
+                targetY: mouseY,
+                delayed: false // 즉시 이펙트만
             });
         }
-
-        console.log('찌르기 발동!');
     }
 
     /**

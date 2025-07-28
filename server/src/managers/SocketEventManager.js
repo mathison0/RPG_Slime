@@ -130,6 +130,7 @@ class SocketEventManager {
         y: player.y,
         direction: player.direction,
         isJumping: player.isJumping,
+        isStunned: player.isStunned, // 기절 상태 추가
         jobClass: player.jobClass,
         level: player.level,
         size: player.size,
@@ -161,6 +162,8 @@ class SocketEventManager {
    */
   setupPlayerSkillHandler(socket) {
     socket.on('player-skill', (data) => {
+      console.log(`스킬 요청 받음: ${data.skillType}, 플레이어: ${socket.id}`);
+      
       const player = this.gameStateManager.getPlayer(socket.id);
       if (!player) {
         socket.emit('skill-error', { error: 'Player not found' });
@@ -181,6 +184,8 @@ class SocketEventManager {
 
       // 스킬 타입을 직업별 스킬로 매핑
       const actualSkillType = this.mapSkillType(player.jobClass, data.skillType);
+      console.log(`스킬 매핑: ${data.skillType} -> ${actualSkillType}, 직업: ${player.jobClass}`);
+      
       if (!actualSkillType) {
         socket.emit('skill-error', { 
           error: 'Invalid skill type',

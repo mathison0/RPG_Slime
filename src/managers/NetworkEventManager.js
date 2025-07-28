@@ -1,6 +1,7 @@
 import Player from '../entities/Player.js';
 import Enemy from '../entities/Enemy.js';
 import AssetLoader from '../utils/AssetLoader.js';
+import { getJobInfo } from '../shared/JobClasses.js';
 
 /**
  * 네트워크 이벤트 처리 매니저
@@ -9,6 +10,11 @@ export default class NetworkEventManager {
     constructor(scene) {
         this.scene = scene;
         this.networkManager = scene.networkManager;
+        this.player = null;
+        this.otherPlayers = null;
+        this.enemies = null;
+        this.cheatManager = null;
+        this.effectManager = null;
         
         // 게임 상태
         this.gameJoined = false;
@@ -22,6 +28,12 @@ export default class NetworkEventManager {
      */
     setupNetworkListeners() {
         console.log('NetworkEventManager: 이벤트 리스너 설정 시작');
+        
+        // networkManager가 null인지 확인
+        if (!this.networkManager) {
+            console.error('NetworkEventManager: networkManager가 null입니다.');
+            return;
+        }
         
         // 먼저 기존 리스너들 제거 (중복 방지)
         this.networkManager.off('game-joined');
@@ -37,6 +49,7 @@ export default class NetworkEventManager {
         this.networkManager.off('invincible-error');
         this.networkManager.off('disconnect');
         this.networkManager.off('connect_error');
+        this.networkManager.off('player-stunned');
         
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
@@ -114,6 +127,12 @@ export default class NetworkEventManager {
         // 플레이어 상태 업데이트
         this.networkManager.on('players-state-update', (data) => {
             this.handlePlayersStateUpdate(data);
+        });
+
+        // 플레이어 기절 상태
+        this.networkManager.on('player-stunned', (data) => {
+            console.log('NetworkEventManager: player-stunned 이벤트 받음:', data);
+            this.handlePlayerStunned(data);
         });
         
         // 기타 이벤트
@@ -386,6 +405,17 @@ export default class NetworkEventManager {
                 otherPlayer.maxHp = data.maxHp;
             }
             
+            // 기절 상태 업데이트
+            if (data.isStunned !== undefined && data.isStunned !== otherPlayer.isStunned) {
+                otherPlayer.isStunned = data.isStunned;
+                console.log(`다른 플레이어 ${data.id} 기절 상태: ${data.isStunned}`);
+                
+                // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
+                if (data.isStunned) {
+                    this.showStunEffect(otherPlayer, 2000); // 2초 기절
+                }
+            }
+            
             // 스프라이트 업데이트
             otherPlayer.updateJobSprite();
         }
@@ -526,6 +556,11 @@ export default class NetworkEventManager {
                     // 실제 적용된 데미지 텍스트 표시 (서버에서 계산된 정확한 값)
                     const damageToShow = playerData.actualDamage || playerData.damage;
                     this.scene.effectManager.showDamageText(targetPlayer.x, targetPlayer.y, damageToShow);
+                    
+                    // 기절 효과 표시
+                    if (playerData.isStunned) {
+                        this.showStunEffect(targetPlayer, playerData.stunDuration);
+                    }
                     
                     // 플레이어 체력 업데이트 (서버에서 이미 처리됨)
                     // 실제 HP는 서버에서 관리되므로 클라이언트에서는 시각적 효과만
@@ -720,6 +755,28 @@ export default class NetworkEventManager {
                 this.scene.player.isInvincible = myPlayerState.isInvincible;
             }
             
+            // 기절 상태 정보 업데이트
+            if (myPlayerState.isStunned !== undefined && myPlayerState.isStunned !== this.scene.player.isStunned) {
+                this.scene.player.isStunned = myPlayerState.isStunned;
+                console.log(`본인 플레이어 기절 상태: ${myPlayerState.isStunned}`);
+                
+                // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
+                if (myPlayerState.isStunned) {
+                    this.showStunEffect(this.scene.player, 2000); // 2초 기절
+                }
+            }
+            
+            // 기절 상태 정보 업데이트
+            if (myPlayerState.isStunned !== undefined && myPlayerState.isStunned !== this.scene.player.isStunned) {
+                this.scene.player.isStunned = myPlayerState.isStunned;
+                console.log(`본인 플레이어 기절 상태: ${myPlayerState.isStunned}`);
+                
+                // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
+                if (myPlayerState.isStunned) {
+                    this.showStunEffect(this.scene.player, 2000); // 2초 기절
+                }
+            }
+            
             // UI 업데이트 (서버에서 받은 정보 사용)
             this.scene.player.updateUIFromServer();
         }
@@ -745,6 +802,17 @@ export default class NetworkEventManager {
                     // 무적 상태 정보 업데이트
                     if (playerState.isInvincible !== undefined) {
                         otherPlayer.isInvincible = playerState.isInvincible;
+                    }
+                    
+                    // 기절 상태 정보 업데이트
+                    if (playerState.isStunned !== undefined && playerState.isStunned !== otherPlayer.isStunned) {
+                        otherPlayer.isStunned = playerState.isStunned;
+                        console.log(`다른 플레이어 ${playerState.id} 기절 상태: ${playerState.isStunned}`);
+                        
+                        // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
+                        if (playerState.isStunned) {
+                            this.showStunEffect(otherPlayer, 2000); // 2초 기절
+                        }
                     }
                     
                     otherPlayer.updateJobSprite();
@@ -818,6 +886,29 @@ export default class NetworkEventManager {
             this.scene.player.updateUI();
             
             console.log(`본인 플레이어 무적 상태 변경: ${data.isInvincible}`);
+        }
+    }
+
+    /**
+     * 플레이어 기절 상태 처리
+     */
+    handlePlayerStunned(data) {
+        console.log(`플레이어 기절 상태 이벤트 받음: ${data.playerId}, 기절: ${data.isStunned}`);
+        
+        const player = data.playerId === this.networkManager.playerId 
+            ? this.scene.player 
+            : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
+        
+        if (player) {
+            player.isStunned = data.isStunned;
+            
+            if (data.isStunned) {
+                // 기절 효과 표시
+                this.showStunEffect(player, data.duration || 2000);
+            } else {
+                // 기절 상태 해제 시 색상 복원
+                player.clearTint();
+            }
         }
     }
 
@@ -2176,6 +2267,7 @@ export default class NetworkEventManager {
         
         // 울부짖기 스킬 상태 설정
         player.isUsingRoarSkill = true;
+        player.isUsingWarriorSkill = true;
         
         // 울부짖기 스프라이트로 변경
         player.setTexture('warrior_skill');
@@ -2208,6 +2300,7 @@ export default class NetworkEventManager {
         player.roarEffectTimer = this.scene.time.delayedCall(effectDuration, () => {
             // 울부짖기 스킬 상태 해제
             player.isUsingRoarSkill = false;
+            player.isUsingWarriorSkill = false;
             
             // WarriorJob의 isRoaring 상태도 해제
             if (player.job && player.job.isRoaring) {
@@ -2230,6 +2323,9 @@ export default class NetworkEventManager {
      * 휩쓸기 이펙트
      */
     showSweepEffect(player, data = null) {
+        // 휩쓸기 스킬 상태 설정
+        player.isUsingWarriorSkill = true;
+        
         // 휩쓸기 시각적 효과
         player.setTint(0xff0000);
         
@@ -2237,16 +2333,21 @@ export default class NetworkEventManager {
         const mouseX = data?.targetX || player.x;
         const mouseY = data?.targetY || player.y;
         
-        // 부채꼴 모양의 휩쓸기 그래픽 생성
+        // JobClasses에서 휩쓸기 스킬의 delay 값과 angleOffset 값 가져오기
+        const warriorJobInfo = getJobInfo('warrior');
+        const sweepSkill = warriorJobInfo.skills.find(skill => skill.type === 'sweep');
+        const delay = sweepSkill ? sweepSkill.delay : 1000; // 기본값 1초
+        const angleOffset = sweepSkill ? sweepSkill.angleOffset : Math.PI / 3; // 기본값 60도
+        
+        // 부채꼴 모양의 휩쓸기 그래픽 생성 (처음에는 덜 진한 색상)
         const sweepGraphics = this.scene.add.graphics();
-        sweepGraphics.fillStyle(0xff0000, 0.3);
-        sweepGraphics.lineStyle(2, 0xff0000, 1);
+        sweepGraphics.fillStyle(0xff0000, 0.1); // 덜 진한 색상
+        sweepGraphics.lineStyle(2, 0xff0000, 0.3); // 덜 진한 테두리
         
         // 플레이어에서 마우스 커서까지의 각도 계산
         const centerX = player.x;
         const centerY = player.y;
-        const radius = 80; // 휩쓸기 범위
-        const angleOffset = Math.PI / 3; // 60도
+        const radius = sweepSkill ? sweepSkill.range : 80; // JobClasses에서 range 값 가져오기
         
         const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
         const startAngle = angleToMouse - angleOffset;
@@ -2259,17 +2360,35 @@ export default class NetworkEventManager {
         sweepGraphics.fill();
         sweepGraphics.stroke();
         
-        // 휩쓸기 애니메이션
-        this.scene.tweens.add({
-            targets: sweepGraphics,
-            alpha: 0,
-            duration: 500,
-            onComplete: () => {
-                sweepGraphics.destroy();
-                if (player.active) {
-                    player.clearTint();
+        // 지연 시간 동안 이펙트 유지 후 색상 변경 및 페이드 아웃
+        this.scene.time.delayedCall(delay, () => {
+            // 지연 시간 후 색상을 진하게 변경 (데미지 적용 시점)
+            sweepGraphics.clear();
+            sweepGraphics.fillStyle(0xff0000, 0.8); // 진한 색상으로 변경
+            sweepGraphics.lineStyle(3, 0xff0000, 1); // 진한 테두리로 변경
+            
+            // 부채꼴 다시 그리기
+            sweepGraphics.beginPath();
+            sweepGraphics.moveTo(centerX, centerY);
+            sweepGraphics.arc(centerX, centerY, radius, startAngle, endAngle);
+            sweepGraphics.closePath();
+            sweepGraphics.fill();
+            sweepGraphics.stroke();
+            
+            // 지연 시간 후 이펙트 페이드 아웃
+            this.scene.tweens.add({
+                targets: sweepGraphics,
+                alpha: 0,
+                duration: 300,
+                onComplete: () => {
+                    sweepGraphics.destroy();
+                    if (player.active) {
+                        player.clearTint();
+                        // 휩쓸기 스킬 상태 해제
+                        player.isUsingWarriorSkill = false;
+                    }
                 }
-            }
+            });
         });
         
         // 휩쓸기 효과 메시지
@@ -2291,9 +2410,49 @@ export default class NetworkEventManager {
     }
 
     /**
+     * 기절 이펙트
+     */
+    showStunEffect(player, duration = 2000) {
+        // 기절 상태 표시 (회색으로 변색)
+        player.setTint(0x888888);
+        
+        // 기절 텍스트 표시
+        const stunText = this.scene.add.text(
+            player.x, 
+            player.y - 80, 
+            '기절!', 
+            {
+                fontSize: '16px',
+                fill: '#888888',
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5);
+        
+        // 기절 지속시간 후 효과 제거
+        this.scene.time.delayedCall(duration, () => {
+            if (player.active) {
+                player.clearTint();
+            }
+            if (stunText.active) {
+                stunText.destroy();
+            }
+        });
+        
+        // 기절 텍스트는 1초 후 제거
+        this.scene.time.delayedCall(1000, () => {
+            if (stunText.active) {
+                stunText.destroy();
+            }
+        });
+    }
+
+    /**
      * 찌르기 이펙트
      */
     showThrustEffect(player, data = null) {
+        // 찌르기 스킬 상태 설정
+        player.isUsingWarriorSkill = true;
+        
         // 찌르기 시각적 효과
         player.setTint(0xff0000);
         
@@ -2301,16 +2460,21 @@ export default class NetworkEventManager {
         const mouseX = data?.targetX || player.x;
         const mouseY = data?.targetY || player.y;
         
-        // 직사각형 모양의 찌르기 그래픽 생성
+        // 직사각형 모양의 찌르기 그래픽 생성 (처음에는 덜 진한 색상)
         const thrustGraphics = this.scene.add.graphics();
-        thrustGraphics.fillStyle(0xff0000, 0.3);
-        thrustGraphics.lineStyle(2, 0xff0000, 1);
+        thrustGraphics.fillStyle(0xff0000, 0.1); // 덜 진한 색상
+        thrustGraphics.lineStyle(2, 0xff0000, 0.3); // 덜 진한 테두리
         
         // 플레이어에서 마우스 커서까지의 각도 계산
         const centerX = player.x;
         const centerY = player.y;
-        const width = 40;
-        const height = 120; // 찌르기 범위
+        
+        // JobClasses에서 찌르기 스킬의 range 값과 width 값 가져오기
+        const warriorJobInfo = getJobInfo('warrior');
+        const thrustSkill = warriorJobInfo.skills.find(skill => skill.type === 'thrust');
+        const height = thrustSkill ? thrustSkill.range : 100; // 기본값 100
+        const width = thrustSkill ? thrustSkill.width : 80; // 기본값 80
+        const delay = thrustSkill ? thrustSkill.delay : 1500; // 기본값 1.5초
         
         const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
         
@@ -2352,17 +2516,37 @@ export default class NetworkEventManager {
         thrustGraphics.fill();
         thrustGraphics.stroke();
         
-        // 찌르기 애니메이션
-        this.scene.tweens.add({
-            targets: thrustGraphics,
-            alpha: 0,
-            duration: 800,
-            onComplete: () => {
-                thrustGraphics.destroy();
-                if (player.active) {
-                    player.clearTint();
+        // 지연 시간 동안 이펙트 유지 후 색상 변경 및 페이드 아웃
+        this.scene.time.delayedCall(delay, () => {
+            // 지연 시간 후 색상을 진하게 변경 (데미지 적용 시점)
+            thrustGraphics.clear();
+            thrustGraphics.fillStyle(0xff0000, 0.8); // 진한 색상으로 변경
+            thrustGraphics.lineStyle(3, 0xff0000, 1); // 진한 테두리로 변경
+            
+            // 직사각형 다시 그리기
+            thrustGraphics.beginPath();
+            thrustGraphics.moveTo(bottomLeftX, bottomLeftY);
+            thrustGraphics.lineTo(topLeftX, topLeftY);
+            thrustGraphics.lineTo(topRightX, topRightY);
+            thrustGraphics.lineTo(bottomRightX, bottomRightY);
+            thrustGraphics.closePath();
+            thrustGraphics.fill();
+            thrustGraphics.stroke();
+            
+            // 지연 시간 후 이펙트 페이드 아웃
+            this.scene.tweens.add({
+                targets: thrustGraphics,
+                alpha: 0,
+                duration: 300,
+                onComplete: () => {
+                    thrustGraphics.destroy();
+                    if (player.active) {
+                        player.clearTint();
+                        // 찌르기 스킬 상태 해제
+                        player.isUsingWarriorSkill = false;
+                    }
                 }
-            }
+            });
         });
         
         // 찌르기 효과 메시지
