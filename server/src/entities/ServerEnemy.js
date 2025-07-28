@@ -495,6 +495,13 @@ class ServerEnemy {
   }
 
   /**
+   * 콜라이더 크기 반환 (클라이언트와 동일한 로직)
+   */
+  getColliderSize() {
+    return this.size * gameConfig.ENEMY.COLLIDER.SIZE_RATIO;
+  }
+
+  /**
    * 플레이어와 충돌 체크
    */
   isCollidingWithPlayer(player) {

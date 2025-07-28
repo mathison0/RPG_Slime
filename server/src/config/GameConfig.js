@@ -66,6 +66,10 @@ const gameConfig = {
     get MAX_COUNT() {
       // 모든 레벨의 최대 몬스터 수를 합계
       return Object.values(MAX_MONSTERS_PER_LEVEL).reduce((sum, count) => sum + count, 0);
+    },
+    // 콜라이더 관련 설정 (클라이언트와 동기화)
+    COLLIDER: {
+      SIZE_RATIO: 0.8  // 콜라이더 크기 = 엔티티 크기 * 0.8
     }
   },
   

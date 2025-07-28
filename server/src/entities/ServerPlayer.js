@@ -47,6 +47,30 @@ class ServerPlayer {
   }
 
   /**
+   * 직업 클래스에 따른 초기 스탯 설정
+   */
+  initializeStatsFromJobClass() {
+    const stats = calculateStats(this.jobClass, this.level);
+    
+    this.maxHp = stats.hp;
+    this.hp = this.maxHp; // 초기에는 풀피로 시작
+    this.attack = stats.attack;
+    this.defense = stats.defense;
+    this.speed = stats.speed;
+    this.visionRange = stats.visionRange;
+    
+    // 크기 계산 (GameConfig에서 가져옴)
+    const baseSize = gameConfig.PLAYER.SIZE.BASE_SIZE;
+    const growthRate = gameConfig.PLAYER.SIZE.GROWTH_RATE;
+    const maxSize = gameConfig.PLAYER.SIZE.MAX_SIZE;
+    
+    const targetSize = baseSize + (this.level - 1) * growthRate;
+    this.size = Math.min(targetSize, maxSize);
+    
+    console.log(`플레이어 ${this.id} 스탯 초기화! 직업: ${this.jobClass}, 레벨: ${this.level}, HP: ${this.maxHp}, 공격력: ${this.attack}, 크기: ${this.size}`);
+  }
+
+  /**
    * 플레이어 상태 업데이트
    */
   update(data) {
@@ -186,7 +210,7 @@ class ServerPlayer {
    */
   takeDamage(damage) {
     if (this.isDead) {
-      return; // 이미 죽은 상태면 데미지 처리 안함
+      return 0; // 이미 죽은 상태면 데미지 처리 안함
     }
     
     // 무적 상태 체크
@@ -197,7 +221,7 @@ class ServerPlayer {
     this.hp = Math.max(0, this.hp - damage);
     
     // 사망 판정은 메인 게임 루프에서만 처리하므로 여기서는 HP만 업데이트
-    return actualDamage;
+    return damage;
   }
 
   /**
@@ -401,6 +425,13 @@ class ServerPlayer {
     }
     
     return attackValue;
+  }
+
+  /**
+   * 콜라이더 크기 반환 (클라이언트와 동일한 로직)
+   */
+  getColliderSize() {
+    return this.size * gameConfig.ENEMY.COLLIDER.SIZE_RATIO;
   }
 
   /**
