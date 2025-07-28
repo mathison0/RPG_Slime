@@ -416,12 +416,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             if (body.y + body.height < thresholdTop) {
                 player.y -= overlapY;
                 player.x += moveX;
-                console.log('벽 충돌 처리1');
                 return false;
             } else if (body.y > thresholdBottom) {
                 player.y += overlapY;
                 player.x += moveX;
-                console.log('벽 충돌 처리2');
                 return false;
             }
         }
@@ -435,12 +433,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             if (body.x + body.width < thresholdLeft) {
                 player.x -= overlapX;
                 player.y += moveY;
-                console.log('벽 충돌 처리3');
                 return false;
             } else if (body.x > thresholdRight) {
                 player.x += overlapX;
                 player.y += moveY;
-                console.log('벽 충돌 처리4');
                 return false;
             }
         }

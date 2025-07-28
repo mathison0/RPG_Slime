@@ -112,7 +112,7 @@ class SocketEventManager {
           jobClass: player.jobClass,
           level: player.level,
           size: player.size,
-          isDead: player.isDead // 사망 상태도 전송
+          isDead: player.isDead,
           hp: player.hp,
           maxHp: player.maxHp
         });
