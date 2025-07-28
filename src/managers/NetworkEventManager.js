@@ -752,8 +752,8 @@ export default class NetworkEventManager {
                 player.size = data.size;
                 player.updateSize(); // 물리적 크기 업데이트
             } else {
-                // 서버에서 size 정보가 없으면 클라이언트에서 계산
-                player.updateCharacterSize();
+                // 서버에서 size 정보가 없으면 경고만 출력 (클라이언트에서 계산하지 않음)
+                console.warn(`handlePlayerLevelUp: 서버에서 size 정보가 누락됨. 기본값 유지: ${player.size}`);
             }
             
             // 레벨업 이펙트 표시
@@ -1033,13 +1033,12 @@ export default class NetworkEventManager {
             player.maxHp = playerData.maxHp;
             player.level = playerData.level;
             
-            // size는 서버에서 제공되는 경우에만 설정, 없으면 updateCharacterSize로 계산
+            // size는 항상 서버에서 제공되어야 함 (클라이언트에서 계산하지 않음)
             if (playerData.size !== undefined) {
                 player.size = playerData.size;
                 console.log(`handlePlayerStateSync: 서버에서 받은 size 설정: ${playerData.size}`);
             } else {
-                console.log(`handlePlayerStateSync: size 없음, updateCharacterSize 호출`);
-                player.updateCharacterSize();
+                console.warn(`handlePlayerStateSync: 서버에서 size 정보가 누락됨. 기본값 유지: ${player.size}`);
             }
             
             // UI 및 스프라이트 업데이트
@@ -1066,13 +1065,13 @@ export default class NetworkEventManager {
         otherPlayer.jobClass = playerData.jobClass;
         otherPlayer.direction = playerData.direction;
         
-        // size는 서버에서 제공되는 경우에만 설정, 없으면 updateCharacterSize로 계산
+        // size는 항상 서버에서 제공되어야 함 (클라이언트에서 계산하지 않음)
         if (playerData.size !== undefined) {
             otherPlayer.size = playerData.size;
             console.log(`createOtherPlayer: 서버에서 받은 size 설정: ${playerData.size}`);
         } else {
-            console.log(`createOtherPlayer: size 없음, updateCharacterSize 호출`);
-            otherPlayer.updateCharacterSize();
+            console.warn(`createOtherPlayer: 서버에서 size 정보가 누락됨. 기본값 사용`);
+            otherPlayer.size = 32; // 기본 크기로 설정
         }
         
         // 사망 상태 설정

@@ -32,7 +32,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 기본 스탯
         this.level = 1;
         this.exp = 0;
-        this.expToNext = 100;
+        this.expToNext = 100; // 서버에서 동기화됨
         this.maxHp = 100;
         this.hp = this.maxHp;
         this.speed = 200;
@@ -43,8 +43,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.jobClass = 'slime';
         this.job = null; // 직업 클래스 인스턴스
         
-        // 크기 관련 (초기값은 updateCharacterSize에서 계산됨)
-        this.size = 0; // updateCharacterSize에서 올바르게 계산될 예정
+        // 크기 관련 (서버에서 받아서 설정됨)
+        this.size = 32; // 기본 크기 (서버에서 올바른 값을 받아서 설정될 예정)
         this.baseCameraZoom = 1;
         this.colliderSize = 0;
 
@@ -118,7 +118,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     initializeCharacter() {
         this.updateJobClass();
         this.updateJobSprite();
-        this.updateCharacterSize();
+        // 크기는 서버에서 받은 값으로만 설정됨 (클라이언트에서 계산하지 않음)
+        this.updateCharacterSize(); // 화면 업데이트용으로만 사용
         this.updateUI();
         
         // 본인 플레이어만 UI 생성
@@ -238,26 +239,13 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 캐릭터 크기를 균등하게 업데이트 (모든 직업 동일 크기 적용)
+     * 캐릭터 크기를 서버에서 받은 값으로 업데이트 (크기 계산은 서버에서만 수행)
      */
     updateCharacterSize() {
-        // 표준화된 플레이어 크기 설정을 가져온다
-        const sizeConfig = AssetLoader.getDynamicPlayerSize();
-        console.log(`updateCharacterSize: sizeConfig=`, sizeConfig);
+        // 서버에서 받은 크기 정보만 사용하고, 화면 표시만 업데이트
+        console.log(`updateCharacterSize: 서버에서 받은 size=${this.size} 사용, 화면 업데이트만 수행`);
         
-        // 레벨에 따른 크기 증가 (모든 직업 동일한 비율로 적용)
-        const baseSize = sizeConfig.MIN_SIZE; // 최소 크기에서 시작
-        const growthRate = sizeConfig.GROWTH_RATE; // 설정된 성장률
-        const maxSize = sizeConfig.MAX_SIZE; // 설정된 최대 크기
-        
-        const targetSize = baseSize + (this.level - 1) * growthRate;
-        const finalSize = Math.min(targetSize, maxSize);
-        
-        console.log(`updateCharacterSize: level=${this.level}, baseSize=${baseSize}, growthRate=${growthRate}, targetSize=${targetSize}, finalSize=${finalSize}, oldSize=${this.size}`);
-        
-        this.size = finalSize;
-        
-        // 직접 크기 설정 (AssetLoader.adjustSpriteSize 대신)
+        // 직접 크기 설정 (크기 계산은 서버에서만 수행)
         this.updateSize();
     }
     
@@ -568,7 +556,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.createFallbackTexture();
         }
         
-        this.updateCharacterSize();
+        // 크기는 서버에서 받은 값으로만 설정됨 (클라이언트에서 계산하지 않음)
+        this.updateCharacterSize(); // 화면 업데이트용으로만 사용
     }
     
     /**

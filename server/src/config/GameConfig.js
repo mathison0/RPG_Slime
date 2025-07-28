@@ -49,8 +49,25 @@ const gameConfig = {
     DEFAULT_DEFENSE: 10,
     DEFAULT_SPEED: 200,
     VISION_RANGE: 300,
-    DEFAULT_SIZE: 38, // AssetConfig의 MIN_SIZE와 맞춤 (레벨 1 기본 크기)
-    DISCONNECT_TIMEOUT: 300000 // 5분
+    DEFAULT_SIZE: 32, // AssetConfig의 MIN_SIZE와 맞춤 (레벨 1 기본 크기)
+    DISCONNECT_TIMEOUT: 300000, // 5분
+    // 플레이어 크기 관련 설정
+    SIZE: {
+      BASE_SIZE: 32,      // 레벨 1 기본 크기 (MIN_SIZE)
+      GROWTH_RATE: 2,     // 레벨당 증가 픽셀
+      MAX_SIZE: 64,       // 최대 크기
+      MIN_SIZE: 32        // 최소 크기
+    },
+    // 경험치 관련 설정
+    EXP: {
+      BASE_REQUIRED: 100,     // 레벨 1->2 필요 경험치
+      MULTIPLIER: 1           // 레벨당 곱하는 값 (현재는 level * 100)
+    },
+    // 기본 스킬 설정
+    SKILLS: {
+      JUMP_DURATION: 400,     // 점프 지속시간 (ms)
+      BASE_RANGE_REFERENCE: 64  // 슬라임 스킬 범위 계산 기준 크기
+    }
   },
   
   // 스폰 배리어 관련 설정

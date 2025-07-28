@@ -1,4 +1,4 @@
-import { getJobInfo } from '../../../shared/JobClasses.js';
+import { getJobInfo } from '../../shared/JobClasses.js';
 
 /**
  * 기본 직업 클래스

@@ -12,7 +12,7 @@ class ServerPlayer {
     this.team = team;
     this.level = 1;
     this.exp = 0;
-    this.expToNext = 100;
+    this.expToNext = gameConfig.PLAYER.EXP.BASE_REQUIRED;
     this.maxHp = gameConfig.PLAYER.DEFAULT_HP;
     this.hp = this.maxHp;
     this.speed = gameConfig.PLAYER.DEFAULT_SPEED;
@@ -134,7 +134,7 @@ class ServerPlayer {
   levelUp() {
     this.level++;
     this.exp = 0;
-    this.expToNext = this.level * 100;
+    this.expToNext = this.level * gameConfig.PLAYER.EXP.BASE_REQUIRED * gameConfig.PLAYER.EXP.MULTIPLIER;
     
     // JobClasses를 사용한 올바른 스탯 계산
     const newStats = calculateStats(this.jobClass, this.level);
@@ -145,10 +145,10 @@ class ServerPlayer {
     this.speed = newStats.speed;
     this.visionRange = newStats.visionRange;
     
-    // 크기 계산 (AssetConfig와 동일한 로직)
-    const baseSize = 38; // MIN_SIZE
-    const growthRate = 2; // GROWTH_RATE  
-    const maxSize = 77; // MAX_SIZE
+    // 크기 계산 (GameConfig에서 가져옴)
+    const baseSize = gameConfig.PLAYER.SIZE.BASE_SIZE;
+    const growthRate = gameConfig.PLAYER.SIZE.GROWTH_RATE;
+    const maxSize = gameConfig.PLAYER.SIZE.MAX_SIZE;
     
     const targetSize = baseSize + (this.level - 1) * growthRate;
     this.size = Math.min(targetSize, maxSize);
@@ -282,7 +282,7 @@ class ServerPlayer {
   /**
    * 점프 시작 처리
    */
-  startJump(duration = 400) {
+  startJump(duration = gameConfig.PLAYER.SKILLS.JUMP_DURATION) {
     if (this.isJumping) {
       return false;
     }
@@ -330,8 +330,8 @@ class ServerPlayer {
    */
   calculateSkillRange(skillType, baseRange) {
     if (this.jobClass === 'slime' && skillType === 'spread') {
-      // 슬라임 퍼지기는 크기에 비례 (기본 크기 64를 기준으로)
-      return Math.round(baseRange * (this.size / 64));
+      // 슬라임 퍼지기는 크기에 비례 (기본 크기는 Config에서 가져옴)
+      return Math.round(baseRange * (this.size / gameConfig.PLAYER.SKILLS.BASE_RANGE_REFERENCE));
     }
     return baseRange;
   }
@@ -411,10 +411,10 @@ class ServerPlayer {
     this.speed = stats.speed;
     this.visionRange = stats.visionRange;
     
-    // 크기 계산 (AssetConfig와 동일한 로직)
-    const baseSize = 38; // MIN_SIZE
-    const growthRate = 2; // GROWTH_RATE  
-    const maxSize = 77; // MAX_SIZE
+    // 크기 계산 (GameConfig에서 가져옴)
+    const baseSize = gameConfig.PLAYER.SIZE.BASE_SIZE;
+    const growthRate = gameConfig.PLAYER.SIZE.GROWTH_RATE;
+    const maxSize = gameConfig.PLAYER.SIZE.MAX_SIZE;
     
     const targetSize = baseSize + (this.level - 1) * growthRate;
     this.size = Math.min(targetSize, maxSize);
