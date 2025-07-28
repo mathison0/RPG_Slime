@@ -6,11 +6,12 @@ const gameConfig = require('../config/GameConfig');
  * 게임 상태 관리 매니저
  */
 class GameStateManager {
-  constructor() {
+  constructor(io = null) {
     this.players = new Map();
     this.enemies = new Map();
     this.rooms = new Map();
     this.mapData = null;
+    this.io = io;
   }
 
   /**
@@ -67,12 +68,11 @@ class GameStateManager {
   }
 
   /**
-   * 적 추가
+   * 몬스터 추가
    */
-  addEnemy(id, x, y, type) {
-    const enemy = new ServerEnemy(id, x, y, type);
+  addEnemy(id, x, y, type, mapLevel) {
+    const enemy = new ServerEnemy(id, x, y, type, mapLevel, this, this.io);
     this.enemies.set(id, enemy);
-    console.log(`적 추가: ${id} (${type}) at (${x}, ${y})`);
     return enemy;
   }
 
@@ -80,11 +80,7 @@ class GameStateManager {
    * 적 제거
    */
   removeEnemy(id) {
-    const removed = this.enemies.delete(id);
-    if (removed) {
-      console.log(`적 제거: ${id}`);
-    }
-    return removed;
+    return this.enemies.delete(id);
   }
 
   /**
@@ -220,26 +216,31 @@ class GameStateManager {
       const inEnemyBarrierZone = this.isInEnemySpawnBarrierZone(player);
       
       if (inEnemyBarrierZone) {
+        // 무적 상태 체크
+        if (player.isInvincible) {
+          console.log(`플레이어 ${player.id} 무적 상태로 스폰 배리어 데미지 무시`);
+          player.lastSpawnBarrierCheck = now;
+          continue;
+        }
+        
         // 체력 감소
         const damage = Math.ceil(player.maxHp * gameConfig.SPAWN_BARRIER.DAMAGE_PERCENT);
         player.hp = Math.max(0, player.hp - damage);
         
-        // 즉시 사망 상태 확인 및 설정
-        const isDead = player.hp <= 0;
-        if (isDead) {
-          player.isDead = true;
-          console.log(`플레이어 ${player.id} 스폰 배리어로 사망 처리 완료`);
-        }
+        // 데미지 소스 추적 (사망 원인 판단용)
+        player.lastDamageSource = {
+          type: 'spawn-barrier',
+          timestamp: Date.now()
+        };
         
         damagedPlayers.push({
           playerId: player.id,
           damage: damage,
           currentHp: player.hp,
-          maxHp: player.maxHp,
-          isDead: isDead
+          maxHp: player.maxHp
         });
         
-        console.log(`플레이어 ${player.id} 스폰 배리어 데미지: -${damage} HP (${player.hp}/${player.maxHp}) isDead: ${isDead}`);
+        console.log(`플레이어 ${player.id} 스폰 배리어 데미지: -${damage} HP (${player.hp}/${player.maxHp})`);
         
         player.lastSpawnBarrierCheck = now;
       } else {

@@ -21,15 +21,22 @@ export default class NetworkEventManager {
      * 네트워크 이벤트 리스너 설정
      */
     setupNetworkListeners() {
-        // 기존 리스너들 정리 (중복 방지)
+        console.log('NetworkEventManager: 이벤트 리스너 설정 시작');
+        
+        // 먼저 기존 리스너들 제거 (중복 방지)
         this.networkManager.off('game-joined');
         this.networkManager.off('player-joined');
         this.networkManager.off('player-left');
         this.networkManager.off('player-moved');
         this.networkManager.off('player-skill-used');
         this.networkManager.off('skill-error');
-        this.networkManager.off('enemies-update');
-        this.networkManager.off('player-job-changed');
+        this.networkManager.off('player-update-error');
+        this.networkManager.off('player-death');
+        this.networkManager.off('suicide-error');
+        this.networkManager.off('player-invincible-changed');
+        this.networkManager.off('invincible-error');
+        this.networkManager.off('disconnect');
+        this.networkManager.off('connect_error');
         
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
@@ -76,22 +83,12 @@ export default class NetworkEventManager {
             this.handlePlayerLevelUp(data);
         });
 
-        // 적 관련 이벤트
-        this.setupEnemyEvents();
-        
-        // 플레이어 상태 업데이트
-        this.networkManager.on('players-state-update', (data) => {
-            this.handlePlayersStateUpdate(data);
+        // 레벨업 에러
+        this.networkManager.on('level-up-error', (data) => {
+            this.handleLevelUpError(data);
         });
-        
-        // 기타 이벤트
-        this.setupMiscEvents();
-    }
 
-    /**
-     * 적 관련 이벤트 설정
-     */
-    setupEnemyEvents() {
+        // 적 관련 이벤트
         this.networkManager.on('enemy-spawned', (enemyData) => {
             this.createNetworkEnemy(enemyData);
         });
@@ -106,6 +103,36 @@ export default class NetworkEventManager {
 
         this.networkManager.on('enemies-update', (enemiesData) => {
             this.handleEnemiesUpdate(enemiesData);
+        });
+
+
+
+        this.networkManager.on('monster-attack', (data) => {
+            this.handleMonsterAttack(data);
+        });
+        
+        // 플레이어 상태 업데이트
+        this.networkManager.on('players-state-update', (data) => {
+            this.handlePlayersStateUpdate(data);
+        });
+        
+        // 기타 이벤트
+        this.setupMiscEvents();
+
+        // 연결 해제
+        this.networkManager.on('disconnect', () => {
+            console.log('NetworkEventManager: disconnect 이벤트 수신됨');
+            this.handleNetworkDisconnect();
+        });
+
+        // 연결 오류
+        this.networkManager.on('connect_error', (error) => {
+            this.handleNetworkError(error);
+        });
+
+        // 플레이어 업데이트 에러 (이동 시 player not found)
+        this.networkManager.on('player-update-error', (data) => {
+            this.handlePlayerUpdateError(data);
         });
     }
 
@@ -143,6 +170,35 @@ export default class NetworkEventManager {
         this.networkManager.on('player-state-sync', (data) => {
             console.log('player-state-sync 이벤트 수신:', data);
             this.handlePlayerStateSync(data);
+        });
+        
+        this.networkManager.on('suicide-error', (data) => {
+            console.log('자살 치트 실패:', data.error);
+            if (this.scene.effectManager) {
+                this.scene.effectManager.showMessage(
+                    this.scene.scale.width / 2, 
+                    this.scene.scale.height / 2, 
+                    `자살 치트 실패: ${data.error}`, 
+                    { fill: '#ff0000', fontSize: '16px' }
+                );
+            }
+        });
+        
+        this.networkManager.on('player-invincible-changed', (data) => {
+            console.log('player-invincible-changed 이벤트 수신:', data);
+            this.handlePlayerInvincibleChanged(data);
+        });
+        
+        this.networkManager.on('invincible-error', (data) => {
+            console.log('무적 상태 토글 실패:', data.error);
+            if (this.scene.effectManager) {
+                this.scene.effectManager.showMessage(
+                    this.scene.scale.width / 2, 
+                    this.scene.scale.height / 2, 
+                    `무적 상태 토글 실패: ${data.error}`, 
+                    { fill: '#ff0000', fontSize: '16px' }
+                );
+            }
         });
     }
 
@@ -200,6 +256,12 @@ export default class NetworkEventManager {
                 this.scene.player.body.setEnable(false);
             }
             console.log('게임 입장 시 사망 상태로 설정됨');
+        }
+        
+        // 서버의 무적 상태 동기화
+        this.scene.player.isInvincible = data.playerData.isInvincible || false;
+        if (this.scene.player.isInvincible) {
+            console.log('게임 입장 시 무적 상태로 설정됨');
         }
         
         // 플레이어 이름표 생성
@@ -260,6 +322,12 @@ export default class NetworkEventManager {
      * 플레이어 이동 처리
      */
     handlePlayerMoved(data) {
+        // 본인 플레이어는 클라이언트에서 직접 처리하므로 업데이트하지 않음
+        if (data.id === this.networkManager.playerId) {
+            return;
+        }
+        
+        // 다른 플레이어 업데이트
         if (!this.scene.otherPlayers?.children) return;
         
         const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === data.id);
@@ -306,10 +374,7 @@ export default class NetworkEventManager {
                     otherPlayer.level = data.level;
                     otherPlayer.updateCharacterSize();
                 }
-                if (data.size && data.size !== otherPlayer.size) {
-                    otherPlayer.size = data.size;
-                    otherPlayer.updateSize();
-                }
+                // size 업데이트는 handlePlayersStateUpdate에서 일괄 처리됨
                 
                 otherPlayer.updateJobSprite();
             }
@@ -497,9 +562,124 @@ export default class NetworkEventManager {
     handleSkillError(data) {
         console.log('스킬 사용 실패:', data.error, data.skillType);
         
-        // 플레이어에게 에러 메시지 표시
+        // "Player not found" 에러 감지 시 즉시 게임 초기화
+        if (data.error && (
+            data.error.includes('Player not found') || 
+            data.error.includes('player not found') ||
+            data.error === 'Player not found'
+        )) {
+            console.warn('Player not found 에러 감지! 게임을 초기화하고 로그인 화면으로 돌아갑니다.');
+            this.handlePlayerNotFoundError();
+            return;
+        }
+        
+        // 일반적인 스킬 에러 처리
         if (this.scene.player && this.scene.player.job) {
             this.scene.player.job.showCooldownMessage(data.error);
+        }
+    }
+
+    /**
+     * Player not found 에러 처리 - 게임 초기화 및 로그인 화면 복귀
+     */
+    handlePlayerNotFoundError() {
+        console.log('NetworkEventManager: Player not found 에러 처리 시작...');
+        
+        try {
+            console.log('NetworkEventManager: 에러 메시지 표시 중...');
+            
+            // 에러 메시지 표시
+            if (this.scene.effectManager) {
+                this.scene.effectManager.showMessage(
+                    this.scene.scale.width / 2, 
+                    this.scene.scale.height / 2, 
+                    '연결이 끊어졌습니다. 로그인 화면으로 돌아갑니다.', 
+                    { 
+                        fill: '#ff0000', 
+                        fontSize: '20px',
+                        backgroundColor: '#000000',
+                        padding: { x: 10, y: 5 }
+                    }
+                );
+                console.log('NetworkEventManager: 에러 메시지 표시 완료');
+            } else {
+                console.warn('NetworkEventManager: effectManager가 없어서 메시지 표시 실패');
+            }
+            
+            console.log('NetworkEventManager: 네트워크 연결 초기화 중...');
+            
+            // 네트워크 연결 초기화
+            if (this.networkManager) {
+                this.networkManager.resetConnection();
+                console.log('NetworkEventManager: 네트워크 연결 초기화 완료');
+            } else {
+                console.warn('NetworkEventManager: networkManager가 없음');
+            }
+            
+            console.log('NetworkEventManager: 게임 상태 초기화 중...');
+            
+            // 게임 상태 초기화
+            if (this.scene.forceResetGame) {
+                this.scene.forceResetGame();
+                console.log('NetworkEventManager: 게임 상태 초기화 완료 (forceResetGame 사용)');
+            } else {
+                this.resetGameState();
+                console.log('NetworkEventManager: 게임 상태 초기화 완료 (resetGameState 사용)');
+            }
+            
+            console.log('NetworkEventManager: 2초 후 MenuScene으로 전환 예약...');
+            
+            // 잠시 대기 후 MenuScene으로 전환 (에러 메시지 표시 시간 확보)
+            this.scene.time.delayedCall(2000, () => {
+                console.log('NetworkEventManager: MenuScene으로 전환 중...');
+                this.scene.scene.start('MenuScene');
+                console.log('NetworkEventManager: MenuScene 전환 완료');
+            });
+            
+        } catch (error) {
+            console.error('NetworkEventManager: Player not found 에러 처리 중 오류 발생:', error);
+            // 오류 발생 시에도 강제로 MenuScene으로 전환
+            try {
+                console.log('NetworkEventManager: 강제 MenuScene 전환 시도...');
+                this.scene.scene.start('MenuScene');
+                console.log('NetworkEventManager: 강제 MenuScene 전환 완료');
+            } catch (fallbackError) {
+                console.error('NetworkEventManager: 강제 MenuScene 전환도 실패:', fallbackError);
+            }
+        }
+    }
+
+    /**
+     * 게임 상태 초기화
+     */
+    resetGameState() {
+        console.log('게임 상태 초기화 중...');
+        
+        try {
+            // 플레이어 제거
+            if (this.scene.player) {
+                this.scene.player.destroy();
+                this.scene.player = null;
+            }
+            
+            // 다른 플레이어들 제거
+            if (this.scene.otherPlayers) {
+                this.scene.otherPlayers.clear(true, true);
+            }
+            
+            // 적들 제거
+            if (this.scene.enemies) {
+                this.scene.enemies.clear(true, true);
+            }
+            
+            // 기타 게임 오브젝트들 초기화
+            this.gameJoined = false;
+            this.playerId = null;
+            this.playerTeam = null;
+            
+            console.log('게임 상태 초기화 완료');
+        } catch (error) {
+            console.error('게임 상태 초기화 중 오류:', error);
         }
     }
 
@@ -512,6 +692,18 @@ export default class NetworkEventManager {
         if (myPlayerState && this.scene.player) {
             this.scene.player.hp = myPlayerState.hp;
             this.scene.player.maxHp = myPlayerState.maxHp;
+            
+            // size 정보 업데이트 추가
+            if (myPlayerState.size !== undefined && myPlayerState.size !== this.scene.player.size) {
+                this.scene.player.size = myPlayerState.size;
+                this.scene.player.updateSize();
+            }
+            
+            // 무적 상태 정보 업데이트
+            if (myPlayerState.isInvincible !== undefined) {
+                this.scene.player.isInvincible = myPlayerState.isInvincible;
+            }
+            
             this.scene.player.updateUI();
         }
         
@@ -526,6 +718,18 @@ export default class NetworkEventManager {
                     otherPlayer.maxHp = playerState.maxHp;
                     otherPlayer.level = playerState.level;
                     otherPlayer.jobClass = playerState.jobClass;
+                    
+                    // size 정보 업데이트 추가
+                    if (playerState.size !== undefined && playerState.size !== otherPlayer.size) {
+                        otherPlayer.size = playerState.size;
+                        otherPlayer.updateSize();
+                    }
+                    
+                    // 무적 상태 정보 업데이트
+                    if (playerState.isInvincible !== undefined) {
+                        otherPlayer.isInvincible = playerState.isInvincible;
+                    }
+                    
                     otherPlayer.updateJobSprite();
                 }
             });
@@ -548,10 +752,7 @@ export default class NetworkEventManager {
             // UI 업데이트
             this.scene.player.updateUI();
             
-            // 체력이 0 이하면 사망 처리
-            if (data.currentHp <= 0) {
-                this.scene.player.die();
-            }
+            // 사망 처리는 서버에서만 판정하므로 클라이언트에서는 제거
         }
     }
 
@@ -578,15 +779,80 @@ export default class NetworkEventManager {
     }
 
     /**
+     * 플레이어 무적 상태 변경 처리
+     */
+    handlePlayerInvincibleChanged(data) {
+        if (data.playerId === this.networkManager.playerId && this.scene.player) {
+            // 본인 플레이어의 무적 상태 업데이트
+            this.scene.player.isInvincible = data.isInvincible;
+            
+            // 무적 상태 메시지 표시
+            const message = data.isInvincible ? '무적 모드 ON' : '무적 모드 OFF';
+            const color = data.isInvincible ? '#00ff00' : '#ff0000';
+            
+            this.scene.effectManager.showMessage(
+                this.scene.player.x, 
+                this.scene.player.y - 80, 
+                message, 
+                { fill: color }
+            );
+            
+            // UI 업데이트
+            this.scene.player.updateUI();
+            
+            console.log(`본인 플레이어 무적 상태 변경: ${data.isInvincible}`);
+        }
+    }
+
+    /**
      * 플레이어 레벨업 처리
      */
     handlePlayerLevelUp(data) {
-        const player = data.playerId === this.networkManager.playerId 
-            ? this.scene.player 
-            : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
+        console.log('서버에서 레벨업 처리:', data);
         
-        if (player) {
+        // 본인 플레이어인 경우
+        if (data.playerId === this.networkManager.playerId && this.scene.player) {
+            const player = this.scene.player;
+            
+            // 서버에서 받은 스탯으로 업데이트
+            if (data.level !== undefined) player.level = data.level;
+            if (data.hp !== undefined) player.hp = data.hp;
+            if (data.maxHp !== undefined) player.maxHp = data.maxHp;
+            if (data.attack !== undefined) player.attack = data.attack;
+            if (data.defense !== undefined) player.defense = data.defense;
+            if (data.speed !== undefined) player.speed = data.speed;
+            if (data.visionRange !== undefined) player.visionRange = data.visionRange;
+            
+            // 서버에서 받은 size로 직접 설정 (updateCharacterSize 대신)
+            if (data.size !== undefined) {
+                console.log(`서버에서 받은 size로 업데이트: ${player.size} -> ${data.size}`);
+                player.size = data.size;
+                player.updateSize(); // 물리적 크기 업데이트
+            } else {
+                // 서버에서 size 정보가 없으면 경고만 출력 (클라이언트에서 계산하지 않음)
+                console.warn(`handlePlayerLevelUp: 서버에서 size 정보가 누락됨. 기본값 유지: ${player.size}`);
+            }
+            
+            // 레벨업 이펙트 표시
             this.scene.effectManager.showLevelUpEffect(player.x, player.y);
+            
+            // UI 업데이트
+            player.updateUI();
+            
+            console.log(`본인 플레이어 레벨업 완료: 레벨 ${player.level}, HP: ${player.hp}/${player.maxHp}, 크기: ${player.size}`);
+        }
+        
+        // 다른 플레이어인 경우 (레벨 정보만 업데이트)
+        if (this.scene.otherPlayers?.children) {
+            const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === data.playerId);
+            if (otherPlayer && data.level !== undefined) {
+                otherPlayer.level = data.level;
+                if (data.size !== undefined) {
+                    otherPlayer.size = data.size;
+                    otherPlayer.updateSize();
+                }
+                console.log(`다른 플레이어 ${data.playerId} 레벨업: 레벨 ${data.level}, 크기: ${otherPlayer.size}`);
+            }
         }
     }
 
@@ -623,6 +889,8 @@ export default class NetworkEventManager {
     handleEnemiesUpdate(enemiesData) {
         if (!this.scene.enemies) return;
 
+
+
         // 서버에서 받은 적 데이터로 클라이언트 적들 업데이트
         enemiesData.forEach(enemyData => {
             let enemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyData.id);
@@ -631,21 +899,8 @@ export default class NetworkEventManager {
                 // 새로운 적 생성
                 enemy = this.createNetworkEnemy(enemyData);
             } else {
-                // 기존 적 상태 업데이트
-                enemy.x = enemyData.x;
-                enemy.y = enemyData.y;
-                enemy.hp = enemyData.hp;
-                enemy.maxHp = enemyData.maxHp;
-                enemy.vx = enemyData.vx || 0;
-                enemy.vy = enemyData.vy || 0;
-                
-                // 서버에서 관리되는 적으로 설정
-                enemy.isServerControlled = true;
-                
-                // 공격 상태 처리
-                if (enemyData.isAttacking) {
-                    this.showEnemyAttack(enemy);
-                }
+                // 기존 적 상태 업데이트 - 서버에서 받은 모든 정보 적용
+                enemy.applyServerStats(enemyData);
             }
         });
 
@@ -662,12 +917,21 @@ export default class NetworkEventManager {
      * 플레이어 직업 변경 처리
      */
     handlePlayerJobChanged(data) {
+        // 본인 플레이어 직업 변경 처리
+        if (data.id === this.networkManager.playerId && this.scene.player) {
+            this.scene.player.changeJob(data.jobClass);
+            console.log(`본인 직업 변경: ${data.jobClass}`);
+            return;
+        }
+        
+        // 다른 플레이어 직업 변경 처리
         if (!this.scene.otherPlayers?.children) return;
         
         const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === data.id);
         if (otherPlayer) {
             otherPlayer.jobClass = data.jobClass;
             otherPlayer.updateJobSprite();
+            console.log(`다른 플레이어 ${data.id} 직업 변경: ${data.jobClass}`);
         }
     }
 
@@ -786,8 +1050,57 @@ export default class NetworkEventManager {
      * 플레이어 리스폰 처리
      */
     handlePlayerRespawned(data) {
-        // 다른 플레이어의 리스폰만 처리 (본인 리스폰은 GameScene에서 직접 처리)
-        if (data.playerId !== this.networkManager.playerId) {
+        console.log('플레이어 리스폰 이벤트 수신:', data);
+        
+        if (data.playerId === this.networkManager.playerId) {
+            // 본인 리스폰 처리
+            if (this.scene.player) {
+                // 플레이어 다시 활성화
+                this.scene.player.isDead = false;
+                this.scene.player.setVisible(true);
+                this.scene.player.setActive(true);
+                
+                // 색상 초기화 (데미지로 인한 빨간색 제거)
+                this.scene.player.clearTint();
+                
+                // 위치 설정 (스프라이트와 물리 바디 모두)
+                this.scene.player.setPosition(data.x, data.y);
+                if (this.scene.player.body) {
+                    this.scene.player.body.setEnable(true);
+                    this.scene.player.body.reset(data.x, data.y);
+                }
+                
+                // 방향을 front로 초기화
+                this.scene.player.direction = 'front';
+                this.scene.player.updateJobSprite();
+                
+                // 이름표도 다시 표시
+                if (this.scene.player.nameText) {
+                    this.scene.player.nameText.setVisible(true);
+                    this.scene.player.updateNameTextPosition();
+                }
+                
+                // HP 완전 회복
+                this.scene.player.hp = data.hp;
+                this.scene.player.maxHp = data.maxHp;
+                this.scene.player.updateUI();
+                
+                // 카메라가 플레이어를 다시 따라가도록 설정
+                this.scene.cameras.main.startFollow(this.scene.player);
+                
+                // 리스폰 이펙트
+                this.scene.effectManager.showExplosion(data.x, data.y, 0x00ff00, 50);
+                this.scene.effectManager.showMessage(
+                    data.x, 
+                    data.y - 50, 
+                    '리스폰!', 
+                    { fill: '#00ff00', fontSize: '20px' }
+                );
+                
+                console.log('플레이어 리스폰 완료:', { x: data.x, y: data.y });
+            }
+        } else {
+            // 다른 플레이어 리스폰 처리
             const otherPlayer = this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
             if (otherPlayer) {
                 // 플레이어 상태 복원
@@ -843,7 +1156,14 @@ export default class NetworkEventManager {
             player.hp = playerData.hp;
             player.maxHp = playerData.maxHp;
             player.level = playerData.level;
-            player.size = playerData.size || 64;
+            
+            // size는 항상 서버에서 제공되어야 함 (클라이언트에서 계산하지 않음)
+            if (playerData.size !== undefined) {
+                player.size = playerData.size;
+                console.log(`handlePlayerStateSync: 서버에서 받은 size 설정: ${playerData.size}`);
+            } else {
+                console.warn(`handlePlayerStateSync: 서버에서 size 정보가 누락됨. 기본값 유지: ${player.size}`);
+            }
             
             // UI 및 스프라이트 업데이트
             player.updateCharacterSize();
@@ -868,7 +1188,15 @@ export default class NetworkEventManager {
         otherPlayer.maxHp = playerData.maxHp;
         otherPlayer.jobClass = playerData.jobClass;
         otherPlayer.direction = playerData.direction;
-        otherPlayer.size = playerData.size || 64; // 기본값 설정
+        
+        // size는 항상 서버에서 제공되어야 함 (클라이언트에서 계산하지 않음)
+        if (playerData.size !== undefined) {
+            otherPlayer.size = playerData.size;
+            console.log(`createOtherPlayer: 서버에서 받은 size 설정: ${playerData.size}`);
+        } else {
+            console.warn(`createOtherPlayer: 서버에서 size 정보가 누락됨. 기본값 사용`);
+            otherPlayer.size = 32; // 기본 크기로 설정
+        }
         
         // 사망 상태 설정
         otherPlayer.isDead = playerData.isDead || false;
@@ -876,6 +1204,9 @@ export default class NetworkEventManager {
             otherPlayer.setVisible(false);
             console.log(`다른 플레이어 ${playerData.id} 생성 시 사망 상태로 숨김`);
         }
+        
+        // 무적 상태 설정
+        otherPlayer.isInvincible = playerData.isInvincible || false;
         
         otherPlayer.updateSize(); // 크기 업데이트 적용
         otherPlayer.updateJobSprite();
@@ -895,10 +1226,10 @@ export default class NetworkEventManager {
     createNetworkEnemy(enemyData) {
         const enemy = new Enemy(this.scene, enemyData.x, enemyData.y, enemyData.type);
         enemy.setNetworkId(enemyData.id);
-        enemy.hp = enemyData.hp;
-        enemy.maxHp = enemyData.maxHp;
-        enemy.isServerControlled = true;
-        enemy.setDepth(940);
+        enemy.setDepth(600); // 그림자(700) 아래로 설정
+        
+        // 서버에서 받은 모든 정보 적용
+        enemy.applyServerStats(enemyData);
         
         if (this.scene.enemies?.add) {
             this.scene.enemies.add(enemy);
@@ -906,20 +1237,7 @@ export default class NetworkEventManager {
         return enemy;
     }
 
-    /**
-     * 적 공격 애니메이션 표시
-     */
-    showEnemyAttack(enemy) {
-        enemy.setTint(0xff0000);
-        this.scene.time.delayedCall(200, () => {
-            enemy.clearTint();
-        });
-        
-        const attackRange = this.scene.add.circle(enemy.x, enemy.y, 60, 0xff0000, 0.3);
-        this.scene.time.delayedCall(300, () => {
-            attackRange.destroy();
-        });
-    }
+
 
     /**
      * 스킬 이펙트 표시
@@ -2322,20 +2640,6 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 게임 상태 리셋
-     */
-    resetGameState() {
-        this.gameJoined = false;
-        this.playerId = null;
-        this.isFirstJoin = true;
-        this.playerTeam = null;
-        
-        if (this.networkManager) {
-            this.networkManager.pendingJoinGameData = null;
-        }
-    }
-
-    /**
      * 정리 작업
      */
     destroy() {
@@ -2350,6 +2654,135 @@ export default class NetworkEventManager {
             this.networkManager.off('spawn-barrier-damage');
             this.networkManager.off('player-died');
             this.networkManager.off('player-state-sync');
+        }
+    }
+
+    /**
+     * 플레이어 업데이트 에러 처리 (이동 시 player not found)
+     */
+    handlePlayerUpdateError(data) {
+        console.log('플레이어 업데이트 실패:', data.error);
+        
+        // "Player not found" 에러 감지 시 즉시 게임 초기화
+        if (data.error && (
+            data.error.includes('Player not found') || 
+            data.error.includes('player not found') ||
+            data.error === 'Player not found'
+        )) {
+            console.warn('이동 중 Player not found 에러 감지! 게임을 초기화하고 로그인 화면으로 돌아갑니다.');
+            this.handlePlayerNotFoundError();
+            return;
+        }
+        
+        // 기타 에러 처리 (필요시 추가)
+        console.warn('알 수 없는 플레이어 업데이트 에러:', data.error);
+    }
+
+    /**
+     * 네트워크 연결 해제 처리
+     */
+    handleNetworkDisconnect() {
+        console.warn('NetworkEventManager: 서버 연결이 끊어졌습니다. 로그인 화면으로 돌아갑니다.');
+        console.log('NetworkEventManager: handlePlayerNotFoundError 호출 중...');
+        
+        // 연결 해제 시에도 같은 방식으로 처리
+        this.handlePlayerNotFoundError();
+    }
+
+    /**
+     * 네트워크 연결 오류 처리
+     */
+    handleNetworkError(error) {
+        console.error('서버 연결 오류:', error);
+        // 여기에 추가적인 오류 처리 로직을 추가할 수 있습니다.
+    }
+
+    /**
+     * 레벨업 에러 처리
+     */
+    handleLevelUpError(data) {
+        console.error('레벨업 실패:', data.error);
+        
+        if (this.scene.player && this.scene.effectManager) {
+            this.scene.effectManager.showMessage(
+                this.scene.player.x, 
+                this.scene.player.y - 60, 
+                `레벨업 실패: ${data.error}`, 
+                { fill: '#ff0000' }
+            );
+        }
+    }
+
+
+
+    /**
+     * 몬스터 공격 처리
+     */
+    handleMonsterAttack(data) {
+        if (data.playerId === this.networkManager.playerId) {
+            // 자신이 공격받은 경우
+            if (this.scene.player) {
+                this.scene.player.hp = data.newHp;
+                this.scene.player.updateUI();
+                
+                // 데미지 이펙트 표시
+                if (data.damage > 0) {
+                    this.scene.effectManager.showDamageText(
+                        this.scene.player.x,
+                        this.scene.player.y - 60,
+                        `-${data.damage}`,
+                        '#ff0000'
+                    );
+                } else {
+                    // 무적 상태로 데미지가 0일 때
+                    this.scene.effectManager.showMessage(
+                        this.scene.player.x, 
+                        this.scene.player.y - 30, 
+                        '무적!', 
+                        { fill: '#00ff00' }
+                    );
+                }
+                
+                // 피격 효과 (사망 판정은 서버에서만 처리, 데미지가 있을 때만)
+                if (data.damage > 0) {
+                    this.scene.player.setTint(0xff0000);
+                    this.scene.time.delayedCall(200, () => {
+                        if (this.scene.player && this.scene.player.active && !this.scene.player.isDead) {
+                            this.scene.player.clearTint();
+                        }
+                    });
+                }
+            }
+        } else {
+            // 다른 플레이어가 공격받은 경우
+            const otherPlayer = this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
+            if (otherPlayer) {
+                // 다른 플레이어도 피격 효과 표시
+                if (data.damage > 0) {
+                    this.scene.effectManager.showDamageText(
+                        otherPlayer.x,
+                        otherPlayer.y - 60,
+                        `-${data.damage}`,
+                        '#ff0000'
+                    );
+                    
+                    // 피격 효과 (사망 판정은 서버에서만 처리)
+                    otherPlayer.setTint(0xff0000);
+                    this.scene.time.delayedCall(200, () => {
+                        if (otherPlayer && otherPlayer.active && !otherPlayer.isDead) {
+                            otherPlayer.clearTint();
+                        }
+                    });
+                } else {
+                    // 무적 상태로 데미지가 0일 때
+                    this.scene.effectManager.showMessage(
+                        otherPlayer.x, 
+                        otherPlayer.y - 30, 
+                        '무적!', 
+                        { fill: '#00ff00' }
+                    );
+                }
+            }
         }
     }
 } 

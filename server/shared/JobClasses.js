@@ -1,8 +1,17 @@
 /**
- * 직업 클래스 정의
- * 각 직업의 기본 정보, 스탯, 스킬 정보를 관리합니다.
- * 클라이언트와 서버가 공통으로 사용하는 모듈입니다.
+ * 직업 클래스 정의 (서버용)
+ * shared/JobClasses.js에서 복사한 내용을 사용합니다.
  */
+
+// ============================================================
+// 📋 업데이트 방법
+// ============================================================
+// 1. shared/JobClasses.js에서 "복사 시작" ~ "복사 끝" 사이의 내용을 복사
+// 2. 아래 기존 내용을 삭제하고 붙여넣기
+// 3. 파일 맨 아래 module.exports는 그대로 유지
+// ============================================================
+
+// 🔽 여기서부터 shared/JobClasses.js에서 복사한 내용을 붙여넣으세요 🔽
 
 const JobClasses = {
     slime: {
@@ -11,12 +20,14 @@ const JobClasses = {
         baseStats: {
             hp: 100,
             attack: 20,
+            defense: 10,
             speed: 200,
             visionRange: 300
         },
         levelGrowth: {
             hp: 20,
             attack: 5,
+            defense: 2,
             speed: 10
         },
         skills: [
@@ -41,12 +52,14 @@ const JobClasses = {
         baseStats: {
             hp: 80,
             attack: 25,
+            defense: 5,
             speed: 250,
             visionRange: 320
         },
         levelGrowth: {
             hp: 15,
             attack: 7,
+            defense: 1,
             speed: 15
         },
         skills: [
@@ -70,12 +83,14 @@ const JobClasses = {
         baseStats: {
             hp: 75,
             attack: 28,
+            defense: 3,
             speed: 260,
             visionRange: 340
         },
         levelGrowth: {
             hp: 12,
             attack: 8,
+            defense: 1,
             speed: 18
         },
         skills: [
@@ -99,12 +114,14 @@ const JobClasses = {
         baseStats: {
             hp: 150,
             attack: 30,
+            defense: 20,
             speed: 180,
             visionRange: 250
         },
         levelGrowth: {
             hp: 30,
             attack: 6,
+            defense: 4,
             speed: 8
         },
         skills: [
@@ -122,7 +139,7 @@ const JobClasses = {
                 name: '휩쓸기',
                 description: '부채꼴 범위 공격으로 적을 기절시킵니다.',
                 cooldown: 3000,
-                damage: 'attack * 1.5',
+                damage: 'attack * 1.2',
                 range: 80,
                 key: 'E',
                 type: 'sweep'
@@ -131,7 +148,7 @@ const JobClasses = {
                 name: '찌르기',
                 description: '직사각형 범위 공격으로 강력한 데미지를 입힙니다.',
                 cooldown: 4000,
-                damage: 'attack * 3',
+                damage: 'attack * 2.0',
                 range: 120,
                 key: 'R',
                 type: 'thrust'
@@ -147,12 +164,14 @@ const JobClasses = {
         baseStats: {
             hp: 70,
             attack: 35,
+            defense: 5,
             speed: 160,
             visionRange: 400
         },
         levelGrowth: {
             hp: 10,
             attack: 8,
+            defense: 1,
             speed: 5
         },
         skills: [
@@ -197,12 +216,14 @@ const JobClasses = {
         baseStats: {
             hp: 90,
             attack: 22,
+            defense: 8,
             speed: 190,
             visionRange: 280
         },
         levelGrowth: {
             hp: 18,
             attack: 6,
+            defense: 2,
             speed: 12
         },
         skills: [
@@ -226,12 +247,14 @@ const JobClasses = {
         baseStats: {
             hp: 85,
             attack: 30,
+            defense: 5,
             speed: 200,
             visionRange: 350
         },
         levelGrowth: {
             hp: 15,
             attack: 8,
+            defense: 1,
             speed: 10
         },
         skills: [
@@ -265,12 +288,14 @@ const JobClasses = {
         baseStats: {
             hp: 90,
             attack: 15,
+            defense: 8,
             speed: 180,
             visionRange: 320
         },
         levelGrowth: {
             hp: 20,
             attack: 3,
+            defense: 2,
             speed: 8
         },
         skills: [
@@ -372,6 +397,7 @@ function calculateStats(jobClass, level) {
     const levelDiff = level - 1;
     stats.hp += jobInfo.levelGrowth.hp * levelDiff;
     stats.attack += jobInfo.levelGrowth.attack * levelDiff;
+    stats.defense += jobInfo.levelGrowth.defense * levelDiff;
     stats.speed += jobInfo.levelGrowth.speed * levelDiff;
     
     return stats;
@@ -410,38 +436,18 @@ function createSkillTypeMap() {
     return skillMap;
 }
 
-// CommonJS와 브라우저 환경 지원
-if (typeof module !== 'undefined' && module.exports) {
-    // CommonJS (서버용)
-    module.exports = {
-        JobClasses,
-        JobRequirements,
-        getJobInfo,
-        canChangeJob,
-        calculateStats,
-        getSkillInfo,
-        createSkillTypeMap
-    };
-} else if (typeof window !== 'undefined') {
-    // 브라우저 환경 (클라이언트용)
-    window.JobClassesModule = {
-        JobClasses,
-        JobRequirements,
-        getJobInfo,
-        canChangeJob,
-        calculateStats,
-        getSkillInfo,
-        createSkillTypeMap
-    };
-}
+// 🔼 여기까지 shared/JobClasses.js에서 복사한 내용입니다 🔼
 
-// ES6 모듈 export (번들러용)
-if (typeof exports !== 'undefined') {
-    exports.JobClasses = JobClasses;
-    exports.JobRequirements = JobRequirements;
-    exports.getJobInfo = getJobInfo;
-    exports.canChangeJob = canChangeJob;
-    exports.calculateStats = calculateStats;
-    exports.getSkillInfo = getSkillInfo;
-    exports.createSkillTypeMap = createSkillTypeMap;
-} 
+// ============================================================
+// ⚠️  아래 module.exports는 절대 삭제하지 마세요! ⚠️
+// ============================================================
+
+module.exports = {
+    JobClasses,
+    JobRequirements,
+    getJobInfo,
+    canChangeJob,
+    calculateStats,
+    getSkillInfo,
+    createSkillTypeMap
+}; 

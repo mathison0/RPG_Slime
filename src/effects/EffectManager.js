@@ -15,8 +15,24 @@ export default class EffectManager {
      * @param {string} color - 텍스트 색상
      */
     showDamageText(x, y, damage, color = '#ff0000') {
-        // 데미지 표시 기능이 비활성화됨
-        return null;
+        const damageText = this.scene.add.text(x, y, `${damage}`, {
+            fontSize: '16px',
+            fill: color,
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        
+        // 데미지 텍스트 애니메이션
+        this.scene.tweens.add({
+            targets: damageText,
+            y: damageText.y - 30,
+            alpha: 0,
+            duration: 1000,
+            onComplete: () => {
+                damageText.destroy();
+            }
+        });
+        
+        return damageText;
     }
 
     /**

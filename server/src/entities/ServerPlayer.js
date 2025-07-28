@@ -1,17 +1,5 @@
 const gameConfig = require('../config/GameConfig');
-const { getSkillInfo } = require('../utils/JobClassesServer');
-
-// 서버용 AssetConfig 상수 (클라이언트와 동일한 값)
-const AssetConfig = {
-  SPRITE_SIZES: {
-    PLAYER: {
-      COLLIDER_SIZE: 32
-    },
-    ENEMY: {
-      RADIUS: 16
-    }
-  }
-};
+const { getSkillInfo, calculateStats } = require('../../shared/JobClasses');
 
 /**
  * 서버측 플레이어 클래스
@@ -24,7 +12,7 @@ class ServerPlayer {
     this.team = team;
     this.level = 1;
     this.exp = 0;
-    this.expToNext = 100;
+    this.expToNext = gameConfig.PLAYER.EXP.BASE_REQUIRED;
     this.maxHp = gameConfig.PLAYER.DEFAULT_HP;
     this.hp = this.maxHp;
     this.speed = gameConfig.PLAYER.DEFAULT_SPEED;
@@ -37,6 +25,7 @@ class ServerPlayer {
     this.lastUpdate = Date.now();
     this.nickname = 'Player';
     this.isDead = false; // 사망 상태
+    this.lastDamageSource = null; // 마지막 데미지 소스 추적
     
     // 스킬 관련
     this.skillCooldowns = {}; // 스킬별 마지막 사용 시간
@@ -52,6 +41,9 @@ class ServerPlayer {
     this.isStealth = false;
     this.stealthStartTime = 0;
     this.stealthDuration = 0;
+    
+    // 무적 상태 (치트)
+    this.isInvincible = false;
   }
 
   /**
@@ -125,6 +117,7 @@ class ServerPlayer {
       speed: this.speed,
       nickname: this.nickname,
       isDead: this.isDead, // 사망 상태 추가
+      isInvincible: this.isInvincible, // 무적 상태 추가
       activeActions: activeActions  // 액션 상태 정보 추가
     };
   }
@@ -143,14 +136,37 @@ class ServerPlayer {
   levelUp() {
     this.level++;
     this.exp = 0;
-    this.expToNext = this.level * 100;
+    this.expToNext = this.level * gameConfig.PLAYER.EXP.BASE_REQUIRED * gameConfig.PLAYER.EXP.MULTIPLIER;
     
-    // 스탯 증가
-    this.maxHp += 20;
+    // JobClasses를 사용한 올바른 스탯 계산
+    const newStats = calculateStats(this.jobClass, this.level);
+    this.maxHp = newStats.hp;
     this.hp = this.maxHp; // 풀피로 회복
-    this.attack += 5;
+    this.attack = newStats.attack;
+    this.defense = newStats.defense;
+    this.speed = newStats.speed;
+    this.visionRange = newStats.visionRange;
     
-    console.log(`플레이어 ${this.id} 레벨업! 레벨: ${this.level}`);
+    // 크기 계산 (GameConfig에서 가져옴)
+    const baseSize = gameConfig.PLAYER.SIZE.BASE_SIZE;
+    const growthRate = gameConfig.PLAYER.SIZE.GROWTH_RATE;
+    const maxSize = gameConfig.PLAYER.SIZE.MAX_SIZE;
+    
+    const targetSize = baseSize + (this.level - 1) * growthRate;
+    this.size = Math.min(targetSize, maxSize);
+    
+    console.log(`플레이어 ${this.id} 레벨업! 레벨: ${this.level}, HP: ${this.maxHp}, 공격력: ${this.attack}, 크기: ${this.size}`);
+    
+    return {
+      level: this.level,
+      hp: this.hp,
+      maxHp: this.maxHp,
+      attack: this.attack,
+      defense: this.defense,
+      speed: this.speed,
+      visionRange: this.visionRange,
+      size: this.size  // size 정보 추가
+    };
   }
 
   /**
@@ -166,29 +182,42 @@ class ServerPlayer {
   }
 
   /**
-   * 데미지 처리
+   * 데미지 처리 (사망 판정은 서버 메인 루프에서만 처리)
    */
   takeDamage(damage) {
     if (this.isDead) {
-      return false; // 이미 죽은 상태면 데미지 처리 안함
+      return; // 이미 죽은 상태면 데미지 처리 안함
+    }
+    
+    // 무적 상태 체크
+    if (this.isInvincible) {
+      return 0; // 무적 상태면 데미지 없음
     }
     
     this.hp = Math.max(0, this.hp - damage);
     
-    if (this.hp <= 0) {
-      this.isDead = true;
-      return true; // 사망
-    }
-    
-    return false; // 생존
+    // 사망 판정은 메인 게임 루프에서만 처리하므로 여기서는 HP만 업데이트
+    return actualDamage;
+  }
+
+  /**
+   * 무적 상태 토글
+   */
+  toggleInvincible() {
+    this.isInvincible = !this.isInvincible;
+    console.log(`플레이어 ${this.id} 무적 상태: ${this.isInvincible}`);
+    return this.isInvincible;
   }
 
   /**
    * 플레이어 리스폰 (사망 상태 해제)
    */
   respawn() {
+    console.log('플레이어 리스폰');
     this.isDead = false;
     this.hp = this.maxHp;
+    // 데미지 소스 추적 정보 리셋
+    this.lastDamageSource = null;
   }
 
   /**
@@ -267,7 +296,7 @@ class ServerPlayer {
   /**
    * 점프 시작 처리
    */
-  startJump(duration = 400) {
+  startJump(duration = gameConfig.PLAYER.SKILLS.JUMP_DURATION) {
     if (this.isJumping) {
       return false;
     }
@@ -315,8 +344,8 @@ class ServerPlayer {
    */
   calculateSkillRange(skillType, baseRange) {
     if (this.jobClass === 'slime' && skillType === 'spread') {
-      // 슬라임 퍼지기는 크기에 비례 (기본 크기 64를 기준으로)
-      return Math.round(baseRange * (this.size / 64));
+      // 슬라임 퍼지기는 크기에 비례 (기본 크기는 Config에서 가져옴)
+      return Math.round(baseRange * (this.size / gameConfig.PLAYER.SKILLS.BASE_RANGE_REFERENCE));
     }
     return baseRange;
   }
@@ -331,13 +360,47 @@ class ServerPlayer {
         baseDamage = this.attack;
       } else if (baseDamage.includes('attack')) {
         // 간단한 수식 계산 (attack * 1.5 등)
-        baseDamage = eval(baseDamage.replace('attack', this.attack));
+        baseDamage = this.parseFormula(baseDamage, this.attack);
       }
     }
     
-    // 기본 공격력과 레벨을 반영한 데미지 계산
-    const levelBonus = (this.level - 1) * 5;
-    return Math.round((baseDamage + levelBonus) * 0.8);
+    return Math.round(baseDamage);
+  }
+
+  /**
+   * 안전한 수식 파싱 (eval 대신 사용)
+   * 'attack * 1.5', 'attack + 10' 등의 간단한 수식을 파싱
+   */
+  parseFormula(formula, attackValue) {
+    // 공백 제거
+    const cleanFormula = formula.replace(/\s/g, '');
+    
+    // attack 값으로 치환
+    const withValue = cleanFormula.replace(/attack/g, attackValue);
+    
+    // 간단한 수식 파싱 (*, +, -, / 지원)
+    const match = withValue.match(/^(\d+(?:\.\d+)?)\s*([+\-*/])\s*(\d+(?:\.\d+)?)$/);
+    if (match) {
+      const [, left, operator, right] = match;
+      const leftNum = parseFloat(left);
+      const rightNum = parseFloat(right);
+      
+      switch (operator) {
+        case '*': return Math.round(leftNum * rightNum);
+        case '/': return Math.round(leftNum / rightNum);
+        case '+': return Math.round(leftNum + rightNum);
+        case '-': return Math.round(leftNum - rightNum);
+        default: return attackValue;
+      }
+    }
+    
+    // 단순 숫자인 경우
+    const numMatch = withValue.match(/^(\d+(?:\.\d+)?)$/);
+    if (numMatch) {
+      return Math.round(parseFloat(numMatch[1]));
+    }
+    
+    return attackValue;
   }
 
   /**
@@ -346,23 +409,6 @@ class ServerPlayer {
   setSize(newSize) {
     this.size = Math.max(16, Math.min(256, newSize));
   }
-
-  /**
-   * 콜라이더 크기 계산 (클라이언트와 동일한 방식)
-   */
-  getColliderSize() {
-    // 클라이언트와 동일한 방식으로 콜라이더 크기 계산
-    // AssetConfig.PLAYER.COLLIDER_SIZE를 기준으로 함
-    const baseColliderSize = AssetConfig.SPRITE_SIZES.PLAYER.COLLIDER_SIZE; // 32
-    return baseColliderSize + 10;
-  }
-
-  // /**
-  //  * 콜라이더 반지름 계산 (충돌 감지용)
-  //  */
-  // getColliderRadius() {
-  //   return this.getColliderSize() / 2 + 8;
-  // }
 }
 
 module.exports = ServerPlayer; 

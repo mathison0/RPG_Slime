@@ -1,4 +1,4 @@
-const { getSkillInfo } = require('../../../shared/JobClasses.js');
+const { getSkillInfo } = require('../../shared/JobClasses.js');
 
 /**
  * 스킬 관리 매니저

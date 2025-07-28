@@ -1,6 +1,4 @@
 import BaseJob from './BaseJob.js';
-// JobClasses functions available via window.JobClassesModule
-const { getJobInfo } = window.JobClassesModule;
 
 /**
  * 마법사 직업 클래스
@@ -8,7 +6,6 @@ const { getJobInfo } = window.JobClassesModule;
 export default class MageJob extends BaseJob {
     constructor(player) {
         super(player);
-        this.jobInfo = getJobInfo('mage');
         this.lastBasicAttackTime = 0;
         this.basicAttackCooldown = 800; // 기본 공격 쿨다운 (밀리초)
     }

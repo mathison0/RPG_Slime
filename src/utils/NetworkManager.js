@@ -54,6 +54,14 @@ class NetworkManager {
             console.log('서버 연결이 끊어졌습니다.');
             this.isConnected = false;
             this.hasJoinedGame = false; // 연결이 끊어지면 다시 입장 가능하도록
+            this.emit('disconnect'); // NetworkEventManager로 이벤트 전달
+        });
+
+        this.socket.on('connect_error', (error) => {
+            console.log('서버 연결 오류:', error);
+            this.isConnected = false;
+            this.hasJoinedGame = false;
+            this.emit('connect_error', error); // NetworkEventManager로 이벤트 전달
         });
 
         // 게임 이벤트 리스너들
@@ -83,8 +91,16 @@ class NetworkManager {
             this.emit('skill-error', data);
         });
 
+        this.socket.on('player-update-error', (data) => {
+            this.emit('player-update-error', data);
+        });
+
         this.socket.on('player-level-up', (data) => {
             this.emit('player-level-up', data);
+        });
+
+        this.socket.on('level-up-error', (data) => {
+            this.emit('level-up-error', data);
         });
 
         this.socket.on('enemy-spawned', (data) => {
@@ -97,6 +113,18 @@ class NetworkManager {
 
         this.socket.on('enemy-damaged', (data) => {
             this.emit('enemy-damaged', data);
+        });
+
+        this.socket.on('enemies-update', (data) => {
+            this.emit('enemies-update', data);
+        });
+
+        this.socket.on('player-death', (data) => {
+            this.emit('player-death', data);
+        });
+
+        this.socket.on('monster-attack', (data) => {
+            this.emit('monster-attack', data);
         });
 
         // 플레이어 데미지 이벤트
@@ -184,11 +212,22 @@ class NetworkManager {
     }
 
     // 스킬 사용
-    useSkill(skillType, additionalData = {}) {
+    useSkill(skillType, targetX = null, targetY = null) {
         if (this.isConnected) {
             this.socket.emit('player-skill', {
                 skillType: skillType,
-                ...additionalData
+                targetX: targetX,
+                targetY: targetY,
+                timestamp: Date.now()
+            });
+        }
+    }
+
+    // 레벨업 요청
+    requestLevelUp() {
+        if (this.isConnected) {
+            this.socket.emit('player-level-up-request', {
+                timestamp: Date.now()
             });
         }
     }
@@ -221,6 +260,15 @@ class NetworkManager {
         }
     }
 
+    // 플레이어 리스폰 요청
+    requestRespawn() {
+        if (this.isConnected) {
+            this.socket.emit('player-respawn-request', {
+                timestamp: Date.now()
+            });
+        }
+    }
+
     // 이벤트 리스너 등록
     on(eventName, callback) {
         if (!this.callbacks.has(eventName)) {
@@ -248,14 +296,6 @@ class NetworkManager {
             });
         }
     }
-    
-    // 치트: 리스폰 요청 (자살)
-    requestRespawn() {
-        if (this.socket && this.isConnected) {
-            console.log('리스폰 요청 (자살)');
-            this.socket.emit('cheat-respawn');
-        }
-    }
 
     // 게임 상태 동기화 요청 (탭 포커스 복원 시)
     requestGameSync() {
@@ -265,10 +305,48 @@ class NetworkManager {
         }
     }
 
-    // 연결 해제
+    // 연결 해제 및 재시도
     disconnect() {
         if (this.socket) {
             this.socket.disconnect();
+        }
+        this.isConnected = false;
+        this.playerId = null;
+        this.hasJoinedGame = false;
+        this.pendingJoinGameData = null;
+    }
+
+    /**
+     * 연결 완전 초기화 (Player not found 에러 등으로 인한 강제 초기화)
+     */
+    resetConnection() {
+        console.log('NetworkManager 연결 초기화 시작...');
+        
+        try {
+            // 기존 이벤트 리스너 제거
+            if (this.socket) {
+                this.socket.removeAllListeners();
+                this.socket.disconnect();
+            }
+            
+            // 상태 초기화
+            this.isConnected = false;
+            this.playerId = null;
+            this.hasJoinedGame = false;
+            this.pendingJoinGameData = null;
+            this.callbacks.clear();
+            
+            // 새로운 소켓 연결 생성
+            const serverUrl = window.location.hostname === 'localhost' 
+                ? 'http://localhost:3000' 
+                : window.location.origin;
+            
+            this.socket = io(serverUrl);
+            this.setupSocketEvents();
+            
+            console.log('NetworkManager 연결 초기화 완료');
+        } catch (error) {
+            console.error('NetworkManager 연결 초기화 중 오류:', error);
         }
     }
 } 

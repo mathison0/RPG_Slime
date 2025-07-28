@@ -334,31 +334,8 @@ export default class GameScene extends Phaser.Scene {
                     // 기존 이동 애니메이션 중단
                     this.tweens.killTweensOf(enemy);
                     
-                    // 즉시 위치 및 상태 업데이트
-                    enemy.x = enemyData.x;
-                    enemy.y = enemyData.y;
-                    enemy.hp = enemyData.hp;
-                    enemy.maxHp = enemyData.maxHp;
-                    
-                    // 물리 바디 위치 즉시 반영
-                    if (enemy.body) {
-                        enemy.body.setPosition(enemyData.x - enemy.width/2, enemyData.y - enemy.height/2);
-                        
-                        // 속도 정보도 복원
-                        if (enemyData.vx !== undefined && enemyData.vy !== undefined) {
-                            enemy.body.setVelocity(enemyData.vx, enemyData.vy);
-                        }
-                    }
-                    
-                    // HP 바 업데이트
-                    if (enemy.hpBar) {
-                        enemy.updateHpBar();
-                    }
-                    
-                    // 공격 상태 복원
-                    if (enemyData.isAttacking) {
-                        enemy.playAttackAnimation();
-                    }
+                    // 서버에서 받은 모든 정보로 상태 복원
+                    enemy.applyServerStats(enemyData);
                 }
             });
             
@@ -813,7 +790,7 @@ export default class GameScene extends Phaser.Scene {
      * 플레이어 리스폰
      */
     respawnPlayer() {
-        console.log('플레이어 리스폰 시작');
+        console.log('플레이어 리스폰 요청 시작');
         
         if (!this.player) {
             console.warn('플레이어가 존재하지 않아 리스폰을 건너뜁니다');
@@ -829,60 +806,8 @@ export default class GameScene extends Phaser.Scene {
             this.respawnTimerText = null;
         }
         
-        // 플레이어를 스폰 구역의 랜덤한 위치에 배치
-        const spawnPosition = this.getRandomSpawnPosition();
-        if (spawnPosition) {
-            // 플레이어 다시 활성화
-            this.player.isDead = false; // 사망 상태 해제
-            this.player.setVisible(true);
-            this.player.setActive(true);
-            
-            // 색상 초기화 (데미지로 인한 빨간색 제거)
-            this.player.clearTint();
-            
-            // 위치 설정 (스프라이트와 물리 바디 모두)
-            this.player.setPosition(spawnPosition.x, spawnPosition.y);
-            if (this.player.body) {
-                this.player.body.setEnable(true);
-                this.player.body.reset(spawnPosition.x, spawnPosition.y);
-            }
-            
-            // 방향을 front로 초기화
-            this.player.direction = 'front';
-            this.player.updateJobSprite();
-            
-            // 이름표도 다시 표시
-            if (this.player.nameText) {
-                this.player.nameText.setVisible(true);
-                this.player.updateNameTextPosition();
-            }
-            
-            // HP 완전 회복
-            this.player.hp = this.player.maxHp;
-            this.player.updateUI();
-            
-            // 서버에 리스폰 알림
-            this.networkManager.emit('player-respawned', {
-                x: spawnPosition.x,
-                y: spawnPosition.y
-            });
-            
-            // 카메라가 플레이어를 다시 따라가도록 설정
-            this.cameras.main.startFollow(this.player);
-            
-            // 리스폰 이펙트
-            this.effectManager.showExplosion(spawnPosition.x, spawnPosition.y, 0x00ff00, 50);
-            this.effectManager.showMessage(
-                spawnPosition.x, 
-                spawnPosition.y - 50, 
-                '리스폰!', 
-                { fill: '#00ff00', fontSize: '20px' }
-            );
-            
-            console.log('플레이어 리스폰 완료:', spawnPosition);
-        } else {
-            console.error('스폰 위치를 찾을 수 없어 리스폰에 실패했습니다');
-        }
+        // 서버에 리스폰 요청
+        this.networkManager.requestRespawn();
     }
 
     /**
@@ -917,6 +842,89 @@ export default class GameScene extends Phaser.Scene {
         } else {
             console.warn('스폰 구역 정보가 없어 기본 위치로 리스폰');
             return { x: this.scale.width / 2, y: this.scale.height / 2 };
+        }
+    }
+
+    /**
+     * 게임 완전 초기화 (Player not found 에러 등으로 인한 강제 초기화)
+     */
+    forceResetGame() {
+        console.log('GameScene 강제 초기화 시작...');
+        
+        try {
+            // 모든 타이머 정리
+            if (this.time) {
+                this.time.removeAllEvents();
+            }
+            
+            // 플레이어 완전 제거
+            if (this.player) {
+                this.player.destroy();
+                this.player = null;
+            }
+            
+            // 다른 플레이어들 제거
+            if (this.otherPlayers) {
+                this.otherPlayers.clear(true, true);
+            }
+            
+            // 적들 제거
+            if (this.enemies) {
+                this.enemies.clear(true, true);
+            }
+            
+            // 벽 제거
+            if (this.walls) {
+                this.walls.clear(true, true);
+            }
+            
+            // 스폰 배리어 제거
+            if (this.spawnBarriers) {
+                this.spawnBarriers.clear(true, true);
+            }
+            
+            // 와드 제거
+            if (this.activeWard) {
+                this.activeWard.destroy();
+                this.activeWard = null;
+            }
+            
+            // 매니저들 정리
+            if (this.networkEventManager) {
+                this.networkEventManager.destroy();
+                this.networkEventManager = null;
+            }
+            
+            if (this.visionManager) {
+                this.visionManager.destroy();
+                this.visionManager = null;
+            }
+            
+            if (this.minimapManager) {
+                this.minimapManager.destroy();
+                this.minimapManager = null;
+            }
+            
+            if (this.pingManager) {
+                this.pingManager.destroy();
+                this.pingManager = null;
+            }
+            
+            if (this.cheatManager) {
+                this.cheatManager.destroy();
+                this.cheatManager = null;
+            }
+            
+            // 상태 초기화
+            this.playerNickname = 'Player';
+            this.isFirstJoin = true;
+            this.playerTeam = null;
+            this.playerId = null;
+            this.inEnemySpawnZone = false;
+            
+            console.log('GameScene 강제 초기화 완료');
+        } catch (error) {
+            console.error('GameScene 강제 초기화 중 오류:', error);
         }
     }
 }
