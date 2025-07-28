@@ -34,7 +34,7 @@ export default class SkillCooldownUI {
         cooldown1.setScrollFactor(0);
         cooldown1.setDepth(1001);
         
-        const number1 = this.scene.add.text(uiX1, uiY1, '1', {
+        const number1 = this.scene.add.text(uiX1, uiY1, 'Q', {
             fontSize: '18px',
             fill: '#ffffff',
             fontStyle: 'bold'
@@ -52,16 +52,16 @@ export default class SkillCooldownUI {
             radius: radius
         };
         
-        // 마법사인 경우 추가 스킬 UI 생성
-        if (this.player.jobClass === 'mage') {
-            this.createMageExtraUI(uiX1, uiY1, spacing, radius);
+        // 마법사나 전사인 경우 추가 스킬 UI 생성
+        if (this.player.jobClass === 'mage' || this.player.jobClass === 'warrior') {
+            this.createExtraUI(uiX1, uiY1, spacing, radius);
         }
     }
 
     /**
-     * 마법사 추가 스킬 UI 생성
+     * 추가 스킬 UI 생성 (마법사, 전사 등)
      */
-    createMageExtraUI(baseX, baseY, spacing, radius) {
+    createExtraUI(baseX, baseY, spacing, radius) {
         // 두 번째 스킬 UI (2번키)
         const uiX2 = baseX + spacing;
         const uiY2 = baseY;
@@ -76,7 +76,7 @@ export default class SkillCooldownUI {
         cooldown2.setScrollFactor(0);
         cooldown2.setDepth(1001);
         
-        const number2 = this.scene.add.text(uiX2, uiY2, '2', {
+        const number2 = this.scene.add.text(uiX2, uiY2, 'E', {
             fontSize: '18px',
             fill: '#ffffff',
             fontStyle: 'bold'
@@ -98,7 +98,7 @@ export default class SkillCooldownUI {
         cooldown3.setScrollFactor(0);
         cooldown3.setDepth(1001);
         
-        const number3 = this.scene.add.text(uiX3, uiY3, '3', {
+        const number3 = this.scene.add.text(uiX3, uiY3, 'R', {
             fontSize: '18px',
             fill: '#ffffff',
             fontStyle: 'bold'
@@ -128,42 +128,69 @@ export default class SkillCooldownUI {
         
         const cooldowns = this.player.job.getSkillCooldowns();
         
-        // 첫 번째 스킬 업데이트
-        if (cooldowns[1]) {
+        // 첫 번째 스킬 업데이트 (Q키)
+        if (cooldowns.Q) {
             this.updateSingleSkillCooldown(
                 this.ui.cooldown,
                 this.ui.number,
                 this.ui.x,
                 this.ui.y,
                 this.ui.radius,
-                cooldowns[1].remaining,
-                cooldowns[1].max
+                cooldowns.Q.remaining,
+                cooldowns.Q.max
             );
         }
         
-        // 마법사 추가 스킬들 업데이트
+        // 마법사 추가 스킬들 업데이트 (E, R키)
         if (this.player.jobClass === 'mage') {
-            if (cooldowns[2] && this.ui.cooldown2) {
+            if (cooldowns.E && this.ui.cooldown2) {
                 this.updateSingleSkillCooldown(
                     this.ui.cooldown2,
                     this.ui.number2,
                     this.ui.x2,
                     this.ui.y2,
                     this.ui.radius,
-                    cooldowns[2].remaining,
-                    cooldowns[2].max
+                    cooldowns.E.remaining,
+                    cooldowns.E.max
                 );
             }
             
-            if (cooldowns[3] && this.ui.cooldown3) {
+            if (cooldowns.R && this.ui.cooldown3) {
                 this.updateSingleSkillCooldown(
                     this.ui.cooldown3,
                     this.ui.number3,
                     this.ui.x3,
                     this.ui.y3,
                     this.ui.radius,
-                    cooldowns[3].remaining,
-                    cooldowns[3].max
+                    cooldowns.R.remaining,
+                    cooldowns.R.max
+                );
+            }
+        }
+        
+        // 전사 스킬들 업데이트 (E, R키)
+        if (this.player.jobClass === 'warrior') {
+            if (cooldowns.E && this.ui.cooldown2) {
+                this.updateSingleSkillCooldown(
+                    this.ui.cooldown2,
+                    this.ui.number2,
+                    this.ui.x2,
+                    this.ui.y2,
+                    this.ui.radius,
+                    cooldowns.E.remaining,
+                    cooldowns.E.max
+                );
+            }
+            
+            if (cooldowns.R && this.ui.cooldown3) {
+                this.updateSingleSkillCooldown(
+                    this.ui.cooldown3,
+                    this.ui.number3,
+                    this.ui.x3,
+                    this.ui.y3,
+                    this.ui.radius,
+                    cooldowns.R.remaining,
+                    cooldowns.R.max
                 );
             }
         }

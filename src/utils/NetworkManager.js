@@ -99,8 +99,14 @@ class NetworkManager {
             this.emit('enemy-damaged', data);
         });
 
-        this.socket.on('enemies-update', (data) => {
-            this.emit('enemies-update', data);
+        // 플레이어 데미지 이벤트
+        this.socket.on('player-damaged', (data) => {
+            this.emit('player-damaged', data);
+        });
+
+        // 플레이어 상태 업데이트 이벤트
+        this.socket.on('players-state-update', (data) => {
+            this.emit('players-state-update', data);
         });
 
         this.socket.on('player-job-changed', (data) => {

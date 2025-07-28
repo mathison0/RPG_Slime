@@ -61,6 +61,11 @@ export default class NetworkEventManager {
             this.handleSkillError(data);
         });
         
+        // 플레이어 데미지
+        this.networkManager.on('player-damaged', (data) => {
+            this.handlePlayerDamaged(data);
+        });
+        
         // 와드 파괴
         this.networkManager.on('ward-destroyed', (data) => {
             this.handleWardDestroyed(data);
@@ -73,6 +78,11 @@ export default class NetworkEventManager {
 
         // 적 관련 이벤트
         this.setupEnemyEvents();
+        
+        // 플레이어 상태 업데이트
+        this.networkManager.on('players-state-update', (data) => {
+            this.handlePlayersStateUpdate(data);
+        });
         
         // 기타 이벤트
         this.setupMiscEvents();
@@ -296,6 +306,16 @@ export default class NetworkEventManager {
                 
                 otherPlayer.updateJobSprite();
             }
+            // HP 정보 업데이트
+            if (data.hp !== undefined && data.hp !== otherPlayer.hp) {
+                otherPlayer.hp = data.hp;
+            }
+            if (data.maxHp !== undefined && data.maxHp !== otherPlayer.maxHp) {
+                otherPlayer.maxHp = data.maxHp;
+            }
+            
+            // 스프라이트 업데이트
+            otherPlayer.updateJobSprite();
         }
     }
 
@@ -307,10 +327,21 @@ export default class NetworkEventManager {
             ? this.scene.player 
             : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
         
+        // 디버깅 로그 추가
+        const isOwnPlayer = data.playerId === this.networkManager.playerId;
+        console.log(`${isOwnPlayer ? '본인' : '다른 플레이어'} 스킬 사용: ${data.skillType} (플레이어 ID: ${data.playerId})`);
+        
         if (player) {
+            // 본인 플레이어의 스킬 사용 성공 시 쿨타임 설정 (울부짖기는 이미 설정됨)
+            if (isOwnPlayer && player.job && data.skillType !== 'roar') {
+                this.setSkillCooldown(player, data.skillType);
+            }
+            
             // 타임스탬프 기반 이펙트 동기화
             const currentTime = Date.now();
             const skillDelay = currentTime - data.timestamp;
+            
+            console.log(`스킬 지연시간: ${skillDelay}ms`);
             
             // 지연시간이 너무 크면 (1초 이상) 이펙트 스킵
             if (skillDelay > 1000) {
@@ -323,13 +354,106 @@ export default class NetworkEventManager {
             
             if (adjustedDelay > 0) {
                 // 지연해서 재생
+                console.log(`스킬 이펙트 지연 실행: ${adjustedDelay}ms 후`);
                 this.scene.time.delayedCall(adjustedDelay, () => {
                     this.showSkillEffect(player, data.skillType, data);
                 });
             } else {
                 // 즉시 재생
+                console.log('스킬 이펙트 즉시 실행');
                 this.showSkillEffect(player, data.skillType, data);
             }
+        } else {
+            console.warn(`플레이어를 찾을 수 없음: ${data.playerId}`);
+        }
+    }
+
+    /**
+     * 스킬 쿨타임 설정
+     */
+    setSkillCooldown(player, skillType) {
+        if (!player.job) return;
+        
+        // 직업별 스킬 정보 가져오기
+        const jobInfo = player.job.jobInfo;
+        if (!jobInfo || !jobInfo.skills) return;
+        
+        // 스킬 정보 찾기
+        const skillInfo = jobInfo.skills.find(skill => skill.type === skillType);
+        if (!skillInfo) return;
+        
+        // 쿨타임 설정
+        player.job.setSkillCooldown(skillType, skillInfo.cooldown);
+        console.log(`${skillType} 스킬 쿨타임 설정: ${skillInfo.cooldown}ms`);
+    }
+
+    /**
+     * 플레이어 ID로 플레이어 찾기
+     */
+    findPlayerById(playerId) {
+        // 본인 플레이어인지 확인
+        if (this.scene.player && this.scene.player.networkId === playerId) {
+            return this.scene.player;
+        }
+        
+        // 다른 플레이어들 중에서 찾기
+        if (this.scene.otherPlayers) {
+            return this.scene.otherPlayers.getChildren().find(p => p.networkId === playerId);
+        }
+        
+        return null;
+    }
+
+    /**
+     * 서버에서 받은 스킬 데미지 결과 처리
+     */
+    handleSkillDamageResult(damageResult) {
+        let totalAffected = 0;
+        
+        // 적들에게 데미지 적용된 경우
+        if (damageResult.affectedEnemies && damageResult.affectedEnemies.length > 0) {
+            totalAffected += damageResult.affectedEnemies.length;
+            
+            // 각 피해받은 적에 대해 데미지 효과 표시
+            damageResult.affectedEnemies.forEach(enemyData => {
+                const enemy = this.scene.enemies?.getChildren().find(e => e.networkId === enemyData.id);
+                if (enemy) {
+                    // 실제 적용된 데미지 텍스트 표시
+                    const damageToShow = enemyData.actualDamage || enemyData.damage;
+                    this.scene.effectManager.showDamageText(enemy.x, enemy.y, damageToShow);
+                    
+                    // 적 체력 업데이트 (서버에서 이미 처리됨)
+                    // 실제 HP는 서버에서 관리되므로 클라이언트에서는 시각적 효과만
+                    if (enemy.updateHealthFromServer) {
+                        enemy.updateHealthFromServer();
+                    }
+                }
+            });
+        }
+
+        // 다른 팀 플레이어들에게 데미지 적용된 경우
+        if (damageResult.affectedPlayers && damageResult.affectedPlayers.length > 0) {
+            totalAffected += damageResult.affectedPlayers.length;
+            
+            // 각 피해받은 플레이어에 대해 데미지 효과 표시
+            damageResult.affectedPlayers.forEach(playerData => {
+                const targetPlayer = this.scene.otherPlayers?.getChildren().find(p => p.networkId === playerData.id);
+                if (targetPlayer) {
+                    // 실제 적용된 데미지 텍스트 표시
+                    const damageToShow = playerData.actualDamage || playerData.damage;
+                    this.scene.effectManager.showDamageText(targetPlayer.x, targetPlayer.y, damageToShow);
+                    
+                    // 플레이어 체력 업데이트 (서버에서 이미 처리됨)
+                    // 실제 HP는 서버에서 관리되므로 클라이언트에서는 시각적 효과만
+                    if (targetPlayer.updateHealthFromServer) {
+                        targetPlayer.updateHealthFromServer();
+                    }
+                }
+            });
+        }
+
+        if (totalAffected > 0) {
+            console.log(`서버 데미지 결과: ${damageResult.totalDamage} 데미지, ${totalAffected}개 대상에게 적용`);
         }
     }
 
@@ -342,6 +466,58 @@ export default class NetworkEventManager {
         // 플레이어에게 에러 메시지 표시
         if (this.scene.player && this.scene.player.job) {
             this.scene.player.job.showCooldownMessage(data.error);
+        }
+    }
+
+    /**
+     * 플레이어 상태 업데이트 처리
+     */
+    handlePlayersStateUpdate(playerStates) {
+        // 본인 플레이어 상태 업데이트
+        const myPlayerState = playerStates.find(p => p.id === this.networkManager.playerId);
+        if (myPlayerState && this.scene.player) {
+            this.scene.player.hp = myPlayerState.hp;
+            this.scene.player.maxHp = myPlayerState.maxHp;
+            this.scene.player.updateUI();
+        }
+        
+        // 다른 플레이어들 상태 업데이트
+        if (this.scene.otherPlayers?.children) {
+            playerStates.forEach(playerState => {
+                if (playerState.id === this.networkManager.playerId) return; // 본인 제외
+                
+                const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === playerState.id);
+                if (otherPlayer) {
+                    otherPlayer.hp = playerState.hp;
+                    otherPlayer.maxHp = playerState.maxHp;
+                    otherPlayer.level = playerState.level;
+                    otherPlayer.jobClass = playerState.jobClass;
+                    otherPlayer.updateJobSprite();
+                }
+            });
+        }
+    }
+
+    /**
+     * 플레이어 데미지 처리
+     */
+    handlePlayerDamaged(data) {
+        // 본인 플레이어가 데미지를 받은 경우
+        if (this.scene.player && this.scene.player.networkId === this.networkManager.playerId) {
+            // 서버에서 받은 체력 정보로 업데이트
+            this.scene.player.setHealthFromServer(data.currentHp, data.maxHp);
+            
+            // 실제 적용된 데미지 텍스트 표시
+            const damageToShow = data.actualDamage || data.damage;
+            this.scene.effectManager.showDamageText(this.scene.player.x, this.scene.player.y, damageToShow);
+            
+            // UI 업데이트
+            this.scene.player.updateUI();
+            
+            // 체력이 0 이하면 사망 처리
+            if (data.currentHp <= 0) {
+                this.scene.player.die();
+            }
         }
     }
 
@@ -408,29 +584,42 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 적 위치 업데이트 처리
+     * 적 상태 업데이트 처리
      */
     handleEnemiesUpdate(enemiesData) {
+        if (!this.scene.enemies) return;
+
+        // 서버에서 받은 적 데이터로 클라이언트 적들 업데이트
         enemiesData.forEach(enemyData => {
-            if (!this.scene.enemies?.children) return;
+            let enemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyData.id);
             
-            const enemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyData.id);
-            if (enemy) {
-                // 부드러운 이동
-                this.scene.tweens.add({
-                    targets: enemy,
-                    x: enemyData.x,
-                    y: enemyData.y,
-                    duration: 50,
-                    ease: 'Linear'
-                });
-                
+            if (!enemy) {
+                // 새로운 적 생성
+                enemy = this.createNetworkEnemy(enemyData);
+            } else {
+                // 기존 적 상태 업데이트
+                enemy.x = enemyData.x;
+                enemy.y = enemyData.y;
                 enemy.hp = enemyData.hp;
                 enemy.maxHp = enemyData.maxHp;
+                enemy.vx = enemyData.vx || 0;
+                enemy.vy = enemyData.vy || 0;
                 
+                // 서버에서 관리되는 적으로 설정
+                enemy.isServerControlled = true;
+                
+                // 공격 상태 처리
                 if (enemyData.isAttacking) {
                     this.showEnemyAttack(enemy);
                 }
+            }
+        });
+
+        // 서버에 없는 적들 제거 (클라이언트에서만 존재하는 적들)
+        const serverEnemyIds = new Set(enemiesData.map(e => e.id));
+        this.scene.enemies.getChildren().forEach(enemy => {
+            if (enemy.networkId && !serverEnemyIds.has(enemy.networkId)) {
+                enemy.destroy();
             }
         });
     }
@@ -725,6 +914,15 @@ export default class NetworkEventManager {
             case 'charge':
                 this.showChargeEffect(player, data);
                 break;
+            case 'roar':
+                this.showRoarEffect(player, data);
+                break;
+            case 'sweep':
+                this.showSweepEffect(player, data);
+                break;
+            case 'thrust':
+                this.showThrustEffect(player, data);
+                break;
         }
     }
 
@@ -802,26 +1000,317 @@ export default class NetworkEventManager {
     }
 
     /**
+     * 울부짖기 이펙트
+     */
+    showRoarEffect(player, data = null) {
+        // 기존 울부짖기 이펙트가 있다면 제거
+        if (player.roarEffectTimer) {
+            this.scene.time.removeEvent(player.roarEffectTimer);
+            player.roarEffectTimer = null;
+        }
+        
+        // 울부짖기 스킬 상태 설정
+        player.isUsingRoarSkill = true;
+        
+        // 울부짖기 스프라이트로 변경
+        player.setTexture('warrior_skill');
+        
+        // 서버에서 받은 지속시간 사용 (기본값 1000ms)
+        const effectDuration = data?.skillInfo?.duration || 1000;
+        
+        console.log(`울부짖기 지속시간: ${effectDuration}ms`);
+        
+        // 울부짖기 효과 메시지 (1초 후 제거)
+        const roarText = this.scene.add.text(
+            player.x, 
+            player.y - 80, 
+            '울부짖기!', 
+            {
+                fontSize: '18px',
+                fill: '#ff0000',
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5);
+        
+        // 텍스트는 1초 후 제거
+        this.scene.time.delayedCall(1000, () => {
+            if (roarText.active) {
+                roarText.destroy();
+            }
+        });
+        
+        // 스프라이트는 지속시간 후 복원 (정확한 타이밍)
+        player.roarEffectTimer = this.scene.time.delayedCall(effectDuration, () => {
+            // 울부짖기 스킬 상태 해제
+            player.isUsingRoarSkill = false;
+            
+            // WarriorJob의 isRoaring 상태도 해제
+            if (player.job && player.job.isRoaring) {
+                player.job.isRoaring = false;
+                console.log('울부짖기 상태 해제 완료');
+            }
+            
+            if (player.active) {
+                // 원래 직업 스프라이트로 복원
+                player.updateJobSprite();
+                console.log(`울부짖기 스프라이트 복원 완료 (지속시간: ${effectDuration}ms)`);
+            }
+            player.roarEffectTimer = null;
+        });
+        
+        console.log('울부짖기 스프라이트 변경 완료');
+    }
+
+    /**
+     * 휩쓸기 이펙트
+     */
+    showSweepEffect(player, data = null) {
+        // 휩쓸기 시각적 효과
+        player.setTint(0xff0000);
+        
+        // 마우스 커서 위치 가져오기 (서버 데이터에서)
+        const mouseX = data?.targetX || player.x;
+        const mouseY = data?.targetY || player.y;
+        
+        // 부채꼴 모양의 휩쓸기 그래픽 생성
+        const sweepGraphics = this.scene.add.graphics();
+        sweepGraphics.fillStyle(0xff0000, 0.3);
+        sweepGraphics.lineStyle(2, 0xff0000, 1);
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const centerX = player.x;
+        const centerY = player.y;
+        const radius = 80; // 휩쓸기 범위
+        const angleOffset = Math.PI / 3; // 60도
+        
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
+        const startAngle = angleToMouse - angleOffset;
+        const endAngle = angleToMouse + angleOffset;
+        
+        sweepGraphics.beginPath();
+        sweepGraphics.moveTo(centerX, centerY);
+        sweepGraphics.arc(centerX, centerY, radius, startAngle, endAngle);
+        sweepGraphics.closePath();
+        sweepGraphics.fill();
+        sweepGraphics.stroke();
+        
+        // 휩쓸기 애니메이션
+        this.scene.tweens.add({
+            targets: sweepGraphics,
+            alpha: 0,
+            duration: 500,
+            onComplete: () => {
+                sweepGraphics.destroy();
+                if (player.active) {
+                    player.clearTint();
+                }
+            }
+        });
+        
+        // 휩쓸기 효과 메시지
+        const sweepText = this.scene.add.text(
+            player.x, 
+            player.y - 60, 
+            '휩쓸기!', 
+            {
+                fontSize: '16px',
+                fill: '#ff0000'
+            }
+        ).setOrigin(0.5);
+        
+        this.scene.time.delayedCall(1000, () => {
+            if (sweepText.active) {
+                sweepText.destroy();
+            }
+        });
+    }
+
+    /**
+     * 찌르기 이펙트
+     */
+    showThrustEffect(player, data = null) {
+        // 찌르기 시각적 효과
+        player.setTint(0xff0000);
+        
+        // 마우스 커서 위치 가져오기 (서버 데이터에서)
+        const mouseX = data?.targetX || player.x;
+        const mouseY = data?.targetY || player.y;
+        
+        // 직사각형 모양의 찌르기 그래픽 생성
+        const thrustGraphics = this.scene.add.graphics();
+        thrustGraphics.fillStyle(0xff0000, 0.3);
+        thrustGraphics.lineStyle(2, 0xff0000, 1);
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const centerX = player.x;
+        const centerY = player.y;
+        const width = 40;
+        const height = 120; // 찌르기 범위
+        
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
+        
+        // 직사각형의 시작점 (플레이어 위치에서 아래변 중심)
+        const startX = centerX;
+        const startY = centerY;
+        
+        // 직사각형의 끝점 (마우스 방향으로 height만큼 이동한 윗변 중심)
+        const endX = centerX + Math.cos(angleToMouse) * height;
+        const endY = centerY + Math.sin(angleToMouse) * height;
+        
+        // 직사각형의 네 꼭지점 계산
+        const halfWidth = width / 2;
+        
+        // width 방향의 수직 벡터 계산 (마우스 방향에 수직)
+        const perpendicularAngle = angleToMouse + Math.PI / 2;
+        const widthVectorX = Math.cos(perpendicularAngle) * halfWidth;
+        const widthVectorY = Math.sin(perpendicularAngle) * halfWidth;
+        
+        // 아래변의 두 꼭지점 (플레이어 위치에서)
+        const bottomLeftX = startX - widthVectorX;
+        const bottomLeftY = startY - widthVectorY;
+        const bottomRightX = startX + widthVectorX;
+        const bottomRightY = startY + widthVectorY;
+        
+        // 윗변의 두 꼭지점 (마우스 방향으로)
+        const topLeftX = endX - widthVectorX;
+        const topLeftY = endY - widthVectorY;
+        const topRightX = endX + widthVectorX;
+        const topRightY = endY + widthVectorY;
+        
+        // 직사각형 그리기 (플레이어에서 마우스 방향으로)
+        thrustGraphics.beginPath();
+        thrustGraphics.moveTo(bottomLeftX, bottomLeftY);
+        thrustGraphics.lineTo(topLeftX, topLeftY);
+        thrustGraphics.lineTo(topRightX, topRightY);
+        thrustGraphics.lineTo(bottomRightX, bottomRightY);
+        thrustGraphics.closePath();
+        thrustGraphics.fill();
+        thrustGraphics.stroke();
+        
+        // 찌르기 애니메이션
+        this.scene.tweens.add({
+            targets: thrustGraphics,
+            alpha: 0,
+            duration: 800,
+            onComplete: () => {
+                thrustGraphics.destroy();
+                if (player.active) {
+                    player.clearTint();
+                }
+            }
+        });
+        
+        // 찌르기 효과 메시지
+        const thrustText = this.scene.add.text(
+            player.x, 
+            player.y - 60, 
+            '찌르기!', 
+            {
+                fontSize: '16px',
+                fill: '#ff0000'
+            }
+        ).setOrigin(0.5);
+        
+        this.scene.time.delayedCall(1000, () => {
+            if (thrustText.active) {
+                thrustText.destroy();
+            }
+        });
+    }
+
+    /**
      * 슬라임 퍼지기 이펙트
      */
     showSlimeSpreadEffect(player, data = null) {
         // 본인도 이펙트를 볼 수 있도록 수정
+        const isOwnPlayer = player === this.scene.player;
+        const startTime = Date.now();
+        console.log(`슬라임 퍼지기 이펙트 시작 (본인: ${isOwnPlayer}, 시작시간: ${startTime})`);
+        
+        // 기존 슬라임 스킬 이펙트가 있다면 제거
+        if (player.slimeSkillEffect) {
+            player.slimeSkillEffect.destroy();
+            player.slimeSkillEffect = null;
+        }
+        
+        // 기존 슬라임 스킬 타이머가 있다면 제거
+        if (player.slimeSkillTimer) {
+            this.scene.time.removeEvent(player.slimeSkillTimer);
+            player.slimeSkillTimer = null;
+        }
+        
+        // 슬라임 스킬 상태 설정
+        player.isUsingSlimeSkill = true;
+        
+        // 슬라임 스킬 스프라이트로 변경
         player.setTexture('slime_skill');
+        
+        // 퍼지기 스킬 메시지 표시
+        const skillText = this.scene.add.text(
+            player.x, 
+            player.y - 60, 
+            '퍼지기!', 
+            {
+                fontSize: '16px',
+                fill: '#00ff00',
+                stroke: '#000000',
+                strokeThickness: 2
+            }
+        ).setOrigin(0.5);
+        
+        // 메시지 애니메이션 (위로 올라가면서 사라짐)
+        this.scene.tweens.add({
+            targets: skillText,
+            y: skillText.y - 30,
+            alpha: 0,
+            duration: 1500,
+            ease: 'Power2',
+            onComplete: () => {
+                if (skillText.active) {
+                    skillText.destroy();
+                }
+            }
+        });
         
         // 서버에서 받은 범위 정보 사용 (기본값 50)
         const range = data?.skillInfo?.range || 50;
         
+        // 초록색 범위 효과 생성
         const effect = this.scene.add.circle(player.x, player.y, range, 0x00ff00, 0.3);
-        this.scene.time.delayedCall(300, () => {
+        player.slimeSkillEffect = effect; // 플레이어에 이펙트 참조 저장
+        
+        // 서버에서 받은 지속시간 사용 (기본값 1000ms)
+        const effectDuration = data?.skillInfo?.duration || 1000;
+        
+        console.log(`슬라임 퍼지기 지속시간: ${effectDuration}ms`);
+        
+        // 스프라이트 복원 타이머 설정 (지속시간과 정확히 동일하게)
+        player.slimeSkillTimer = this.scene.time.delayedCall(effectDuration, () => {
+            const endTime = Date.now();
+            const actualDuration = endTime - startTime;
+            
+            // 범위 효과 제거
             if (effect.active) {
                 effect.destroy();
+                console.log(`슬라임 퍼지기 범위 효과 제거 (실제 지속시간: ${actualDuration}ms)`);
             }
-        });
-        
-        this.scene.time.delayedCall(400, () => {
+            
+            // 플레이어 참조 정리
+            if (player.slimeSkillEffect === effect) {
+                player.slimeSkillEffect = null;
+            }
+            
+            // 슬라임 스킬 상태 해제
+            player.isUsingSlimeSkill = false;
+            
+            // 스프라이트 복원
             if (player.active) {
                 player.updateJobSprite();
+                console.log(`슬라임 퍼지기 스프라이트 복원 완료 (실제 지속시간: ${actualDuration}ms)`);
             }
+            
+            // 타이머 참조 정리
+            player.slimeSkillTimer = null;
         });
     }
 

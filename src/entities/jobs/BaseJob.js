@@ -6,6 +6,7 @@ export default class BaseJob {
     constructor(player) {
         this.player = player;
         this.scene = player.scene;
+        
         this.skillCooldowns = new Map();
         this.effects = new Map();
     }

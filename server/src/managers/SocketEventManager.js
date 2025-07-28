@@ -1,4 +1,5 @@
 const ServerUtils = require('../utils/ServerUtils');
+const SkillManager = require('./SkillManager');
 
 /**
  * 소켓 이벤트 관리 매니저
@@ -9,6 +10,7 @@ class SocketEventManager {
     this.gameStateManager = gameStateManager;
     this.enemyManager = enemyManager;
     this.playerSockets = new Map(); // 플레이어 ID -> 소켓 매핑
+    this.skillManager = new SkillManager(gameStateManager);
   }
 
   /**
@@ -111,6 +113,8 @@ class SocketEventManager {
           level: player.level,
           size: player.size,
           isDead: player.isDead // 사망 상태도 전송
+          hp: player.hp,
+          maxHp: player.maxHp
         });
       }
     });
@@ -150,7 +154,8 @@ class SocketEventManager {
       }
 
       // 서버에서 스킬 사용 검증 및 처리
-      const skillResult = player.useSkill(
+      const skillResult = this.skillManager.useSkill(
+        player,
         data.skillType, 
         data.targetX, 
         data.targetY
@@ -165,6 +170,17 @@ class SocketEventManager {
         return;
       }
 
+      // 서버에서 데미지 계산 및 적용
+      const damageResult = this.skillManager.applySkillDamage(
+        player, 
+        skillResult.skillType, 
+        skillResult.skillInfo, 
+        skillResult.x, 
+        skillResult.y, 
+        skillResult.targetX, 
+        skillResult.targetY
+      );
+
       // 스킬 사용 성공 시 모든 클라이언트에게 브로드캐스트
       const broadcastData = {
         playerId: socket.id,
@@ -173,7 +189,8 @@ class SocketEventManager {
         x: skillResult.x,
         y: skillResult.y,
         team: player.team,
-        skillInfo: skillResult.skillInfo
+        skillInfo: skillResult.skillInfo,
+        damageResult: damageResult // 데미지 결과 추가
       };
 
       // 타겟 위치가 있는 경우 추가
