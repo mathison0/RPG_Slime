@@ -201,24 +201,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
 
         this.hp -= damage;
         
-        // 데미지 표시
-        const damageText = this.scene.add.text(this.x, this.y - 20, `-${damage}`, {
-            fontSize: '14px',
-            fill: '#ff0000',
-            fontStyle: 'bold'
-        }).setOrigin(0.5);
-
-        // 텍스트가 위로 올라가며 사라지는 효과
-        this.scene.tweens.add({
-            targets: damageText,
-            y: damageText.y - 30,
-            alpha: 0,
-            duration: 800,
-            ease: 'Power1',
-            onComplete: () => {
-                damageText.destroy();
-            }
-        });
+        // 데미지 표시 제거됨
         
         // 피격 시 색상 변경 후 원래 색으로 복귀
         this.setTintFill(0xffffff); // 흰색으로 번쩍임

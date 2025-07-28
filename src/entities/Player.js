@@ -624,8 +624,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const actualDamage = damage;
         this.hp = Math.max(0, this.hp - actualDamage);
         
-        // 데미지 표시
-        this.effectManager.showDamageText(this.x, this.y, actualDamage);
+        // 데미지 표시 제거됨
         
         this.updateUI();
         

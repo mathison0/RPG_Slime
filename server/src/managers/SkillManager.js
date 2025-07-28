@@ -135,32 +135,66 @@ class SkillManager {
     const enemies = this.gameStateManager.enemies;
     const players = this.gameStateManager.players;
 
-    // 투사체 경로상의 적들 체크
+    // 투사체 경로 계산
     const angle = Math.atan2(targetY - y, targetX - x);
     const maxDistance = 300; // 투사체 최대 거리
+    
+    // 직업별 최대 사거리 설정
+    let projectileMaxDistance;
+    switch (player.jobClass) {
+      case 'archer':
+        projectileMaxDistance = 400;
+        break;
+      case 'mage':
+        projectileMaxDistance = 350;
+        break;
+      case 'ninja':
+        projectileMaxDistance = 300;
+        break;
+      case 'slime':
+        projectileMaxDistance = 250;
+        break;
+      default:
+        projectileMaxDistance = maxDistance;
+    }
+
+    // 투사체의 실제 최종 위치 계산
+    const finalX = x + Math.cos(angle) * projectileMaxDistance;
+    const finalY = y + Math.sin(angle) * projectileMaxDistance;
+
+    // 투사체 경로상의 충돌 체크 (더 정확한 방법)
+    const checkCollision = (targetX, targetY, targetRadius = 15) => {
+      // 투사체 경로를 여러 점으로 나누어 체크
+      const steps = 20;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const projectileX = x + (finalX - x) * t;
+        const projectileY = y + (finalY - y) * t;
+        
+        const distance = Math.sqrt((targetX - projectileX) ** 2 + (targetY - projectileY) ** 2);
+        if (distance <= targetRadius) {
+          return true;
+        }
+      }
+      return false;
+    };
 
     // 적과의 충돌 체크
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
       
-      const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
-      if (distance <= maxDistance) {
-        // 투사체 경로상에 있는지 확인 (간단한 거리 체크)
-        const enemyAngle = Math.atan2(enemy.y - y, enemy.x - x);
-        const angleDiff = Math.abs(angle - enemyAngle);
-        const normalizedAngleDiff = Math.min(angleDiff, 2 * Math.PI - angleDiff);
-        
-        if (normalizedAngleDiff < 0.3) { // 약 17도 내
-          const damage = baseDamage; // 데미지 감소 제거
-          enemy.takeDamage(damage);
-          damageResult.affectedEnemies.push({
-            id: enemy.id,
-            damage: damage,
-            actualDamage: damage,
-            newHp: enemy.hp
-          });
-          damageResult.totalDamage += damage;
-        }
+      if (checkCollision(enemy.x, enemy.y)) {
+        const damage = baseDamage;
+        enemy.takeDamage(damage);
+        damageResult.affectedEnemies.push({
+          id: enemy.id,
+          damage: damage,
+          actualDamage: damage,
+          newHp: enemy.hp,
+          x: enemy.x,
+          y: enemy.y
+        });
+        damageResult.totalDamage += damage;
       }
     });
 
@@ -168,25 +202,98 @@ class SkillManager {
     players.forEach(targetPlayer => {
       if (targetPlayer.id === player.id || targetPlayer.team === player.team) return;
       
-      const distance = Math.sqrt((targetPlayer.x - x) ** 2 + (targetPlayer.y - y) ** 2);
-      if (distance <= maxDistance) {
-        const targetAngle = Math.atan2(targetPlayer.y - y, targetPlayer.x - x);
-        const angleDiff = Math.abs(angle - targetAngle);
-        const normalizedAngleDiff = Math.min(angleDiff, 2 * Math.PI - angleDiff);
-        
-        if (normalizedAngleDiff < 0.3) {
-          const damage = baseDamage;
-          targetPlayer.takeDamage(damage);
-          damageResult.affectedPlayers.push({
-            id: targetPlayer.id,
-            damage: damage,
-            actualDamage: damage,
-            newHp: targetPlayer.hp
-          });
-          damageResult.totalDamage += damage;
-        }
+      if (checkCollision(targetPlayer.x, targetPlayer.y)) {
+        const damage = baseDamage;
+        targetPlayer.takeDamage(damage);
+        damageResult.affectedPlayers.push({
+          id: targetPlayer.id,
+          damage: damage,
+          actualDamage: damage,
+          newHp: targetPlayer.hp,
+          x: targetPlayer.x,
+          y: targetPlayer.y
+        });
+        damageResult.totalDamage += damage;
       }
     });
+
+    // 마법사의 경우 충돌 시 또는 최대 사거리에 도달했을 때 범위 공격 추가
+    if (player.jobClass === 'mage') {
+      // 충돌이 있었거나 최대 사거리에 도달했을 때 범위 공격 실행
+      const hasCollision = damageResult.affectedEnemies.length > 0 || damageResult.affectedPlayers.length > 0;
+      const explosionRadius = 60;
+      let explosionX, explosionY;
+      
+      if (hasCollision) {
+        // 충돌이 있었으면 충돌 지점에서 범위 공격
+        // 충돌한 첫 번째 대상을 기준으로 함
+        const firstEnemy = damageResult.affectedEnemies[0];
+        const firstPlayer = damageResult.affectedPlayers[0];
+        
+        if (firstEnemy) {
+          explosionX = firstEnemy.x;
+          explosionY = firstEnemy.y;
+        } else if (firstPlayer) {
+          explosionX = firstPlayer.x;
+          explosionY = firstPlayer.y;
+        } else {
+          explosionX = finalX;
+          explosionY = finalY;
+        }
+      } else {
+        // 충돌이 없었으면 최대 사거리에서 범위 공격
+        explosionX = finalX;
+        explosionY = finalY;
+      }
+      
+      // 범위 내 적들에게 데미지 적용 (이미 충돌한 대상 제외)
+      enemies.forEach(enemy => {
+        if (enemy.isDead) return;
+        
+        const distance = Math.sqrt((enemy.x - explosionX) ** 2 + (enemy.y - explosionY) ** 2);
+        if (distance <= explosionRadius) {
+          // 이미 충돌한 대상인지 확인
+          const alreadyHit = damageResult.affectedEnemies.some(hit => hit.id === enemy.id);
+          if (!alreadyHit) {
+            const damage = baseDamage;
+            enemy.takeDamage(damage);
+            damageResult.affectedEnemies.push({
+              id: enemy.id,
+              damage: damage,
+              actualDamage: damage,
+              newHp: enemy.hp,
+              x: enemy.x,
+              y: enemy.y
+            });
+            damageResult.totalDamage += damage;
+          }
+        }
+      });
+      
+      // 범위 내 다른 플레이어들에게 데미지 적용 (적팀만, 이미 충돌한 대상 제외)
+      players.forEach(targetPlayer => {
+        if (targetPlayer.id === player.id || targetPlayer.team === player.team) return;
+        
+        const distance = Math.sqrt((targetPlayer.x - explosionX) ** 2 + (targetPlayer.y - explosionY) ** 2);
+        if (distance <= explosionRadius) {
+          // 이미 충돌한 대상인지 확인
+          const alreadyHit = damageResult.affectedPlayers.some(hit => hit.id === targetPlayer.id);
+          if (!alreadyHit) {
+            const damage = baseDamage;
+            targetPlayer.takeDamage(damage);
+            damageResult.affectedPlayers.push({
+              id: targetPlayer.id,
+              damage: damage,
+              actualDamage: damage,
+              newHp: targetPlayer.hp,
+              x: targetPlayer.x,
+              y: targetPlayer.y
+            });
+            damageResult.totalDamage += damage;
+          }
+        }
+      });
+    }
 
     return damageResult;
   }

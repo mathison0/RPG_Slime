@@ -327,17 +327,24 @@ export default class MageJob extends BaseJob {
      * 마법 폭발 이펙트 생성
      */
     createMagicExplosion(x, y) {
-        const explosion = this.scene.add.circle(x, y, 20, 0xff00ff, 0.8);
+        // 범위 공격 반지름
+        const explosionRadius = 60;
+        
+        // 폭발 이펙트 생성 (시각적 효과만)
+        const explosion = this.scene.add.circle(x, y, explosionRadius, 0xff00ff, 0.3);
         this.scene.tweens.add({
             targets: explosion,
-            scaleX: 2,
-            scaleY: 2,
+            scaleX: 1.5,
+            scaleY: 1.5,
             alpha: 0,
-            duration: 300,
+            duration: 400,
             onComplete: () => {
                 explosion.destroy();
             }
         });
+        
+        // 서버에서 데미지 처리를 담당하므로 클라이언트에서는 시각적 효과만 처리
+        // 데미지 처리 로직 제거됨
     }
 
     /**
@@ -433,14 +440,20 @@ export default class MageJob extends BaseJob {
         projectile.body.setBounce(0, 0); // 튕김 없음
         projectile.body.setDrag(0, 0); // 저항 없음
         
+        // 커서 방향으로 특정 거리까지 날아가도록 계산
+        const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, targetX, targetY);
+        const maxDistance = 350; // 최대 사정거리
+        const finalX = this.player.x + Math.cos(angle) * maxDistance;
+        const finalY = this.player.y + Math.sin(angle) * maxDistance;
+        
         // 투사체 이동 (Tween 사용 + 물리 바디 위치 업데이트)
-        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, targetX, targetY);
+        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, finalX, finalY);
         const duration = (distance / 280) * 1000; // 280은 투사체 속도
         
         const moveTween = this.player.scene.tweens.add({
             targets: projectile,
-            x: targetX,
-            y: targetY,
+            x: finalX,
+            y: finalY,
             duration: duration,
             ease: 'Linear',
             onUpdate: () => {
@@ -451,6 +464,8 @@ export default class MageJob extends BaseJob {
             },
             onComplete: () => {
                 if (projectile.active) {
+                    // 최대 사거리에 도달했을 때 범위 공격 실행
+                    this.createMagicExplosion(projectile.x, projectile.y);
                     projectile.destroy();
                 }
             }
@@ -480,27 +495,28 @@ export default class MageJob extends BaseJob {
         // 투사체에 파괴 함수 저장
         projectile.destroyProjectile = destroyProjectile;
         
-        // 투사체와 적 충돌 체크
-        this.player.scene.physics.add.overlap(projectile, this.player.scene.enemies, (projectile, enemy) => {
-            console.log('마법사 기본 공격 투사체가 적과 충돌');
-            if (projectile && projectile.active) {
-                // 적 충돌 시 폭발 이펙트 생성
-                this.createMagicExplosion(projectile.x, projectile.y);
-                projectile.destroyProjectile();
-            }
-        });
-        
-        // 투사체와 벽 충돌 체크
+        // 투사체와 벽 충돌 체크 (시각적 효과만)
         this.player.scene.physics.add.collider(projectile, this.player.scene.walls, (projectile, wall) => {
             console.log('마법사 투사체가 벽과 충돌!');
             if (projectile && projectile.active) {
                 // 벽 충돌 시 폭발 이펙트 생성
                 this.createMagicExplosion(projectile.x, projectile.y);
+                
+                // 서버에 벽 충돌 이벤트 전송 (마법사 범위 공격용)
+                if (this.player.networkManager) {
+                    this.player.networkManager.socket.emit('projectile-wall-collision', {
+                        playerId: this.player.networkId,
+                        x: projectile.x,
+                        y: projectile.y,
+                        jobClass: this.player.jobClass
+                    });
+                }
+                
                 projectile.destroyProjectile();
             }
         });
         
-        // 다른 플레이어와의 충돌 (적팀만)
+        // 다른 플레이어와의 충돌 (시각적 효과만, 데미지는 서버에서 처리)
         this.player.scene.physics.add.overlap(projectile, this.player.scene.otherPlayers, (projectile, otherPlayer) => {
             if (otherPlayer && otherPlayer.team !== this.player.team) {
                 console.log('마법사 투사체가 다른 팀 플레이어와 충돌!');

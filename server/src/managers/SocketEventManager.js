@@ -31,6 +31,7 @@ class SocketEventManager {
       this.setupPlayerSkillHandler(socket);
       this.setupPlayerPingHandler(socket);
       this.setupEnemyHitHandler(socket);
+      this.setupProjectileWallCollisionHandler(socket);
       this.setupGameSyncHandler(socket);
       this.setupPlayerRespawnHandler(socket);
       this.setupDisconnectHandler(socket);
@@ -302,6 +303,76 @@ class SocketEventManager {
             maxHp: enemy.maxHp
           });
         }
+      }
+    });
+  }
+
+  /**
+   * 투사체 벽 충돌 이벤트 핸들러
+   */
+  setupProjectileWallCollisionHandler(socket) {
+    socket.on('projectile-wall-collision', (data) => {
+      const player = this.gameStateManager.getPlayer(data.playerId);
+      if (!player || player.isDead) {
+        return;
+      }
+
+      // 마법사의 경우 벽 충돌 시 범위 공격 실행
+      if (data.jobClass === 'mage') {
+        const explosionRadius = 60;
+        const explosionX = data.x;
+        const explosionY = data.y;
+        
+        const enemies = this.gameStateManager.enemies;
+        const players = this.gameStateManager.players;
+        
+        // 범위 내 모든 적들에게 데미지 적용
+        enemies.forEach(enemy => {
+          if (enemy.isDead) return;
+          
+          const distance = Math.sqrt((enemy.x - explosionX) ** 2 + (enemy.y - explosionY) ** 2);
+          if (distance <= explosionRadius) {
+            const damage = player.attack;
+            enemy.takeDamage(damage);
+            
+            // 모든 클라이언트에게 적 데미지 알림
+            this.io.emit('enemy-damaged', {
+              enemyId: enemy.id,
+              damage: damage,
+              currentHp: enemy.hp,
+              maxHp: enemy.maxHp,
+              isDead: enemy.isDead
+            });
+
+            // 적이 죽었으면 제거
+            if (enemy.isDead) {
+              this.gameStateManager.removeEnemy(enemy.id);
+              this.io.emit('enemy-destroyed', { enemyId: enemy.id });
+            }
+          }
+        });
+        
+        // 범위 내 모든 다른 플레이어들에게 데미지 적용 (적팀만)
+        players.forEach(targetPlayer => {
+          if (targetPlayer.id === player.id || targetPlayer.team === player.team) return;
+          
+          const distance = Math.sqrt((targetPlayer.x - explosionX) ** 2 + (targetPlayer.y - explosionY) ** 2);
+          if (distance <= explosionRadius) {
+            const damage = player.attack;
+            targetPlayer.takeDamage(damage);
+            
+            // 모든 클라이언트에게 플레이어 데미지 알림
+            this.io.emit('player-damaged', {
+              playerId: targetPlayer.id,
+              damage: damage,
+              currentHp: targetPlayer.hp,
+              maxHp: targetPlayer.maxHp,
+              isDead: targetPlayer.isDead
+            });
+          }
+        });
+        
+        console.log(`마법사 ${player.id} 투사체 벽 충돌 범위 공격 실행 at (${explosionX}, ${explosionY})`);
       }
     });
   }

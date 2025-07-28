@@ -8,31 +8,15 @@ export default class EffectManager {
     }
 
     /**
-     * 데미지 텍스트 표시
+     * 데미지 텍스트 표시 (비활성화됨)
      * @param {number} x - X 좌표
      * @param {number} y - Y 좌표
      * @param {number} damage - 데미지 값
      * @param {string} color - 텍스트 색상
      */
     showDamageText(x, y, damage, color = '#ff0000') {
-        const damageText = this.scene.add.text(x, y - 30, `-${damage}`, {
-            fontSize: '16px',
-            fill: color,
-            fontStyle: 'bold'
-        }).setOrigin(0.5);
-        
-        // 데미지 텍스트 애니메이션
-        this.scene.tweens.add({
-            targets: damageText,
-            y: damageText.y - 30,
-            alpha: 0,
-            duration: 1000,
-            onComplete: () => {
-                damageText.destroy();
-            }
-        });
-        
-        return damageText;
+        // 데미지 표시 기능이 비활성화됨
+        return null;
     }
 
     /**
