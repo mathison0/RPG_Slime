@@ -190,8 +190,8 @@ function getDynamicPlayerSize() {
     };
 }
 
-// CommonJS export (서버와 클라이언트 모두 지원)
-module.exports = {
+// ES6 exports
+export {
     AssetConfig,
     getPlayerSpriteKey,
     isJobSupported,

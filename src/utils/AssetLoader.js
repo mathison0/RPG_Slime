@@ -1,4 +1,4 @@
-import { AssetConfig, getPlayerSpriteKey, isJobSupported, getSpriteSize, getUISize, updateServerConfig, getDynamicWallSize, getDynamicPlayerSize } from '../../shared/AssetConfig.mjs';
+import { AssetConfig, getPlayerSpriteKey, isJobSupported, getSpriteSize, getUISize, updateServerConfig, getDynamicWallSize, getDynamicPlayerSize } from '../../shared/AssetConfig.js';
 
 export default class AssetLoader {
     static preload(scene) {

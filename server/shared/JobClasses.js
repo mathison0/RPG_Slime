@@ -1,7 +1,6 @@
 /**
- * 직업 클래스 정의
- * 각 직업의 기본 정보, 스탯, 스킬 정보를 관리합니다.
- * 클라이언트와 서버가 공통으로 사용하는 모듈입니다.
+ * 서버 전용 JobClasses (CommonJS)
+ * shared/JobClasses.js와 동일한 내용이지만 CommonJS 형태
  */
 
 const JobClasses = {
@@ -363,24 +362,15 @@ const JobRequirements = {
     }
 };
 
-/**
- * 직업 정보 조회 함수
- */
 function getJobInfo(jobClass) {
     return JobClasses[jobClass] || JobClasses.slime;
 }
 
-/**
- * 직업 변경 가능 여부 확인
- */
 function canChangeJob(currentLevel, targetJob) {
     const requirement = JobRequirements[targetJob];
     return currentLevel >= requirement.level;
 }
 
-/**
- * 레벨에 따른 스탯 계산
- */
 function calculateStats(jobClass, level) {
     const jobInfo = getJobInfo(jobClass);
     const stats = { ...jobInfo.baseStats };
@@ -394,17 +384,11 @@ function calculateStats(jobClass, level) {
     return stats;
 }
 
-/**
- * 직업별 스킬 정보 조회 (스킬 타입별로 반환)
- */
 function getSkillInfo(jobClass, skillType) {
     const jobInfo = getJobInfo(jobClass);
     return jobInfo.skills.find(skill => skill.type === skillType);
 }
 
-/**
- * 모든 직업의 스킬을 타입별로 매핑한 객체 생성
- */
 function createSkillTypeMap() {
     const skillMap = {};
     
@@ -427,8 +411,7 @@ function createSkillTypeMap() {
     return skillMap;
 }
 
-// ES6 exports
-export {
+module.exports = {
     JobClasses,
     JobRequirements,
     getJobInfo,
@@ -436,4 +419,4 @@ export {
     calculateStats,
     getSkillInfo,
     createSkillTypeMap
-};
+}; 
