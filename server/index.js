@@ -9,6 +9,7 @@ const gameConfig = require('./src/config/GameConfig');
 const GameStateManager = require('./src/managers/GameStateManager');
 const SocketEventManager = require('./src/managers/SocketEventManager');
 const EnemyManager = require('./src/managers/EnemyManager');
+const SkillManager = require('./src/managers/SkillManager');
 const ServerUtils = require('./src/utils/ServerUtils');
 const { generateMap } = require('./generateMap');
 
@@ -30,8 +31,10 @@ class GameServer {
     
     // 매니저들 초기화
     this.gameStateManager = new GameStateManager(this.io);
+    this.skillManager = new SkillManager(this.gameStateManager);
+    this.gameStateManager.skillManager = this.skillManager; // skillManager 참조 추가
     this.enemyManager = new EnemyManager(this.io, this.gameStateManager);
-    this.socketEventManager = new SocketEventManager(this.io, this.gameStateManager, this.enemyManager);
+    this.socketEventManager = new SocketEventManager(this.io, this.gameStateManager, this.enemyManager, this.skillManager);
     
     // 게임 루프 타이머
     this.gameLoopInterval = null;

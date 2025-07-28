@@ -11,10 +11,8 @@ export default class MapManager {
         
         // 충돌체들
         this.playerWallCollider = null;
-        this.enemyWallCollider = null;
         this.otherPlayerWallCollider = null;
         this.playerEnemyCollider = null;
-        this.enemyWardCollider = null;
         
         // 벽 선분 정보 (시야 계산용)
         this.wallLines = [];
@@ -286,11 +284,6 @@ export default class MapManager {
             this.scene.player
         );
         
-        this.enemyWallCollider = this.scene.physics.add.collider(
-            this.scene.enemies, 
-            this.scene.walls
-        );
-        
         this.otherPlayerWallCollider = this.scene.physics.add.collider(
             this.scene.otherPlayers, 
             this.scene.walls
@@ -304,19 +297,6 @@ export default class MapManager {
             this.scene
         );
         
-
-      
-        // 와드 충돌 설정
-        if (this.scene.activeWard?.sprite) {
-            this.enemyWardCollider = this.scene.physics.add.collider(
-                this.scene.enemies, 
-                this.scene.activeWard.sprite, 
-                this.handleEnemyWardCollision, 
-                null, 
-                this.scene
-            );
-        }
-        
         console.log('물리 충돌 설정 완료');
     }
 
@@ -326,10 +306,8 @@ export default class MapManager {
     destroyColliders() {
         const colliders = [
             'playerWallCollider',
-            'enemyWallCollider', 
             'otherPlayerWallCollider',
-            'playerEnemyCollider',
-            'enemyWardCollider'
+            'playerEnemyCollider'
         ];
         
         colliders.forEach(colliderName => {
@@ -358,56 +336,6 @@ export default class MapManager {
                 Math.sin(angle) * knockbackForce
             );
         }
-    }
-    
-    /**
-     * 적-와드 충돌 처리
-     */
-    handleEnemyWardCollision(enemy, ward) {
-        if (this.scene.activeWard && this.scene.activeWard.hp > 0) {
-            const damage = 20;
-            this.scene.activeWard.hp -= damage;
-            
-            // 와드 데미지 이펙트
-            ward.setTint(0xff0000);
-            this.scene.time.delayedCall(200, () => {
-                ward.clearTint();
-            });
-            
-            console.log(`와드가 공격받음! 남은 체력: ${this.scene.activeWard.hp}/${this.scene.activeWard.maxHp}`);
-            
-            // 와드 파괴
-            if (this.scene.activeWard.hp <= 0) {
-                this.destroyWard(ward);
-            }
-        }
-    }
-
-    /**
-     * 와드 파괴 처리
-     */
-    destroyWard(ward) {
-        console.log('와드가 파괴되었습니다!');
-        
-        // 파괴 이펙트
-        this.scene.effectManager.showExplosion(ward.x, ward.y, 0xff0000, 50);
-        
-        // 와드 파괴 함수 호출
-        if (ward.destroyWard) {
-            ward.destroyWard();
-        }
-        
-        // 네트워크에 와드 파괴 알림
-        if (this.scene.networkManager) {
-            this.scene.networkManager.emit('ward-destroyed', {
-                playerId: this.scene.networkManager.playerId,
-                x: ward.x,
-                y: ward.y
-            });
-        }
-        
-        // 충돌 설정 업데이트
-        this.setupCollisions();
     }
 
     /**
@@ -694,23 +622,6 @@ export default class MapManager {
             playerBounds.height / 2, 
             this.scene.MAP_HEIGHT - playerBounds.height / 2
         );
-    }
-
-    /**
-     * 스폰 구역 이동 제한
-     */
-    restrictMovement() {
-        // 적들만 스폰 구역에서 밀어내기
-        if (this.scene.enemies?.children) {
-            this.scene.enemies.getChildren().forEach(enemy => {
-                if (this.scene.redSpawnRect.contains(enemy.x, enemy.y)) {
-                    enemy.x = this.scene.redSpawnRect.right + this.scene.TILE_SIZE;
-                } 
-                else if (this.scene.blueSpawnRect.contains(enemy.x, enemy.y)) {
-                    enemy.x = this.scene.blueSpawnRect.x - this.scene.TILE_SIZE;
-                }
-            });
-        }
     }
 
     /**

@@ -581,9 +581,6 @@ export default class GameScene extends Phaser.Scene {
         
         // 와드 탐지 시스템 업데이트
         this.minimapManager.updateWardDetectedEnemies();
-
-        // 이동 제한
-        this.mapManager.restrictMovement();
         
         // 스폰 구역 상태 체크 (경고 메시지용)
         this.checkSpawnZoneStatus();

@@ -5,12 +5,12 @@ const SkillManager = require('./SkillManager');
  * 소켓 이벤트 관리 매니저
  */
 class SocketEventManager {
-  constructor(io, gameStateManager, enemyManager) {
+  constructor(io, gameStateManager, enemyManager, skillManager = null) {
     this.io = io;
     this.gameStateManager = gameStateManager;
     this.enemyManager = enemyManager;
     this.playerSockets = new Map(); // 플레이어 ID -> 소켓 매핑
-    this.skillManager = new SkillManager(gameStateManager);
+    this.skillManager = skillManager || new SkillManager(gameStateManager);
   }
 
   /**
@@ -289,7 +289,7 @@ class SocketEventManager {
   handleJumpAction(socket, player) {
     // 점프 시작 처리
     const jumpDuration = 400;
-    if (!player.startJump(jumpDuration)) {
+    if (!this.skillManager.startJump(player, jumpDuration)) {
       return; // 이미 점프 중이면 무시
     }
 
@@ -311,7 +311,7 @@ class SocketEventManager {
     // 점프 완료 후 상태 복원
     setTimeout(() => {
       if (player) {
-        player.endJump();
+        this.skillManager.endJump(player);
       }
     }, jumpDuration);
 

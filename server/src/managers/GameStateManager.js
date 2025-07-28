@@ -6,12 +6,13 @@ const gameConfig = require('../config/GameConfig');
  * 게임 상태 관리 매니저
  */
 class GameStateManager {
-  constructor(io = null) {
+  constructor(io = null, skillManager = null) {
     this.players = new Map();
     this.enemies = new Map();
     this.rooms = new Map();
     this.mapData = null;
     this.io = io;
+    this.skillManager = skillManager;
   }
 
   /**
@@ -61,8 +62,10 @@ class GameStateManager {
    */
   getPlayersState() {
     // 만료된 액션들 정리
-    for (const player of this.players.values()) {
-      player.cleanupExpiredActions();
+    if (this.skillManager) {
+      for (const player of this.players.values()) {
+        this.skillManager.cleanupExpiredActions(player);
+      }
     }
     return Array.from(this.players.values()).map(p => p.getState());
   }
