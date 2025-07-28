@@ -212,6 +212,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.skillCooldownUI.destroyUI();
             this.skillCooldownUI.createUI();
         }
+        
+        // 전체 UI 업데이트 (직업 정보 반영)
+        this.updateUI();
     }
     
 
@@ -263,6 +266,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.updateSize();
         // 체력바 크기도 업데이트
         this.updateHealthBar();
+        // 전체 UI 업데이트 (레벨, 크기 변화 반영)
+        this.updateUI();
     }
     
     /**
@@ -637,6 +642,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 체력바 업데이트
         this.updateHealthBar();
         
+        // 전체 UI 업데이트
+        this.updateUI();
+        
         if (this.hp <= 0 && !this.isDead) {
             this.die();
         }
@@ -651,13 +659,18 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     /**
-     * 서버에서 받은 정보로 UI 업데이트
+     * 플레이어의 현재 상태를 UI에 반영 (본인 플레이어에게만 적용)
      */
-    updateUIFromServer() {
+    updateUI() {
+        // 다른 플레이어들은 UI를 업데이트하지 않음
+        if (this.isOtherPlayer) {
+            return;
+        }
+        
         const statsElement = document.getElementById('stats');
-        if (statsElement && this.jobInfo) {
-            // 서버에서 받은 직업 정보와 스탯 정보 사용
-            const jobName = this.jobInfo.name || this.jobClass;
+        if (statsElement) {
+            // 클라이언트에서 관리되는 로컬 정보들을 UI에 표시
+            const jobName = this.jobInfo?.name || this.jobClass;
             const attack = this.attack || 0;
             const defense = this.defense || 0;
             const speed = this.speed || 0;
@@ -668,9 +681,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             `;
         }
 
-        // 스킬 쿨타임 UI 업데이트
+        // 스킬 쿨타임 UI 업데이트 (본인 플레이어만)
         if (this.skillCooldownUI && this.serverSkillCooldowns) {
             this.skillCooldownUI.updateFromServer(this.serverSkillCooldowns);
+        }
+        
+        // 체력바 업데이트 (모든 플레이어에게 적용)
+        if (this.healthBar) {
+            this.healthBar.updateHealth(this.hp, this.maxHp);
         }
     }
     

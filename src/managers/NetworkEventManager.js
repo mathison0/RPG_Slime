@@ -1,7 +1,6 @@
 import Player from '../entities/Player.js';
 import Enemy from '../entities/Enemy.js';
 import AssetLoader from '../utils/AssetLoader.js';
-import { getJobInfo } from '../shared/JobClasses.js';
 
 /**
  * 네트워크 이벤트 처리 매니저
@@ -306,6 +305,10 @@ export default class NetworkEventManager {
         });
         
         this.isFirstJoin = false;
+        
+        // 초기 UI 업데이트
+        this.scene.player.updateUI();
+        
         console.log('플레이어 생성 완료:', this.scene.player);
     }
 
@@ -777,8 +780,8 @@ export default class NetworkEventManager {
                 }
             }
             
-            // UI 업데이트 (서버에서 받은 정보 사용)
-            this.scene.player.updateUIFromServer();
+            // UI 업데이트 (클라이언트 로컬 정보 반영)
+            this.scene.player.updateUI();
         }
         
         // 다른 플레이어들 상태 업데이트
@@ -1028,6 +1031,10 @@ export default class NetworkEventManager {
         // 본인 플레이어 직업 변경 처리
         if (data.id === this.networkManager.playerId && this.scene.player) {
             this.scene.player.setJobClass(data.jobClass);
+            
+            // 직업 변경 후 UI 업데이트
+            this.scene.player.updateUI();
+            
             console.log(`본인 직업 변경: ${data.jobClass}`);
             return;
         }
@@ -2190,7 +2197,10 @@ export default class NetworkEventManager {
         player.setTint(0x888888);
         
         // 서버에서 받은 지속시간 사용 (기본값 5000ms)
-        const duration = data?.skillInfo?.duration || 5000;
+        const skillInfo = data?.skillInfo || {};
+        const duration = skillInfo.duration || 5000;
+        
+        console.log(`은신 스킬 정보 (서버에서 받음): duration=${duration}ms`);
         
         // 은신 효과 메시지
         const stealthText = this.scene.add.text(
@@ -2234,7 +2244,10 @@ export default class NetworkEventManager {
         }
         
         // 서버에서 받은 지속시간 사용 (기본값 400ms)
-        const duration = data?.skillInfo?.duration || 400;
+        const skillInfo = data?.skillInfo || {};
+        const duration = skillInfo.duration || 400;
+        
+        console.log(`점프 스킬 정보 (서버에서 받음): duration=${duration}ms`);
         
         this.scene.tweens.add({
             targets: targets,
@@ -2270,12 +2283,13 @@ export default class NetworkEventManager {
         player.isUsingWarriorSkill = true;
         
         // 울부짖기 스프라이트로 변경
-        player.setTexture('warrior_skill');
+        player.setTexture('warrior_skill'); //얘가 문제임!!!!!!!
         
         // 서버에서 받은 지속시간 사용 (기본값 1000ms)
-        const effectDuration = data?.skillInfo?.duration || 1000;
+        const skillInfo = data?.skillInfo || {};
+        const effectDuration = skillInfo.duration || 1000;
         
-        console.log(`울부짖기 지속시간: ${effectDuration}ms`);
+        console.log(`울부짖기 스킬 정보 (서버에서 받음): duration=${effectDuration}ms`);
         
         // 울부짖기 효과 메시지 (1초 후 제거)
         const roarText = this.scene.add.text(
@@ -2333,11 +2347,13 @@ export default class NetworkEventManager {
         const mouseX = data?.targetX || player.x;
         const mouseY = data?.targetY || player.y;
         
-        // JobClasses에서 휩쓸기 스킬의 delay 값과 angleOffset 값 가져오기
-        const warriorJobInfo = getJobInfo('warrior');
-        const sweepSkill = warriorJobInfo.skills.find(skill => skill.type === 'sweep');
-        const delay = sweepSkill ? sweepSkill.delay : 1000; // 기본값 1초
-        const angleOffset = sweepSkill ? sweepSkill.angleOffset : Math.PI / 3; // 기본값 60도
+        // 서버에서 받은 스킬 정보 사용 (하드코딩 제거)
+        const skillInfo = data?.skillInfo || {};
+        const delay = skillInfo.delay || 1000; // 서버에서 받은 지연시간
+        const angleOffset = skillInfo.angleOffset || (Math.PI / 3); // 서버에서 받은 각도 오프셋
+        const range = skillInfo.range || 80; // 서버에서 받은 범위
+        
+        console.log(`휩쓸기 스킬 정보 (서버에서 받음): delay=${delay}ms, angleOffset=${angleOffset}, range=${range}`);
         
         // 부채꼴 모양의 휩쓸기 그래픽 생성 (처음에는 덜 진한 색상)
         const sweepGraphics = this.scene.add.graphics();
@@ -2347,7 +2363,6 @@ export default class NetworkEventManager {
         // 플레이어에서 마우스 커서까지의 각도 계산
         const centerX = player.x;
         const centerY = player.y;
-        const radius = sweepSkill ? sweepSkill.range : 80; // JobClasses에서 range 값 가져오기
         
         const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
         const startAngle = angleToMouse - angleOffset;
@@ -2355,7 +2370,7 @@ export default class NetworkEventManager {
         
         sweepGraphics.beginPath();
         sweepGraphics.moveTo(centerX, centerY);
-        sweepGraphics.arc(centerX, centerY, radius, startAngle, endAngle);
+        sweepGraphics.arc(centerX, centerY, range, startAngle, endAngle);
         sweepGraphics.closePath();
         sweepGraphics.fill();
         sweepGraphics.stroke();
@@ -2370,7 +2385,7 @@ export default class NetworkEventManager {
             // 부채꼴 다시 그리기
             sweepGraphics.beginPath();
             sweepGraphics.moveTo(centerX, centerY);
-            sweepGraphics.arc(centerX, centerY, radius, startAngle, endAngle);
+            sweepGraphics.arc(centerX, centerY, range, startAngle, endAngle);
             sweepGraphics.closePath();
             sweepGraphics.fill();
             sweepGraphics.stroke();
@@ -2460,6 +2475,14 @@ export default class NetworkEventManager {
         const mouseX = data?.targetX || player.x;
         const mouseY = data?.targetY || player.y;
         
+        // 서버에서 받은 스킬 정보 사용 (하드코딩 제거)
+        const skillInfo = data?.skillInfo || {};
+        const height = skillInfo.range || 100; // 서버에서 받은 사정거리 (직사각형 높이)
+        const width = skillInfo.width || 80; // 서버에서 받은 가로 길이
+        const delay = skillInfo.delay || 1500; // 서버에서 받은 지연시간
+        
+        console.log(`찌르기 스킬 정보 (서버에서 받음): height=${height}, width=${width}, delay=${delay}ms`);
+        
         // 직사각형 모양의 찌르기 그래픽 생성 (처음에는 덜 진한 색상)
         const thrustGraphics = this.scene.add.graphics();
         thrustGraphics.fillStyle(0xff0000, 0.1); // 덜 진한 색상
@@ -2468,13 +2491,6 @@ export default class NetworkEventManager {
         // 플레이어에서 마우스 커서까지의 각도 계산
         const centerX = player.x;
         const centerY = player.y;
-        
-        // JobClasses에서 찌르기 스킬의 range 값과 width 값 가져오기
-        const warriorJobInfo = getJobInfo('warrior');
-        const thrustSkill = warriorJobInfo.skills.find(skill => skill.type === 'thrust');
-        const height = thrustSkill ? thrustSkill.range : 100; // 기본값 100
-        const width = thrustSkill ? thrustSkill.width : 80; // 기본값 80
-        const delay = thrustSkill ? thrustSkill.delay : 1500; // 기본값 1.5초
         
         const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
         
@@ -2621,17 +2637,16 @@ export default class NetworkEventManager {
             }
         });
         
-        // 서버에서 받은 범위 정보 사용 (기본값 50)
-        const range = data?.skillInfo?.range || 50;
+        // 서버에서 받은 스킬 정보 사용
+        const skillInfo = data?.skillInfo || {};
+        const range = skillInfo.range || 50; // 서버에서 받은 범위
+        const effectDuration = skillInfo.duration || 1000; // 서버에서 받은 지속시간
+        
+        console.log(`슬라임 퍼지기 스킬 정보 (서버에서 받음): range=${range}, duration=${effectDuration}ms`);
         
         // 초록색 범위 효과 생성
         const effect = this.scene.add.circle(player.x, player.y, range, 0x00ff00, 0.3);
         player.slimeSkillEffect = effect; // 플레이어에 이펙트 참조 저장
-        
-        // 서버에서 받은 지속시간 사용 (기본값 1000ms)
-        const effectDuration = data?.skillInfo?.duration || 1000;
-        
-        console.log(`슬라임 퍼지기 지속시간: ${effectDuration}ms`);
         
         // 스프라이트 복원 타이머 설정 (지속시간과 정확히 동일하게)
         player.slimeSkillTimer = this.scene.time.delayedCall(effectDuration, () => {
@@ -2827,7 +2842,10 @@ export default class NetworkEventManager {
         trail.moveTo(player.x, player.y);
         
         // 서버에서 받은 지속시간 사용 (기본값 500ms)
-        const duration = data?.skillInfo?.duration || 500;
+        const skillInfo = data?.skillInfo || {};
+        const duration = skillInfo.duration || 500;
+        
+        console.log(`돌진 스킬 정보 (서버에서 받음): duration=${duration}ms`);
         
         // 텍스트 제거
         this.scene.time.delayedCall(1000, () => {
@@ -2986,11 +3004,11 @@ export default class NetworkEventManager {
                     this.scene.effectManager.showMessage(
                         otherPlayer.x, 
                         otherPlayer.y - 30, 
-                        '무적!', 
+                        '무적!',
                         { fill: '#00ff00' }
                     );
                 }
             }
         }
     }
-} 
+}

@@ -60,6 +60,33 @@ class SkillManager {
       });
     }
     
+    // 서버에서 모든 스킬 정보를 클라이언트에 전송 (확장성 고려)
+    const completeSkillInfo = {
+      // 기본 정보
+      range: this.calculateSkillRange(player, skillType, skillInfo.range),
+      damage: this.calculateSkillDamage(player, skillType, skillInfo.damage),
+      duration: duration,
+      heal: skillInfo.heal || 0,
+      cooldown: skillInfo.cooldown || 0,
+      
+      // 확장 정보 (스킬별로 다를 수 있는 정보들)
+      ...(skillInfo.angleOffset !== undefined && { angleOffset: skillInfo.angleOffset }),
+      ...(skillInfo.delay !== undefined && { delay: skillInfo.delay }),
+      ...(skillInfo.stunDuration !== undefined && { stunDuration: skillInfo.stunDuration }),
+      ...(skillInfo.width !== undefined && { width: skillInfo.width }),
+      ...(skillInfo.radius !== undefined && { radius: skillInfo.radius }),
+      ...(skillInfo.speed !== undefined && { speed: skillInfo.speed }),
+      ...(skillInfo.projectileCount !== undefined && { projectileCount: skillInfo.projectileCount }),
+      ...(skillInfo.spreadAngle !== undefined && { spreadAngle: skillInfo.spreadAngle }),
+      ...(skillInfo.piercing !== undefined && { piercing: skillInfo.piercing }),
+      ...(skillInfo.bounces !== undefined && { bounces: skillInfo.bounces }),
+      ...(skillInfo.chargeTime !== undefined && { chargeTime: skillInfo.chargeTime }),
+      ...(skillInfo.chargeDistance !== undefined && { chargeDistance: skillInfo.chargeDistance }),
+      
+      // 원본 스킬 정보도 포함 (추가 확장을 위해)
+      originalSkillInfo: skillInfo
+    };
+
     return {
       success: true,
       skillType,
@@ -69,12 +96,7 @@ class SkillManager {
       y: player.y,
       targetX,
       targetY,
-      skillInfo: {
-        range: this.calculateSkillRange(player, skillType, skillInfo.range),
-        damage: this.calculateSkillDamage(player, skillType, skillInfo.damage),
-        duration: duration,
-        heal: skillInfo.heal || 0
-      }
+      skillInfo: completeSkillInfo
     };
   }
 

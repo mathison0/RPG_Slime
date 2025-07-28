@@ -271,8 +271,7 @@ export default class SupporterJob extends BaseJob {
                     playersInRange.forEach(player => {
                         if (player.hp < player.maxHp) {
                             player.hp = Math.min(player.maxHp, player.hp + field.healAmount);
-                            player.updateUI();
-                            
+
                             // 힐링 이펙트
                             this.player.scene.effectManager.showMessage(player.x, player.y - 30, `+${field.healAmount}`, { fill: '#00ff00' });
                         }
