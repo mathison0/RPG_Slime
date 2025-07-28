@@ -43,8 +43,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.jobClass = 'slime';
         this.job = null; // 직업 클래스 인스턴스
         
-        // 크기 관련
-        this.size = 64;
+        // 크기 관련 (초기값은 updateCharacterSize에서 계산됨)
+        this.size = 0; // updateCharacterSize에서 올바르게 계산될 예정
         this.baseCameraZoom = 1;
         this.colliderSize = 0;
 
@@ -194,6 +194,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     
     updateSize() {
+        console.log(`updateSize 호출: this.size=${this.size}, 물리적 크기 업데이트 중...`);
+        
         // 화면 표시 크기와 물리적 충돌 크기를 동일하게 설정
         this.setDisplaySize(this.size, this.size);
         this.colliderSize = this.size; // 스프라이트 크기와 동일하게 설정
@@ -208,6 +210,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.body.setOffset(0, 0);
         }
         
+        console.log(`updateSize 완료: displaySize=${this.displayWidth}x${this.displayHeight}, colliderSize=${this.colliderSize}`);
+        
         // 디버그 박스 업데이트
         if (this.debugMode) {
             this.updateDebugBoxes();
@@ -216,11 +220,15 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     
     setSize(newSize) {
         const oldSize = this.size;
+        console.log(`setSize 호출: ${oldSize} -> ${newSize}, level=${this.level}, networkId=${this.networkId}, isOtherPlayer=${this.isOtherPlayer}`);
+        console.trace('setSize 호출 스택:'); // 호출 스택 추가
+        
         this.size = newSize;
         this.updateSize();
         
         // 네트워크 동기화 (크기가 실제로 변경된 경우만)
         if (oldSize !== newSize && this.networkManager && !this.isOtherPlayer) {
+            console.log(`setSize: 네트워크로 size 업데이트 전송: ${newSize}`);
             this.networkManager.updatePlayerPosition(this.x, this.y, this.direction, false, { size: newSize });
         }
     }
@@ -235,6 +243,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     updateCharacterSize() {
         // 표준화된 플레이어 크기 설정을 가져온다
         const sizeConfig = AssetLoader.getDynamicPlayerSize();
+        console.log(`updateCharacterSize: sizeConfig=`, sizeConfig);
         
         // 레벨에 따른 크기 증가 (모든 직업 동일한 비율로 적용)
         const baseSize = sizeConfig.MIN_SIZE; // 최소 크기에서 시작
@@ -243,6 +252,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         const targetSize = baseSize + (this.level - 1) * growthRate;
         const finalSize = Math.min(targetSize, maxSize);
+        
+        console.log(`updateCharacterSize: level=${this.level}, baseSize=${baseSize}, growthRate=${growthRate}, targetSize=${targetSize}, finalSize=${finalSize}, oldSize=${this.size}`);
         
         this.size = finalSize;
         
@@ -576,35 +587,19 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 경험치 획득
+     * 경험치 획득 (더 이상 사용하지 않음 - 서버에서 관리)
      */
     gainExp(amount) {
-        this.exp += amount;
-        if (this.exp >= this.expToNext) {
-            this.levelUp();
-        }
-        this.updateUI();
+        console.warn('gainExp 호출됨 - 이제 서버에서 레벨업을 관리합니다. testLevelUp()을 사용하세요.');
+        // 경험치는 서버에서 관리하므로 클라이언트에서는 처리하지 않음
     }
     
     /**
-     * 레벨업
+     * 레벨업 (더 이상 사용하지 않음 - 서버에서 관리)
      */
     levelUp() {
-        this.level++;
-        this.exp -= this.expToNext;
-        this.expToNext = Math.floor(this.expToNext * 1.2);
-        
-        // 직업별 스탯 재적용
-        this.applyJobStats();
-        this.hp = this.maxHp; // 레벨업 시 체력 풀 회복
-        
-        // 크기 업데이트
-        this.updateCharacterSize();
-        
-        // 레벨업 이펙트
-        this.effectManager.showLevelUpEffect(this.x, this.y);
-        
-        this.updateUI();
+        console.warn('levelUp 호출됨 - 이제 서버에서 레벨업을 관리합니다.');
+        // 레벨업은 서버에서 처리하고 클라이언트는 결과만 받음
     }
     
     /**
@@ -663,11 +658,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 레벨업 테스트
+     * 레벨업 테스트 (서버에 요청)
      */
     testLevelUp() {
-        this.gainExp(this.expToNext);
-        this.effectManager.showMessage(this.x, this.y - 100, '레벨업 테스트!', { fill: '#ffff00' });
+        if (this.networkManager && !this.isOtherPlayer) {
+            console.log('서버에 레벨업 요청 전송');
+            this.networkManager.requestLevelUp();
+            this.effectManager.showMessage(this.x, this.y - 100, '레벨업 요청 전송!', { fill: '#ffff00' });
+        }
     }
     
     /**
@@ -969,4 +967,4 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         super.destroy();
     }
-} 
+}

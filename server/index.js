@@ -206,7 +206,7 @@ class GameServer {
         });
       }
       
-      this.syncPlayerStates();
+      this.syncPlayerStatus();
       
     } catch (error) {
       ServerUtils.errorLog('게임 루프 오류', { error: error.message, stack: error.stack });
@@ -216,7 +216,7 @@ class GameServer {
   /**
    * 플레이어 상태 동기화
    */
-  syncPlayerStates() {
+  syncPlayerStatus() {
     const players = this.gameStateManager.getAllPlayers();
     if (players.length > 0) {
       const playerStates = players.map(player => ({
@@ -227,7 +227,8 @@ class GameServer {
         maxHp: player.maxHp,
         level: player.level,
         jobClass: player.jobClass,
-        team: player.team
+        team: player.team,
+        size: player.size  // size 정보 추가
       }));
       
       this.io.emit('players-state-update', playerStates);

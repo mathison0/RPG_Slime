@@ -919,4 +919,87 @@ export default class GameScene extends Phaser.Scene {
             return { x: this.scale.width / 2, y: this.scale.height / 2 };
         }
     }
+
+    /**
+     * 게임 완전 초기화 (Player not found 에러 등으로 인한 강제 초기화)
+     */
+    forceResetGame() {
+        console.log('GameScene 강제 초기화 시작...');
+        
+        try {
+            // 모든 타이머 정리
+            if (this.time) {
+                this.time.removeAllEvents();
+            }
+            
+            // 플레이어 완전 제거
+            if (this.player) {
+                this.player.destroy();
+                this.player = null;
+            }
+            
+            // 다른 플레이어들 제거
+            if (this.otherPlayers) {
+                this.otherPlayers.clear(true, true);
+            }
+            
+            // 적들 제거
+            if (this.enemies) {
+                this.enemies.clear(true, true);
+            }
+            
+            // 벽 제거
+            if (this.walls) {
+                this.walls.clear(true, true);
+            }
+            
+            // 스폰 배리어 제거
+            if (this.spawnBarriers) {
+                this.spawnBarriers.clear(true, true);
+            }
+            
+            // 와드 제거
+            if (this.activeWard) {
+                this.activeWard.destroy();
+                this.activeWard = null;
+            }
+            
+            // 매니저들 정리
+            if (this.networkEventManager) {
+                this.networkEventManager.destroy();
+                this.networkEventManager = null;
+            }
+            
+            if (this.visionManager) {
+                this.visionManager.destroy();
+                this.visionManager = null;
+            }
+            
+            if (this.minimapManager) {
+                this.minimapManager.destroy();
+                this.minimapManager = null;
+            }
+            
+            if (this.pingManager) {
+                this.pingManager.destroy();
+                this.pingManager = null;
+            }
+            
+            if (this.cheatManager) {
+                this.cheatManager.destroy();
+                this.cheatManager = null;
+            }
+            
+            // 상태 초기화
+            this.playerNickname = 'Player';
+            this.isFirstJoin = true;
+            this.playerTeam = null;
+            this.playerId = null;
+            this.inEnemySpawnZone = false;
+            
+            console.log('GameScene 강제 초기화 완료');
+        } catch (error) {
+            console.error('GameScene 강제 초기화 중 오류:', error);
+        }
+    }
 }

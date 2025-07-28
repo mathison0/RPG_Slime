@@ -49,7 +49,7 @@ const gameConfig = {
     DEFAULT_DEFENSE: 10,
     DEFAULT_SPEED: 200,
     VISION_RANGE: 300,
-    DEFAULT_SIZE: 64,
+    DEFAULT_SIZE: 38, // AssetConfig의 MIN_SIZE와 맞춤 (레벨 1 기본 크기)
     DISCONNECT_TIMEOUT: 300000 // 5분
   },
   

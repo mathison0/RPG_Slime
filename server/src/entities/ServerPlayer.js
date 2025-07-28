@@ -1,5 +1,6 @@
 const gameConfig = require('../config/GameConfig');
 const { getSkillInfo } = require('../utils/JobClassesServer');
+const { calculateStats } = require('../../../shared/JobClasses');
 
 /**
  * 서버측 플레이어 클래스
@@ -22,6 +23,7 @@ class ServerPlayer {
     this.direction = 'front';
     this.isJumping = false;
     this.size = gameConfig.PLAYER.DEFAULT_SIZE;
+    console.log(`ServerPlayer 생성: size=${this.size} (level=${this.level}, jobClass=${this.jobClass})`);
     this.visionRange = gameConfig.PLAYER.VISION_RANGE;
     this.lastUpdate = Date.now();
     this.nickname = 'Player';
@@ -135,13 +137,35 @@ class ServerPlayer {
     this.exp = 0;
     this.expToNext = this.level * 100;
     
-    // 스탯 증가
-    this.maxHp += 20;
+    // JobClasses를 사용한 올바른 스탯 계산
+    const newStats = calculateStats(this.jobClass, this.level);
+    this.maxHp = newStats.hp;
     this.hp = this.maxHp; // 풀피로 회복
-    this.attack += 5;
-    this.defense += 2;
+    this.attack = newStats.attack;
+    this.defense = newStats.defense;
+    this.speed = newStats.speed;
+    this.visionRange = newStats.visionRange;
     
-    console.log(`플레이어 ${this.id} 레벨업! 레벨: ${this.level}`);
+    // 크기 계산 (AssetConfig와 동일한 로직)
+    const baseSize = 38; // MIN_SIZE
+    const growthRate = 2; // GROWTH_RATE  
+    const maxSize = 77; // MAX_SIZE
+    
+    const targetSize = baseSize + (this.level - 1) * growthRate;
+    this.size = Math.min(targetSize, maxSize);
+    
+    console.log(`플레이어 ${this.id} 레벨업! 레벨: ${this.level}, HP: ${this.maxHp}, 공격력: ${this.attack}, 크기: ${this.size}`);
+    
+    return {
+      level: this.level,
+      hp: this.hp,
+      maxHp: this.maxHp,
+      attack: this.attack,
+      defense: this.defense,
+      speed: this.speed,
+      visionRange: this.visionRange,
+      size: this.size  // size 정보 추가
+    };
   }
 
   /**
@@ -337,6 +361,30 @@ class ServerPlayer {
    */
   setSize(newSize) {
     this.size = Math.max(16, Math.min(256, newSize));
+    console.log(`플레이어 ${this.id} 크기 변경: ${this.size}`);
+  }
+
+  /**
+   * JobClasses를 사용한 초기 스탯 설정
+   */
+  initializeStatsFromJobClass() {
+    const stats = calculateStats(this.jobClass, this.level);
+    this.maxHp = stats.hp;
+    this.hp = this.maxHp;
+    this.attack = stats.attack;
+    this.defense = stats.defense;
+    this.speed = stats.speed;
+    this.visionRange = stats.visionRange;
+    
+    // 크기 계산 (AssetConfig와 동일한 로직)
+    const baseSize = 38; // MIN_SIZE
+    const growthRate = 2; // GROWTH_RATE  
+    const maxSize = 77; // MAX_SIZE
+    
+    const targetSize = baseSize + (this.level - 1) * growthRate;
+    this.size = Math.min(targetSize, maxSize);
+    
+    console.log(`ServerPlayer 스탯 초기화: level=${this.level}, hp=${this.hp}/${this.maxHp}, attack=${this.attack}, size=${this.size}`);
   }
 }
 

@@ -29,6 +29,7 @@ class SocketEventManager {
       this.setupPlayerUpdateHandler(socket);
       this.setupPlayerJobChangeHandler(socket);
       this.setupPlayerSkillHandler(socket);
+      this.setupPlayerLevelUpHandler(socket); // 레벨업 요청 핸들러 추가
       this.setupPlayerPingHandler(socket);
       this.setupEnemyHitHandler(socket);
       this.setupGameSyncHandler(socket);
@@ -71,6 +72,9 @@ class SocketEventManager {
       // 플레이어 생성
       const player = this.gameStateManager.addPlayer(playerId, spawnPoint.x, spawnPoint.y, team, nickname);
       
+      // JobClasses를 사용한 올바른 초기 스탯 설정
+      player.initializeStatsFromJobClass();
+      
       // 게임 참가 응답
       const gameJoinedData = {
         playerId: playerId,
@@ -95,28 +99,38 @@ class SocketEventManager {
   setupPlayerUpdateHandler(socket) {
     socket.on('player-update', (data) => {
       const player = this.gameStateManager.getPlayer(socket.id);
-      if (player && !player.isDead) { // 죽은 플레이어의 업데이트는 무시
-        player.update(data);
-        
-        // 크기 정보가 있으면 업데이트
-        if (data.size !== undefined) {
-          player.setSize(data.size);
-        }
-        
-        socket.broadcast.emit('player-moved', {
-          id: socket.id,
-          x: player.x,
-          y: player.y,
-          direction: player.direction,
-          isJumping: player.isJumping,
-          jobClass: player.jobClass,
-          level: player.level,
-          size: player.size,
-          isDead: player.isDead,
-          hp: player.hp,
-          maxHp: player.maxHp
-        });
+      
+      // 플레이어가 존재하지 않는 경우 에러 리턴
+      if (!player) {
+        socket.emit('player-update-error', { error: 'Player not found' });
+        return;
       }
+      
+      // 죽은 플레이어의 업데이트는 무시
+      if (player.isDead) {
+        return;
+      }
+      
+      player.update(data);
+      
+      // 크기 정보가 있으면 업데이트
+      if (data.size !== undefined) {
+        player.setSize(data.size);
+      }
+      
+      socket.broadcast.emit('player-moved', {
+        id: socket.id,
+        x: player.x,
+        y: player.y,
+        direction: player.direction,
+        isJumping: player.isJumping,
+        jobClass: player.jobClass,
+        level: player.level,
+        size: player.size,
+        isDead: player.isDead,
+        hp: player.hp,
+        maxHp: player.maxHp
+      });
     });
   }
 
@@ -404,6 +418,57 @@ class SocketEventManager {
         socket.emit('player-state-sync', {
           playerId: socket.id,
           playerData: playerState
+        });
+      }
+    });
+  }
+
+  /**
+   * 플레이어 레벨업 요청 이벤트 핸들러
+   */
+  setupPlayerLevelUpHandler(socket) {
+    socket.on('player-level-up-request', (data) => {
+      const player = this.gameStateManager.getPlayer(socket.id);
+      if (!player) {
+        socket.emit('level-up-error', { error: 'Player not found' });
+        return;
+      }
+
+      try {
+        // 서버에서 레벨업 처리
+        const levelUpResult = player.levelUp();
+        
+        // 클라이언트에게 레벨업 결과 전송
+        socket.emit('player-level-up', {
+          playerId: socket.id,
+          ...levelUpResult
+        });
+
+        // 다른 플레이어들에게 레벨업 알림 (레벨 정보만)
+        socket.broadcast.emit('player-level-up', {
+          playerId: socket.id,
+          level: levelUpResult.level
+        });
+
+        console.log(`플레이어 ${socket.id} 레벨업 요청 처리 완료: 레벨 ${levelUpResult.level}`);
+      } catch (error) {
+        console.error('레벨업 처리 중 오류:', error);
+        socket.emit('level-up-error', { error: 'Level up failed' });
+      }
+    });
+  }
+
+  /**
+   * 플레이어 전직 이벤트 핸들러
+   */
+  setupPlayerJobChangeHandler(socket) {
+    socket.on('player-job-change', (data) => {
+      const player = this.gameStateManager.getPlayer(socket.id);
+      if (player) {
+        player.changeJob(data.jobClass);
+        this.io.emit('player-job-changed', {
+          id: socket.id,
+          jobClass: data.jobClass
         });
       }
     });

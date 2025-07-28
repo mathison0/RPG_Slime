@@ -128,5 +128,56 @@ function getSkillInfo(jobClass, skillType) {
 
 // Export for server use
 module.exports = {
-    getSkillInfo
-}; 
+    getSkillInfo,
+    calculateStats
+};
+
+/**
+ * 레벨에 따른 스탯 계산
+ * @param {string} jobClass - 직업 클래스
+ * @param {number} level - 레벨
+ * @returns {object} 계산된 스탯
+ */
+function calculateStats(jobClass, level) {
+    const jobData = JobClasses[jobClass];
+    if (!jobData) {
+        // 기본값으로 슬라임 사용
+        return calculateStats('slime', level);
+    }
+    
+    const baseStats = {
+        hp: 100,
+        attack: 20,
+        defense: 10,
+        speed: 200,
+        visionRange: 300
+    };
+    
+    const levelGrowth = {
+        hp: 20,
+        attack: 5,
+        defense: 2,
+        speed: 10
+    };
+    
+    // 직업별 기본 스탯이 있으면 사용
+    if (jobData.baseStats) {
+        Object.assign(baseStats, jobData.baseStats);
+    }
+    
+    // 직업별 레벨 성장률이 있으면 사용  
+    if (jobData.levelGrowth) {
+        Object.assign(levelGrowth, jobData.levelGrowth);
+    }
+    
+    // 레벨에 따른 스탯 계산
+    const stats = {
+        hp: baseStats.hp + (level - 1) * levelGrowth.hp,
+        attack: baseStats.attack + (level - 1) * levelGrowth.attack,
+        defense: baseStats.defense + (level - 1) * levelGrowth.defense,
+        speed: baseStats.speed + (level - 1) * (levelGrowth.speed || 0),
+        visionRange: baseStats.visionRange
+    };
+    
+    return stats;
+} 

@@ -32,17 +32,6 @@ export default class NinjaJob extends BaseJob {
         }
     }
 
-    useJump() {
-        // 닌자는 점프 시 은신 해제
-        if (this.isStealth) {
-            this.endStealth();
-        }
-        
-        if (this.player.networkManager && !this.player.isOtherPlayer) {
-            this.player.networkManager.useJump();
-        }
-    }
-
     useSkill(skillType) {
         const currentTime = this.player.scene.time.now;
         
