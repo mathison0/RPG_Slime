@@ -35,6 +35,11 @@ class ServerPlayer {
       jump: null,      // { startTime, duration, endTime }
       skills: new Map() // skillType -> { startTime, duration, endTime, skillInfo }
     };
+    
+    // 어쌔신 은신 상태
+    this.isStealth = false;
+    this.stealthStartTime = 0;
+    this.stealthDuration = 0;
   }
 
   /**

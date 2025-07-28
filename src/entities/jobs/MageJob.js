@@ -265,7 +265,7 @@ export default class MageJob extends BaseJob {
         this.scene.physics.add.existing(missile);
         missile.team = this.player.team;
         
-        // 투사체 이동
+        // 투사체 이동 (물리 바디 위치 업데이트 포함)
         const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, worldPoint.x, worldPoint.y);
         const duration = (distance / 400) * 1000; // 400은 투사체 속도
         
@@ -275,8 +275,13 @@ export default class MageJob extends BaseJob {
             y: worldPoint.y,
             duration: duration,
             ease: 'Linear',
+            onUpdate: () => {
+                // 물리 바디 위치를 스프라이트 위치와 동기화
+                if (missile.body) {
+                    missile.body.reset(missile.x, missile.y);
+                }
+            },
             onComplete: () => {
-                this.createMagicExplosion(worldPoint.x, worldPoint.y);
                 missile.destroy();
             }
         });
@@ -425,17 +430,37 @@ export default class MageJob extends BaseJob {
         const projectile = this.player.scene.add.circle(this.player.x, this.player.y, 4, 0x0000ff, 1);
         this.player.scene.physics.add.existing(projectile);
         
-        // 방향 계산
-        const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, targetX, targetY);
-        const speed = 280;
-        const velocityX = Math.cos(angle) * speed;
-        const velocityY = Math.sin(angle) * speed;
+        // 투사체 콜라이더 설정
+        projectile.body.setCircle(4); // 원형 콜라이더 설정
+        projectile.body.setCollideWorldBounds(false); // 월드 경계 충돌 비활성화
+        projectile.body.setBounce(0, 0); // 튕김 없음
+        projectile.body.setDrag(0, 0); // 저항 없음
         
-        // 속도 설정
-        projectile.body.setVelocity(velocityX, velocityY);
+        // 투사체 이동 (Tween 사용 + 물리 바디 위치 업데이트)
+        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, targetX, targetY);
+        const duration = (distance / 280) * 1000; // 280은 투사체 속도
+        
+        const moveTween = this.player.scene.tweens.add({
+            targets: projectile,
+            x: targetX,
+            y: targetY,
+            duration: duration,
+            ease: 'Linear',
+            onUpdate: () => {
+                // 물리 바디 위치를 스프라이트 위치와 동기화
+                if (projectile.body) {
+                    projectile.body.reset(projectile.x, projectile.y);
+                }
+            },
+            onComplete: () => {
+                if (projectile.active) {
+                    projectile.destroy();
+                }
+            }
+        });
         
         // 투사체 이펙트 (빛나는 효과)
-        this.player.scene.tweens.add({
+        const effectTween = this.player.scene.tweens.add({
             targets: projectile,
             scaleX: 1.5,
             scaleY: 1.5,
@@ -445,55 +470,51 @@ export default class MageJob extends BaseJob {
             repeat: -1
         });
         
-        // 투사체 충돌 처리
-        this.setupProjectileCollisions(projectile);
-        
-        // 3초 후 투사체 제거
-        this.player.scene.time.delayedCall(3000, () => {
-            if (projectile && projectile.active) {
+        // 투사체 파괴 함수
+        const destroyProjectile = () => {
+            if (projectile.active) {
+                // 모든 Tween 애니메이션 중지
+                moveTween.stop();
+                effectTween.stop();
                 projectile.destroy();
+            }
+        };
+        
+        // 투사체에 파괴 함수 저장
+        projectile.destroyProjectile = destroyProjectile;
+        
+        // 투사체와 적 충돌 체크
+        this.player.scene.physics.add.overlap(projectile, this.player.scene.enemies, (projectile, enemy) => {
+            console.log('마법사 기본 공격 투사체가 적과 충돌');
+            if (projectile && projectile.active) {
+                // 적 충돌 시 폭발 이펙트 생성
+                this.createMagicExplosion(projectile.x, projectile.y);
+                projectile.destroyProjectile();
+            }
+        });
+        
+        // 투사체와 벽 충돌 체크
+        this.player.scene.physics.add.collider(projectile, this.player.scene.walls, (projectile, wall) => {
+            console.log('마법사 투사체가 벽과 충돌!');
+            if (projectile && projectile.active) {
+                // 벽 충돌 시 폭발 이펙트 생성
+                this.createMagicExplosion(projectile.x, projectile.y);
+                projectile.destroyProjectile();
+            }
+        });
+        
+        // 다른 플레이어와의 충돌 (적팀만)
+        this.player.scene.physics.add.overlap(projectile, this.player.scene.otherPlayers, (projectile, otherPlayer) => {
+            if (otherPlayer && otherPlayer.team !== this.player.team) {
+                console.log('마법사 투사체가 다른 팀 플레이어와 충돌!');
+                if (projectile && projectile.active) {
+                    // 다른 플레이어 충돌 시 폭발 이펙트 생성
+                    this.createMagicExplosion(projectile.x, projectile.y);
+                    projectile.destroyProjectile();
+                }
             }
         });
     }
 
-    setupProjectileCollisions(projectile) {
-        // 벽과의 충돌
-        if (this.player.scene.walls) {
-            this.player.scene.physics.add.collider(projectile, this.player.scene.walls, () => {
-                projectile.destroy();
-            });
-        }
 
-        // 적과의 충돌
-        if (this.player.scene.enemies) {
-            this.player.scene.physics.add.overlap(projectile, this.player.scene.enemies, (projectile, enemy) => {
-                // 데미지 계산
-                const damage = this.player.getAttackDamage();
-                enemy.takeDamage(damage);
-                
-                // 투사체 제거
-                projectile.destroy();
-                
-                console.log(`마법사 기본 공격으로 ${damage} 데미지`);
-            });
-        }
-
-        // 다른 플레이어와의 충돌 (적팀인 경우)
-        if (this.player.scene.otherPlayers && Array.isArray(this.player.scene.otherPlayers)) {
-            this.player.scene.otherPlayers.forEach(otherPlayer => {
-                if (otherPlayer && otherPlayer.team !== this.player.team) {
-                    this.player.scene.physics.add.overlap(projectile, otherPlayer, (projectile, targetPlayer) => {
-                        // 데미지 계산
-                        const damage = this.player.getAttackDamage();
-                        targetPlayer.takeDamage(damage);
-                        
-                        // 투사체 제거
-                        projectile.destroy();
-                        
-                        console.log(`마법사 기본 공격으로 ${targetPlayer.nameText?.text || '적'}에게 ${damage} 데미지`);
-                    });
-                }
-            });
-        }
-    }
 } 

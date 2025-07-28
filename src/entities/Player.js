@@ -8,6 +8,7 @@ import EffectManager from '../effects/EffectManager.js';
 import SlimeJob from './jobs/SlimeJob.js';
 import MageJob from './jobs/MageJob.js';
 import AssassinJob from './jobs/AssassinJob.js';
+import NinjaJob from './jobs/NinjaJob.js';
 import WarriorJob from './jobs/WarriorJob.js';
 import MechanicJob from './jobs/MechanicJob.js';
 import ArcherJob from './jobs/ArcherJob.js';
@@ -91,12 +92,15 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.twoKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
         this.threeKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
         
-        // 마우스 클릭 이벤트 설정
-        this.scene.input.on('pointerdown', (pointer) => {
-            if (pointer.leftButtonDown()) {
-                this.handleMouseClick(pointer.worldX, pointer.worldY);
-            }
-        });
+        // 마우스 클릭 이벤트 설정 (중복 등록 방지)
+        if (!this.mouseClickHandler) {
+            this.mouseClickHandler = (pointer) => {
+                if (pointer.leftButtonDown()) {
+                    this.handleMouseClick(pointer.worldX, pointer.worldY);
+                }
+            };
+            this.scene.input.on('pointerdown', this.mouseClickHandler);
+        }
     }
     
     /**
@@ -133,8 +137,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                     this.job = new MageJob(this);
                     break;
                 case 'assassin':
-                case 'ninja':
                     this.job = new AssassinJob(this);
+                    break;
+                case 'ninja':
+                    this.job = new NinjaJob(this);
                     break;
                 case 'warrior':
                     this.job = new WarriorJob(this);
@@ -327,12 +333,25 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
 
-        // 원거리 기본 공격이 가능한 직업들
-        const rangedJobs = ['slime', 'ninja', 'archer', 'mage'];
-        
+        // 중복 실행 방지 (마지막 클릭 시간 체크)
+        const currentTime = this.scene.time.now;
+        if (this.lastClickTime && currentTime - this.lastClickTime < 100) {
+            return; // 100ms 내에 중복 클릭 방지
+        }
+        this.lastClickTime = currentTime;
+
         // 모든 직업이 기본 공격 사용 가능
         if (this.job && this.job.useBasicAttack) {
-            this.job.useBasicAttack(worldX, worldY);
+            const success = this.job.useBasicAttack(worldX, worldY);
+            
+            // 기본 공격이 성공적으로 실행되었으면 서버로 전송
+            if (success && this.networkManager) {
+                this.networkManager.useSkill('basic_attack', {
+                    targetX: worldX,
+                    targetY: worldY,
+                    jobClass: this.jobClass
+                });
+            }
         }
     }
 
@@ -539,7 +558,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
         
-        const actualDamage = Math.max(1, damage - this.defense);
+        // 방어력 계산 제거 (서버와 동일하게)
+        const actualDamage = damage;
         this.hp = Math.max(0, this.hp - actualDamage);
         
         // 데미지 표시

@@ -120,7 +120,7 @@ export default class AssassinJob extends BaseJob {
         }
     }
 
-    // 기본 공격 (마우스 좌클릭) - 닌자는 투사체, 어쌔신은 부채꼴 근접 공격
+    // 기본 공격 (마우스 좌클릭) - 어쌔신은 부채꼴 근접 공격
     useBasicAttack(targetX, targetY) {
         const currentTime = this.player.scene.time.now;
         if (currentTime - this.lastBasicAttackTime < this.basicAttackCooldown) {
@@ -134,20 +134,11 @@ export default class AssassinJob extends BaseJob {
 
         this.lastBasicAttackTime = currentTime;
         
-        // 닌자는 투사체 공격, 어쌔신은 근접 공격
-        if (this.player.jobClass === 'ninja') {
-            return this.useRangedAttack(targetX, targetY);
-        } else {
-            return this.useMeleeAttack(targetX, targetY);
-        }
+        // 어쌔신은 근접 공격
+        return this.useMeleeAttack(targetX, targetY);
     }
 
-    // 닌자용 원거리 투사체 공격
-    useRangedAttack(targetX, targetY) {
-        this.createProjectile(targetX, targetY);
-        this.setupProjectileCollisions();
-        return true;
-    }
+
 
     // 어쌔신용 근접 공격 (연속 공격)
     useMeleeAttack(targetX, targetY) {
@@ -205,129 +196,11 @@ export default class AssassinJob extends BaseJob {
     }
 
     performMeleeAttack(centerX, centerY, startAngle, endAngle, radius, damageMultiplier = 1.0) {
-        // 적과의 부채꼴 근접 공격
-        if (this.player.scene.enemies) {
-            this.player.scene.enemies.getChildren().forEach(enemy => {
-                if (enemy && !enemy.isDead) {
-                    const distance = Phaser.Math.Distance.Between(centerX, centerY, enemy.x, enemy.y);
-                    if (distance <= radius) {
-                        // 부채꼴 각도 내에 있는지 확인
-                        const angleToEnemy = Phaser.Math.Angle.Between(centerX, centerY, enemy.x, enemy.y);
-                        if (this.isAngleInRange(angleToEnemy, startAngle, endAngle)) {
-                            // 데미지 계산 (은신 보너스 포함)
-                            const baseDamage = this.getAttackDamage();
-                            const damage = Math.floor(baseDamage * damageMultiplier);
-                            enemy.takeDamage(damage);
-                            
-                            const jobName = this.player.jobClass === 'ninja' ? '닌자' : '어쌔신';
-                            console.log(`${jobName} 부채꼴 근접 공격으로 ${damage} 데미지 (${damageMultiplier}배)`);
-                        }
-                    }
-                }
-            });
-        }
-
-        // 다른 플레이어와의 부채꼴 근접 공격 (적팀인 경우)
-        if (this.player.scene.otherPlayers && Array.isArray(this.player.scene.otherPlayers)) {
-            this.player.scene.otherPlayers.forEach(otherPlayer => {
-                if (otherPlayer && otherPlayer.team !== this.player.team) {
-                    const distance = Phaser.Math.Distance.Between(centerX, centerY, otherPlayer.x, otherPlayer.y);
-                    if (distance <= radius) {
-                        // 부채꼴 각도 내에 있는지 확인
-                        const angleToPlayer = Phaser.Math.Angle.Between(centerX, centerY, otherPlayer.x, otherPlayer.y);
-                        if (this.isAngleInRange(angleToPlayer, startAngle, endAngle)) {
-                            // 데미지 계산 (은신 보너스 포함)
-                            const baseDamage = this.getAttackDamage();
-                            const damage = Math.floor(baseDamage * damageMultiplier);
-                            otherPlayer.takeDamage(damage);
-                            
-                            const jobName = this.player.jobClass === 'ninja' ? '닌자' : '어쌔신';
-                            console.log(`${jobName} 부채꼴 근접 공격으로 ${otherPlayer.nameText?.text || '적'}에게 ${damage} 데미지 (${damageMultiplier}배)`);
-                        }
-                    }
-                }
-            });
-        }
+        // 시각적 효과만 (데미지는 서버에서 처리)
+        console.log('어쌔신 부채꼴 근접 공격 이펙트 (데미지는 서버에서 처리)');
     }
 
-    // 닌자용 투사체 생성
-    createProjectile(targetX, targetY) {
-        // 투사체 생성 (보라색 빛나는 점)
-        const projectile = this.player.scene.add.circle(this.player.x, this.player.y, 4, 0x800080, 1);
-        this.player.scene.physics.add.existing(projectile);
-        
-        // 투사체 속도 설정
-        const speed = 300;
-        const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, targetX, targetY);
-        const velocityX = Math.cos(angle) * speed;
-        const velocityY = Math.sin(angle) * speed;
-        
-        projectile.body.setVelocity(velocityX, velocityY);
-        
-        // 빛나는 효과 추가
-        this.player.scene.tweens.add({
-            targets: projectile,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            alpha: 0.5,
-            duration: 200,
-            yoyo: true,
-            repeat: -1
-        });
-        
-        // 투사체 수명 설정 (3초 후 자동 제거)
-        this.player.scene.time.delayedCall(3000, () => {
-            if (projectile.active) {
-                projectile.destroy();
-            }
-        });
-        
-        console.log('닌자 표창 투사체 생성');
-    }
 
-    // 투사체 충돌 설정
-    setupProjectileCollisions() {
-        // 벽과의 충돌 처리
-        if (this.player.scene.walls) {
-            this.player.scene.physics.add.collider(this.player.scene.walls, this.player.scene.physics.world.getChildren().filter(obj => obj.body && obj.body.gameObject && obj.body.gameObject.getData && obj.body.gameObject.getData('type') === 'projectile'), (projectile) => {
-                if (projectile.active) {
-                    projectile.destroy();
-                }
-            });
-        }
-        
-        // 적과의 충돌 처리
-        if (this.player.scene.enemies) {
-            this.player.scene.enemies.getChildren().forEach(enemy => {
-                if (enemy && !enemy.isDead) {
-                    this.player.scene.physics.add.overlap(enemy, this.player.scene.physics.world.getChildren().filter(obj => obj.body && obj.body.gameObject && obj.body.gameObject.getData && obj.body.gameObject.getData('type') === 'projectile'), (enemy, projectile) => {
-                        if (projectile.active) {
-                            const damage = this.getAttackDamage();
-                            enemy.takeDamage(damage);
-                            projectile.destroy();
-                            console.log(`닌자 표창으로 ${damage} 데미지`);
-                        }
-                    });
-                }
-            });
-        }
-        
-        // 다른 플레이어와의 충돌 처리 (적팀인 경우)
-        if (this.player.scene.otherPlayers && Array.isArray(this.player.scene.otherPlayers)) {
-            this.player.scene.otherPlayers.forEach(otherPlayer => {
-                if (otherPlayer && otherPlayer.team !== this.player.team) {
-                    this.player.scene.physics.add.overlap(otherPlayer, this.player.scene.physics.world.getChildren().filter(obj => obj.body && obj.body.gameObject && obj.body.gameObject.getData && obj.body.gameObject.getData('type') === 'projectile'), (otherPlayer, projectile) => {
-                        if (projectile.active) {
-                            const damage = this.getAttackDamage();
-                            otherPlayer.takeDamage(damage);
-                            projectile.destroy();
-                            console.log(`닌자 표창으로 ${otherPlayer.nameText?.text || '적'}에게 ${damage} 데미지`);
-                        }
-                    });
-                }
-            });
-        }
-    }
 
     // 각도가 부채꼴 범위 내에 있는지 확인하는 헬퍼 메서드
     isAngleInRange(angle, startAngle, endAngle) {

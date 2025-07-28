@@ -34,21 +34,21 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     setupEnemyType() {
         switch (this.type) {
             case 'fast':
-                this.maxHp = 50;
+                this.maxHp = 30;
                 this.hp = this.maxHp;
                 this.attack = 15;
                 this.moveSpeed = 150;
                 this.setTint(0xff6600); // 주황색
                 break;
             case 'tank':
-                this.maxHp = 200;
+                this.maxHp = 100;
                 this.hp = this.maxHp;
                 this.attack = 25;
                 this.moveSpeed = 60;
                 this.setTint(0x8b4513); // 갈색
                 break;
             case 'ranged':
-                this.maxHp = 80;
+                this.maxHp = 40;
                 this.hp = this.maxHp;
                 this.attack = 20;
                 this.moveSpeed = 80;
@@ -56,7 +56,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
                 this.setTint(0x9932cc); // 보라색
                 break;
             default: // basic
-                this.maxHp = 100;
+                this.maxHp = 50;
                 this.hp = this.maxHp;
                 this.attack = 20;
                 this.moveSpeed = 100;

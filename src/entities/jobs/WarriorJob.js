@@ -99,6 +99,8 @@ export default class WarriorJob extends BaseJob {
     useSweep() {
         const skillKey = 'sweep';
         
+        console.log('휩쓸기 시도 - isSweeping:', this.isSweeping, 'isOtherPlayer:', this.player.isOtherPlayer);
+        
         // 쿨타임 체크
         if (!this.isSkillAvailable(skillKey)) {
             this.showCooldownMessage();
@@ -107,6 +109,7 @@ export default class WarriorJob extends BaseJob {
         
         // 이미 휩쓸기 중이거나 다른 플레이어면 실행하지 않음
         if (this.isSweeping || this.player.isOtherPlayer) {
+            console.log('휩쓸기 차단 - isSweeping:', this.isSweeping, 'isOtherPlayer:', this.player.isOtherPlayer);
             return;
         }
         
@@ -117,6 +120,8 @@ export default class WarriorJob extends BaseJob {
         
         // 휩쓸기 상태 활성화
         this.isSweeping = true;
+        
+        console.log('휩쓸기 상태 활성화됨');
         
         // 스프라이트 변경은 서버에서 처리됨
         
@@ -133,6 +138,7 @@ export default class WarriorJob extends BaseJob {
         // 휩쓸기 상태 자동 해제 (500ms 후)
         this.player.scene.time.delayedCall(500, () => {
             if (this.isSweeping) {
+                console.log('휩쓸기 상태 자동 해제 실행');
                 this.endSweep();
             }
         });
@@ -153,10 +159,11 @@ export default class WarriorJob extends BaseJob {
      * 휩쓸기 종료
      */
     endSweep() {
+        console.log('휩쓸기 종료 호출됨 - 이전 상태:', this.isSweeping);
         this.isSweeping = false;
         // 시각적 효과는 NetworkEventManager에서 처리됨
         
-        console.log('휩쓸기 종료');
+        console.log('휩쓸기 종료 완료 - 현재 상태:', this.isSweeping);
     }
 
     /**
@@ -431,45 +438,8 @@ export default class WarriorJob extends BaseJob {
     }
 
     performMeleeAttack(centerX, centerY, startAngle, endAngle, radius) {
-        // 적과의 부채꼴 근접 공격
-        if (this.player.scene.enemies) {
-            this.player.scene.enemies.getChildren().forEach(enemy => {
-                if (enemy && !enemy.isDead) {
-                    const distance = Phaser.Math.Distance.Between(centerX, centerY, enemy.x, enemy.y);
-                    if (distance <= radius) {
-                        // 부채꼴 각도 내에 있는지 확인
-                        const angleToEnemy = Phaser.Math.Angle.Between(centerX, centerY, enemy.x, enemy.y);
-                        if (this.isAngleInRange(angleToEnemy, startAngle, endAngle)) {
-                            // 데미지 계산
-                            const damage = this.player.getAttackDamage();
-                            enemy.takeDamage(damage);
-                            
-                            console.log(`전사 부채꼴 근접 공격으로 ${damage} 데미지`);
-                        }
-                    }
-                }
-            });
-        }
-
-        // 다른 플레이어와의 부채꼴 근접 공격 (적팀인 경우)
-        if (this.player.scene.otherPlayers && Array.isArray(this.player.scene.otherPlayers)) {
-            this.player.scene.otherPlayers.forEach(otherPlayer => {
-                if (otherPlayer && otherPlayer.team !== this.player.team) {
-                    const distance = Phaser.Math.Distance.Between(centerX, centerY, otherPlayer.x, otherPlayer.y);
-                    if (distance <= radius) {
-                        // 부채꼴 각도 내에 있는지 확인
-                        const angleToPlayer = Phaser.Math.Angle.Between(centerX, centerY, otherPlayer.x, otherPlayer.y);
-                        if (this.isAngleInRange(angleToPlayer, startAngle, endAngle)) {
-                            // 데미지 계산
-                            const damage = this.player.getAttackDamage();
-                            otherPlayer.takeDamage(damage);
-                            
-                            console.log(`전사 부채꼴 근접 공격으로 ${otherPlayer.nameText?.text || '적'}에게 ${damage} 데미지`);
-                        }
-                    }
-                }
-            });
-        }
+        // 시각적 효과만 (데미지는 서버에서 처리)
+        console.log('전사 부채꼴 근접 공격 이펙트 (데미지는 서버에서 처리)');
     }
 
     // 각도가 부채꼴 범위 내에 있는지 확인하는 헬퍼 메서드

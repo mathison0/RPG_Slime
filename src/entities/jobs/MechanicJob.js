@@ -132,45 +132,8 @@ export default class MechanicJob extends BaseJob {
     }
 
     performMeleeAttack(centerX, centerY, startAngle, endAngle, radius) {
-        // 적과의 부채꼴 근접 공격
-        if (this.player.scene.enemies) {
-            this.player.scene.enemies.getChildren().forEach(enemy => {
-                if (enemy && !enemy.isDead) {
-                    const distance = Phaser.Math.Distance.Between(centerX, centerY, enemy.x, enemy.y);
-                    if (distance <= radius) {
-                        // 부채꼴 각도 내에 있는지 확인
-                        const angleToEnemy = Phaser.Math.Angle.Between(centerX, centerY, enemy.x, enemy.y);
-                        if (this.isAngleInRange(angleToEnemy, startAngle, endAngle)) {
-                            // 데미지 계산
-                            const damage = this.player.getAttackDamage();
-                            enemy.takeDamage(damage);
-                            
-                            console.log(`메카닉 부채꼴 근접 공격으로 ${damage} 데미지`);
-                        }
-                    }
-                }
-            });
-        }
-
-        // 다른 플레이어와의 부채꼴 근접 공격 (적팀인 경우)
-        if (this.player.scene.otherPlayers && Array.isArray(this.player.scene.otherPlayers)) {
-            this.player.scene.otherPlayers.forEach(otherPlayer => {
-                if (otherPlayer && otherPlayer.team !== this.player.team) {
-                    const distance = Phaser.Math.Distance.Between(centerX, centerY, otherPlayer.x, otherPlayer.y);
-                    if (distance <= radius) {
-                        // 부채꼴 각도 내에 있는지 확인
-                        const angleToPlayer = Phaser.Math.Angle.Between(centerX, centerY, otherPlayer.x, otherPlayer.y);
-                        if (this.isAngleInRange(angleToPlayer, startAngle, endAngle)) {
-                            // 데미지 계산
-                            const damage = this.player.getAttackDamage();
-                            otherPlayer.takeDamage(damage);
-                            
-                            console.log(`메카닉 부채꼴 근접 공격으로 ${otherPlayer.nameText?.text || '적'}에게 ${damage} 데미지`);
-                        }
-                    }
-                }
-            });
-        }
+        // 시각적 효과만 (데미지는 서버에서 처리)
+        console.log('메카닉 부채꼴 근접 공격 이펙트 (데미지는 서버에서 처리)');
     }
 
     // 각도가 부채꼴 범위 내에 있는지 확인하는 헬퍼 메서드
