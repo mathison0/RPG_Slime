@@ -64,7 +64,7 @@ const JobClasses = {
                 type: 'stealth'
             }
         ],
-        color: 0x800080,
+        color: 0x000000,
         maxLevel: 50
     },
 
@@ -95,7 +95,7 @@ const JobClasses = {
                 type: 'stealth'
             }
         ],
-        color: 0x4B0082,
+        color: 0x000000,
         maxLevel: 50
     },
 
@@ -228,7 +228,102 @@ const JobClasses = {
                 type: 'repair'
             }
         ],
-        color: 0xff6600,
+        color: 0x556B2F,
+        maxLevel: 50
+    },
+
+    archer: {
+        name: '궁수',
+        description: '원거리 공격에 특화된 직업입니다.',
+        baseStats: {
+            hp: 85,
+            attack: 30,
+            defense: 5,
+            speed: 200,
+            visionRange: 350
+        },
+        levelGrowth: {
+            hp: 15,
+            attack: 8,
+            defense: 1,
+            speed: 10
+        },
+        skills: [
+            {
+                name: '구르기',
+                description: '빠르게 구르며 이동합니다.',
+                cooldown: 2000,
+                damage: 0,
+                range: 100,
+                key: '1',
+                type: 'roll'
+            },
+            {
+                name: '궁사의 집중',
+                description: '일정 시간 동안 공격 속도를 증가시킵니다.',
+                cooldown: 8000,
+                damage: 0,
+                duration: 5000,
+                effect: 'attack_speed_boost',
+                key: '2',
+                type: 'focus'
+            }
+        ],
+        color: 0xFF8C00,
+        maxLevel: 50
+    },
+
+    supporter: {
+        name: '힐러',
+        description: '팀원을 지원하고 치유하는 서포터 직업입니다.',
+        baseStats: {
+            hp: 90,
+            attack: 15,
+            defense: 8,
+            speed: 180,
+            visionRange: 320
+        },
+        levelGrowth: {
+            hp: 20,
+            attack: 3,
+            defense: 2,
+            speed: 8
+        },
+        skills: [
+            {
+                name: '와드 설치',
+                description: '일정 범위에 시야를 제공하고 상태이상을 감지합니다.',
+                cooldown: 10000,
+                damage: 0,
+                range: 150,
+                duration: 20000,
+                key: '1',
+                type: 'ward'
+            },
+            {
+                name: '버프 장판',
+                description: '이동속도와 공격속도를 증가시키는 장판을 설치합니다.',
+                cooldown: 6000,
+                damage: 0,
+                range: 80,
+                duration: 4000,
+                effect: 'speed_attack_boost',
+                key: '2',
+                type: 'buff_field'
+            },
+            {
+                name: '힐 장판',
+                description: '범위 내 아군의 체력을 지속적으로 회복시킵니다.',
+                cooldown: 15000,
+                damage: 0,
+                range: 100,
+                duration: 8000,
+                heal: 20,
+                key: '3',
+                type: 'heal_field'
+            }
+        ],
+        color: 0xFFFF00,
         maxLevel: 50
     }
 };
@@ -257,6 +352,14 @@ const JobRequirements = {
     mechanic: {
         level: 10,
         description: '레벨 10 필요'
+    },
+    archer: {
+        level: 6,
+        description: '레벨 6 필요'
+    },
+    supporter: {
+        level: 4,
+        description: '레벨 4 필요'
     }
 };
 

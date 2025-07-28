@@ -14,6 +14,10 @@ export default class AssassinJob extends BaseJob {
         this.isStealth = false;
         this.stealthDuration = 0;
         this.stealthBonusDamage = 0;
+        
+        // 기본 공격 관련
+        this.lastBasicAttackTime = 0;
+        this.basicAttackCooldown = 300; // 기본 공격 쿨다운 (밀리초) - 어쌔신은 빠른 연속 공격
     }
 
     useSkill(skillNumber, options = {}) {
@@ -113,6 +117,103 @@ export default class AssassinJob extends BaseJob {
         super.destroy();
         if (this.isStealth) {
             this.endStealth();
+        }
+    }
+
+    // 기본 공격 (마우스 좌클릭) - 어쌔신은 부채꼴 근접 공격
+    useBasicAttack(targetX, targetY) {
+        const currentTime = this.player.scene.time.now;
+        if (currentTime - this.lastBasicAttackTime < this.basicAttackCooldown) {
+            return false; // 쿨다운 중
+        }
+
+        // 은신 상태에서는 기본 공격 막기 (은신 해제 후 공격하므로)
+        if (this.isStealth) {
+            return false;
+        }
+
+        this.lastBasicAttackTime = currentTime;
+        
+        // 어쌔신은 근접 공격
+        return this.useMeleeAttack(targetX, targetY);
+    }
+
+
+
+    // 어쌔신용 근접 공격 (연속 공격)
+    useMeleeAttack(targetX, targetY) {
+        // 부채꼴 공격 범위 설정
+        const attackRange = 40;
+        const angleOffset = Math.PI / 6; // 30도 (π/6)
+        
+        // 마우스 커서 위치 기준으로 부채꼴 공격
+        const centerX = this.player.x;
+        const centerY = this.player.y;
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, targetX, targetY);
+        
+        // 부채꼴의 시작과 끝 각도 계산
+        const startAngle = angleToMouse - angleOffset;
+        const endAngle = angleToMouse + angleOffset;
+        
+        // 첫 번째 공격
+        this.createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, attackRange);
+        this.performMeleeAttack(centerX, centerY, startAngle, endAngle, attackRange, 0.5);
+        
+        // 두 번째 공격 (150ms 후)
+        this.player.scene.time.delayedCall(150, () => {
+            this.createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, attackRange);
+            this.performMeleeAttack(centerX, centerY, startAngle, endAngle, attackRange, 0.5);
+        });
+        
+        return true;
+    }
+
+    createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, radius) {
+        // 부채꼴 근접 공격 이펙트 (검은색 부채꼴)
+        const graphics = this.player.scene.add.graphics();
+        graphics.fillStyle(0x000000, 0.7);
+        graphics.lineStyle(2, 0x000000, 1);
+        
+        // 부채꼴 그리기
+        graphics.beginPath();
+        graphics.moveTo(centerX, centerY);
+        graphics.arc(centerX, centerY, radius, startAngle, endAngle);
+        graphics.closePath();
+        graphics.fill();
+        graphics.stroke();
+        
+        // 이펙트 애니메이션
+        this.player.scene.tweens.add({
+            targets: graphics,
+            alpha: 0,
+            duration: 300,
+            onComplete: () => {
+                graphics.destroy();
+            }
+        });
+    }
+
+    performMeleeAttack(centerX, centerY, startAngle, endAngle, radius, damageMultiplier = 1.0) {
+        // 시각적 효과만 (데미지는 서버에서 처리)
+        console.log('어쌔신 부채꼴 근접 공격 이펙트 (데미지는 서버에서 처리)');
+    }
+
+
+
+    // 각도가 부채꼴 범위 내에 있는지 확인하는 헬퍼 메서드
+    isAngleInRange(angle, startAngle, endAngle) {
+        // 각도를 0~2π 범위로 정규화
+        angle = Phaser.Math.Angle.Normalize(angle);
+        startAngle = Phaser.Math.Angle.Normalize(startAngle);
+        endAngle = Phaser.Math.Angle.Normalize(endAngle);
+        
+        // 부채꼴이 0도를 걸치는 경우 처리
+        if (startAngle > endAngle) {
+            return angle >= startAngle || angle <= endAngle;
+        } else {
+            return angle >= startAngle && angle <= endAngle;
         }
     }
 } 

@@ -22,6 +22,10 @@ export default class WarriorJob extends BaseJob {
         this.isThrusting = false;
         this.thrustSprite = null;
         this.thrustGraphics = null;
+        
+        // 기본 공격 관련
+        this.lastBasicAttackTime = 0;
+        this.basicAttackCooldown = 800; // 기본 공격 쿨다운 (밀리초)
     }
 
     useSkill(skillNumber, options = {}) {
@@ -96,6 +100,8 @@ export default class WarriorJob extends BaseJob {
     useSweep() {
         const skillKey = 'skill2';
         
+        console.log('휩쓸기 시도 - isSweeping:', this.isSweeping, 'isOtherPlayer:', this.player.isOtherPlayer);
+        
         // 쿨타임 체크
         if (!this.isSkillAvailable(skillKey)) {
             this.showCooldownMessage();
@@ -104,6 +110,7 @@ export default class WarriorJob extends BaseJob {
         
         // 이미 휩쓸기 중이거나 다른 플레이어면 실행하지 않음
         if (this.isSweeping || this.player.isOtherPlayer) {
+            console.log('휩쓸기 차단 - isSweeping:', this.isSweeping, 'isOtherPlayer:', this.player.isOtherPlayer);
             return;
         }
         
@@ -115,66 +122,11 @@ export default class WarriorJob extends BaseJob {
         // 휩쓸기 상태 활성화
         this.isSweeping = true;
         
+        console.log('휩쓸기 상태 활성화됨');
+        
         // 스프라이트 변경은 서버에서 처리됨
         
-        // 휩쓸기 시각적 효과
-        this.player.setTint(0xff0000);
-        
-        // 부채꼴 모양의 휩쓸기 그래픽 생성
-        this.sweepGraphics = this.scene.add.graphics();
-        this.sweepGraphics.fillStyle(0xff0000, 0.3);
-        this.sweepGraphics.lineStyle(2, 0xff0000, 1);
-        
-        // 마우스 커서 위치 기준으로 부채꼴 그리기
-        const centerX = this.player.x;
-        const centerY = this.player.y;
-        const radius = skillInfo.range;
-        const angleOffset = Math.PI / 3; // 60도
-        
-        // 마우스 커서 위치 가져오기
-        const mouseX = this.scene.input.mousePointer.worldX;
-        const mouseY = this.scene.input.mousePointer.worldY;
-        
-        // 플레이어에서 마우스 커서까지의 각도 계산
-        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
-        
-        // 부채꼴의 시작과 끝 각도 계산
-        const startAngle = angleToMouse - angleOffset;
-        const endAngle = angleToMouse + angleOffset;
-        
-        this.sweepGraphics.beginPath();
-        this.sweepGraphics.moveTo(centerX, centerY);
-        this.sweepGraphics.arc(centerX, centerY, radius, startAngle, endAngle);
-        this.sweepGraphics.closePath();
-        this.sweepGraphics.fill();
-        this.sweepGraphics.stroke();
-        
-        // 휩쓸기 애니메이션
-        this.scene.tweens.add({
-            targets: this.sweepGraphics,
-            alpha: 0,
-            duration: 500,
-            onComplete: () => {
-                this.endSweep();
-            }
-        });
-        
-        // 휩쓸기 효과 메시지
-        const sweepText = this.scene.add.text(
-            this.player.x, 
-            this.player.y - 60, 
-            '휩쓸기!', 
-            {
-                fontSize: '16px',
-                fill: '#ff0000'
-            }
-        ).setOrigin(0.5);
-        
-        this.scene.time.delayedCall(1000, () => {
-            if (sweepText.active) {
-                sweepText.destroy();
-            }
-        });
+        // 시각적 효과는 NetworkEventManager에서 처리됨 (중복 방지)
 
         // 네트워크 동기화 (서버에서 데미지 계산)
         if (this.player.networkManager && !this.player.isOtherPlayer) {
@@ -183,6 +135,14 @@ export default class WarriorJob extends BaseJob {
                 targetY: this.scene.input.mousePointer.worldY
             });
         }
+
+        // 휩쓸기 상태 자동 해제 (500ms 후)
+        this.player.scene.time.delayedCall(500, () => {
+            if (this.isSweeping) {
+                console.log('휩쓸기 상태 자동 해제 실행');
+                this.endSweep();
+            }
+        });
 
         console.log('휩쓸기 발동!');
     }
@@ -200,16 +160,11 @@ export default class WarriorJob extends BaseJob {
      * 휩쓸기 종료
      */
     endSweep() {
+        console.log('휩쓸기 종료 호출됨 - 이전 상태:', this.isSweeping);
         this.isSweeping = false;
-        this.player.clearTint();
+        // 시각적 효과는 NetworkEventManager에서 처리됨
         
-        // 휩쓸기 그래픽 제거
-        if (this.sweepGraphics) {
-            this.sweepGraphics.destroy();
-            this.sweepGraphics = null;
-        }
-        
-        console.log('휩쓸기 종료');
+        console.log('휩쓸기 종료 완료 - 현재 상태:', this.isSweeping);
     }
 
     /**
@@ -416,10 +371,90 @@ export default class WarriorJob extends BaseJob {
             this.endRoar();
         }
         if (this.isSweeping) {
-            this.endSweep();
+            this.isSweeping = false;
         }
         if (this.isThrusting) {
             this.endThrust();
+        }
+    }
+
+    // 기본 공격 (마우스 좌클릭) - 부채꼴 근접 공격
+    useBasicAttack(targetX, targetY) {
+        const currentTime = this.player.scene.time.now;
+        if (currentTime - this.lastBasicAttackTime < this.basicAttackCooldown) {
+            return false; // 쿨다운 중
+        }
+
+        // 스킬 사용 중에는 기본 공격 막기
+        if (this.isSweeping || this.isThrusting || this.isRoaring) {
+            return false;
+        }
+
+        this.lastBasicAttackTime = currentTime;
+        
+        // 부채꼴 공격 범위 설정
+        const attackRange = 60;
+        const angleOffset = Math.PI / 6; // 30도 (π/6)
+        
+        // 마우스 커서 위치 기준으로 부채꼴 공격
+        const centerX = this.player.x;
+        const centerY = this.player.y;
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, targetX, targetY);
+        
+        // 부채꼴의 시작과 끝 각도 계산
+        const startAngle = angleToMouse - angleOffset;
+        const endAngle = angleToMouse + angleOffset;
+        
+        this.createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, attackRange);
+        this.performMeleeAttack(centerX, centerY, startAngle, endAngle, attackRange);
+        
+        return true;
+    }
+
+    createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, radius) {
+        // 부채꼴 근접 공격 이펙트 (빨간색 부채꼴)
+        const graphics = this.player.scene.add.graphics();
+        graphics.fillStyle(0xff0000, 0.8);
+        graphics.lineStyle(3, 0xff0000, 1);
+        
+        // 부채꼴 그리기
+        graphics.beginPath();
+        graphics.moveTo(centerX, centerY);
+        graphics.arc(centerX, centerY, radius, startAngle, endAngle);
+        graphics.closePath();
+        graphics.fill();
+        graphics.stroke();
+        
+        // 이펙트 애니메이션
+        this.player.scene.tweens.add({
+            targets: graphics,
+            alpha: 0,
+            duration: 400,
+            onComplete: () => {
+                graphics.destroy();
+            }
+        });
+    }
+
+    performMeleeAttack(centerX, centerY, startAngle, endAngle, radius) {
+        // 시각적 효과만 (데미지는 서버에서 처리)
+        console.log('전사 부채꼴 근접 공격 이펙트 (데미지는 서버에서 처리)');
+    }
+
+    // 각도가 부채꼴 범위 내에 있는지 확인하는 헬퍼 메서드
+    isAngleInRange(angle, startAngle, endAngle) {
+        // 각도를 0~2π 범위로 정규화
+        angle = Phaser.Math.Angle.Normalize(angle);
+        startAngle = Phaser.Math.Angle.Normalize(startAngle);
+        endAngle = Phaser.Math.Angle.Normalize(endAngle);
+        
+        // 부채꼴이 0도를 걸치는 경우 처리
+        if (startAngle > endAngle) {
+            return angle >= startAngle || angle <= endAngle;
+        } else {
+            return angle >= startAngle && angle <= endAngle;
         }
     }
 } 

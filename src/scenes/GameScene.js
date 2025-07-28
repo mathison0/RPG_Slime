@@ -96,6 +96,8 @@ export default class GameScene extends Phaser.Scene {
         console.log('GameScene 초기화 완료');
     }
 
+
+
     /**
      * 매니저들 초기화
      */
