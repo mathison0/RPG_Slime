@@ -140,20 +140,7 @@ export default class NinjaJob extends BaseJob {
         super.destroy();
     }
 
-    // 기본 공격 (마우스 좌클릭) - 원거리 투사체
-    useBasicAttack(targetX, targetY) {
-        const currentTime = this.player.scene.time.now;
-        if (currentTime - this.lastBasicAttackTime < this.basicAttackCooldown) {
-            return false; // 쿨다운 중
-        }
-
-        this.lastBasicAttackTime = currentTime;
-        
-        // 투사체 생성
-        this.createProjectile(targetX, targetY);
-        
-        return true;
-    }
+    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
 
     // 닌자용 투사체 생성
     createProjectile(targetX, targetY) {

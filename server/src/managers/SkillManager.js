@@ -1,4 +1,5 @@
 const { getSkillInfo } = require('../../shared/JobClasses.js');
+const gameConfig = require('../config/GameConfig');
 
 /**
  * 스킬 관리 매니저
@@ -13,6 +14,11 @@ class SkillManager {
    * 스킬 사용 시도
    */
   useSkill(player, skillType, targetX = null, targetY = null) {
+    // 죽은 플레이어는 스킬 사용 불가
+    if (player.isDead) {
+      return { success: false, error: 'Cannot use skills while dead' };
+    }
+
     // 기본 공격 처리
     if (skillType === 'basic_attack') {
       return this.handleBasicAttack(player, targetX, targetY);
@@ -46,8 +52,8 @@ class SkillManager {
         duration: duration,
         endTime: now + duration,
         skillInfo: {
-          range: player.calculateSkillRange(skillType, skillInfo.range),
-          damage: player.calculateSkillDamage(skillType, skillInfo.damage),
+          range: this.calculateSkillRange(player, skillType, skillInfo.range),
+          damage: this.calculateSkillDamage(player, skillType, skillInfo.damage),
           duration: duration,
           heal: skillInfo.heal || 0
         }
@@ -64,12 +70,122 @@ class SkillManager {
       targetX,
       targetY,
       skillInfo: {
-        range: player.calculateSkillRange(skillType, skillInfo.range),
-        damage: player.calculateSkillDamage(skillType, skillInfo.damage),
+        range: this.calculateSkillRange(player, skillType, skillInfo.range),
+        damage: this.calculateSkillDamage(player, skillType, skillInfo.damage),
         duration: duration,
         heal: skillInfo.heal || 0
       }
     };
+  }
+
+  /**
+   * 점프 시작 처리
+   */
+  startJump(player, duration = gameConfig.PLAYER.SKILLS.JUMP_DURATION) {
+    if (player.isJumping) {
+      return false;
+    }
+    
+    const now = Date.now();
+    player.isJumping = true;
+    player.currentActions.jump = {
+      startTime: now,
+      duration: duration,
+      endTime: now + duration
+    };
+    
+    return true;
+  }
+
+  /**
+   * 점프 종료 처리
+   */
+  endJump(player) {
+    player.isJumping = false;
+    player.currentActions.jump = null;
+  }
+
+  /**
+   * 액션 상태 정리 (만료된 액션들 제거)
+   */
+  cleanupExpiredActions(player) {
+    const now = Date.now();
+    
+    // 점프 상태 확인
+    if (player.currentActions.jump && now >= player.currentActions.jump.endTime) {
+      this.endJump(player);
+    }
+    
+    // 스킬 상태 확인
+    for (const [skillType, skillAction] of player.currentActions.skills) {
+      if (now >= skillAction.endTime) {
+        player.currentActions.skills.delete(skillType);
+      }
+    }
+  }
+
+  /**
+   * 스킬 범위 계산 (슬라임은 크기에 비례)
+   */
+  calculateSkillRange(player, skillType, baseRange) {
+    if (player.jobClass === 'slime' && skillType === 'spread') {
+      // 슬라임 퍼지기는 크기에 비례 (기본 크기는 Config에서 가져옴)
+      return Math.round(baseRange * (player.size / gameConfig.PLAYER.SKILLS.BASE_RANGE_REFERENCE));
+    }
+    return baseRange;
+  }
+
+  /**
+   * 스킬 데미지 계산
+   */
+  calculateSkillDamage(player, skillType, baseDamage) {
+    if (typeof baseDamage === 'string') {
+      // 문자열 수식 처리 (예: 'attack', 'attack * 1.5')
+      if (baseDamage === 'attack') {
+        baseDamage = player.attack;
+      } else if (baseDamage.includes('attack')) {
+        // 간단한 수식 계산 (attack * 1.5 등)
+        baseDamage = this.parseFormula(baseDamage, player.attack);
+      }
+    }
+    
+    return Math.round(baseDamage);
+  }
+
+  /**
+   * 안전한 수식 파싱 (eval 대신 사용)
+   * 'attack * 1.5', 'attack + 10' 등의 간단한 수식을 파싱
+   */
+  parseFormula(formula, attackValue) {
+    // 공백 제거
+    const cleanFormula = formula.replace(/\s/g, '');
+    
+    // attack 값으로 치환
+    const withValue = cleanFormula.replace(/attack/g, attackValue);
+    
+    // 간단한 수식 파싱 (*, +, -, / 지원)
+    const match = withValue.match(/^(\d+(?:\.\d+)?)\s*([+\-*/])\s*(\d+(?:\.\d+)?)$/);
+    if (match) {
+      const [, left, operator, right] = match;
+      const leftNum = parseFloat(left);
+      const rightNum = parseFloat(right);
+      
+      switch (operator) {
+        case '*': return Math.round(leftNum * rightNum);
+        case '/': return Math.round(leftNum / rightNum);
+        case '+': return Math.round(leftNum + rightNum);
+        case '-': return Math.round(leftNum - rightNum);
+        default: return attackValue;
+      }
+    }
+    
+    // 단순 숫자인 경우
+    const numMatch = withValue.match(/^(\d+(?:\.\d+)?)$/);
+    if (numMatch) {
+      return Math.round(parseFloat(numMatch[1]));
+    }
+    
+    return attackValue;
   }
 
   /**
@@ -420,6 +536,11 @@ class SkillManager {
    * 기본 공격 처리
    */
   handleBasicAttack(player, targetX, targetY) {
+    // 죽은 플레이어는 기본 공격 불가
+    if (player.isDead) {
+      return { success: false, error: 'Cannot attack while dead' };
+    }
+
     const now = Date.now();
     
     // 기본 공격 쿨다운 체크 (직업별로 다름)

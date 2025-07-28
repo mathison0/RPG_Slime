@@ -42,6 +42,7 @@ const JobClasses = {
                 type: 'spread'
             },
         ],
+        basicAttackCooldown: 600,
         color: 0x00ff00,
         maxLevel: 50
     },
@@ -73,6 +74,7 @@ const JobClasses = {
                 type: 'stealth'
             }
         ],
+        basicAttackCooldown: 300,
         color: 0x000000,
         maxLevel: 50
     },
@@ -104,6 +106,7 @@ const JobClasses = {
                 type: 'stealth'
             }
         ],
+        basicAttackCooldown: 500,
         color: 0x000000,
         maxLevel: 50
     },
@@ -154,6 +157,7 @@ const JobClasses = {
                 type: 'thrust'
             }
         ],
+        basicAttackCooldown: 800,
         color: 0xff0000,
         maxLevel: 50
     },
@@ -206,6 +210,7 @@ const JobClasses = {
                 type: 'magic_missile'
             }
         ],
+        basicAttackCooldown: 700,
         color: 0x0000ff,
         maxLevel: 50
     },
@@ -237,6 +242,7 @@ const JobClasses = {
                 type: 'repair'
             }
         ],
+        basicAttackCooldown: 600,
         color: 0x556B2F,
         maxLevel: 50
     },
@@ -278,6 +284,7 @@ const JobClasses = {
                 type: 'focus'
             }
         ],
+        basicAttackCooldown: 500,
         color: 0xFF8C00,
         maxLevel: 50
     },
@@ -332,6 +339,7 @@ const JobClasses = {
                 type: 'heal_field'
             }
         ],
+        basicAttackCooldown: 900,
         color: 0xFFFF00,
         maxLevel: 50
     }
