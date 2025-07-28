@@ -15,7 +15,7 @@ export default class EffectManager {
      * @param {string} color - 텍스트 색상
      */
     showDamageText(x, y, damage, color = '#ff0000') {
-        const damageText = this.scene.add.text(x, y - 30, `-${damage}`, {
+        const damageText = this.scene.add.text(x, y, `${damage}`, {
             fontSize: '16px',
             fill: color,
             fontStyle: 'bold'
