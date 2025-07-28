@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
-// JobClasses functions available via window.JobClassesModule
-const { getJobInfo, calculateStats } = window.JobClassesModule;
+import { getJobInfo, calculateStats } from '../shared/JobClasses.js';
 import AssetLoader from '../utils/AssetLoader.js';
 import SkillCooldownUI from '../ui/SkillCooldownUI.js';
 import EffectManager from '../effects/EffectManager.js';
