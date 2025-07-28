@@ -27,7 +27,7 @@ export default class WarriorJob extends BaseJob {
      * 돌진 스킬
      */
     useCharge() {
-        const skillKey = 'charge';
+        const skillKey = 'skill1'; // 통일된 스킬 키 사용
         
         // 쿨타임 체크
         if (!this.isSkillAvailable(skillKey)) {
@@ -188,24 +188,9 @@ export default class WarriorJob extends BaseJob {
     }
 
     /**
-     * 쿨타임 정보 반환
-     */
-    getSkillCooldowns() {
-        return {
-            1: {
-                remaining: this.getRemainingCooldown('charge'),
-                max: this.jobInfo.skills[0].cooldown
-            }
-        };
-    }
-
-    /**
      * 정리 작업
      */
     destroy() {
         super.destroy();
-        if (this.isCharging) {
-            this.endCharge();
-        }
     }
 } 

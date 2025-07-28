@@ -34,7 +34,7 @@ export default class SkillCooldownUI {
         cooldown1.setScrollFactor(0);
         cooldown1.setDepth(1001);
         
-        const number1 = this.scene.add.text(uiX1, uiY1, '1', {
+        const number1 = this.scene.add.text(uiX1, uiY1, 'Q', {
             fontSize: '18px',
             fill: '#ffffff',
             fontStyle: 'bold'
@@ -76,7 +76,7 @@ export default class SkillCooldownUI {
         cooldown2.setScrollFactor(0);
         cooldown2.setDepth(1001);
         
-        const number2 = this.scene.add.text(uiX2, uiY2, '2', {
+        const number2 = this.scene.add.text(uiX2, uiY2, 'E', {
             fontSize: '18px',
             fill: '#ffffff',
             fontStyle: 'bold'
@@ -98,7 +98,7 @@ export default class SkillCooldownUI {
         cooldown3.setScrollFactor(0);
         cooldown3.setDepth(1001);
         
-        const number3 = this.scene.add.text(uiX3, uiY3, '3', {
+        const number3 = this.scene.add.text(uiX3, uiY3, 'R', {
             fontSize: '18px',
             fill: '#ffffff',
             fontStyle: 'bold'
@@ -173,31 +173,59 @@ export default class SkillCooldownUI {
      * 단일 스킬 쿨타임 UI 업데이트
      */
     updateSingleSkillCooldown(cooldownGraphics, numberText, x, y, radius, remainingTime, maxCooldown) {
+        cooldownGraphics.clear();
+        
         if (remainingTime > 0) {
-            // 쿨타임 진행률 계산 (0~1)
+            // 쿨타임 중일 때 - 진행률에 따라 원이 채워짐
             const progress = 1 - (remainingTime / maxCooldown);
             
-            // 쿨타임 원 그리기 (시계방향으로 채워짐)
-            cooldownGraphics.clear();
-            cooldownGraphics.fillStyle(0x0066ff, 0.8);
+            // 배경 원 (어두운 색)
+            cooldownGraphics.fillStyle(0x333333, 0.8);
+            cooldownGraphics.fillCircle(x, y, radius);
             
-            // 시계방향으로 채워지는 원 그리기
-            const startAngle = -Math.PI / 2; // 12시 방향부터 시작
-            const endAngle = startAngle + (progress * 2 * Math.PI);
-            
-            cooldownGraphics.beginPath();
-            cooldownGraphics.moveTo(x, y);
-            cooldownGraphics.arc(x, y, radius, startAngle, endAngle);
-            cooldownGraphics.closePath();
-            cooldownGraphics.fillPath();
+            // 진행률 원 (파란색, 시계방향으로 채워짐)
+            if (progress > 0) {
+                cooldownGraphics.fillStyle(0x0066ff, 0.8);
+                
+                const startAngle = -Math.PI / 2; // 12시 방향부터 시작
+                const endAngle = startAngle + (progress * 2 * Math.PI);
+                
+                cooldownGraphics.beginPath();
+                cooldownGraphics.moveTo(x, y);
+                cooldownGraphics.arc(x, y, radius, startAngle, endAngle);
+                cooldownGraphics.closePath();
+                cooldownGraphics.fillPath();
+            }
             
             // 쿨타임 중일 때는 번호 색상을 어둡게
             numberText.setStyle({ fill: '#888888' });
+            
+            // 남은 시간 표시 (1초 이상일 때만)
+            if (remainingTime >= 1000) {
+                const seconds = Math.ceil(remainingTime / 1000);
+                const timeText = this.scene.add.text(x, y + radius + 15, seconds.toString(), {
+                    fontSize: '12px',
+                    fill: '#ffffff',
+                    fontStyle: 'bold'
+                }).setOrigin(0.5);
+                timeText.setScrollFactor(0);
+                timeText.setDepth(1003);
+                
+                // 1초 후 텍스트 제거
+                this.scene.time.delayedCall(1000, () => {
+                    if (timeText.active) {
+                        timeText.destroy();
+                    }
+                });
+            }
         } else {
-            // 쿨타임이 끝났을 때
-            cooldownGraphics.clear();
-            cooldownGraphics.fillStyle(0x0066ff, 0.8);
+            // 쿨타임이 끝났을 때 - 사용 가능 상태
+            cooldownGraphics.fillStyle(0x333333, 0.8);
             cooldownGraphics.fillCircle(x, y, radius);
+            
+            // 테두리로 사용 가능 표시
+            cooldownGraphics.lineStyle(2, 0x00ff00, 0.8);
+            cooldownGraphics.strokeCircle(x, y, radius);
             
             // 사용 가능할 때는 번호 색상을 밝게
             numberText.setStyle({ fill: '#ffffff' });
