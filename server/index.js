@@ -30,6 +30,7 @@ class GameServer {
     
     // 매니저들 초기화
     this.gameStateManager = new GameStateManager();
+    this.gameStateManager.io = this.io; // io 객체 설정
     this.enemyManager = new EnemyManager(this.io, this.gameStateManager);
     this.socketEventManager = new SocketEventManager(this.io, this.gameStateManager, this.enemyManager);
     

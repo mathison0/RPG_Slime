@@ -327,22 +327,11 @@ class SkillManager {
     damageResult.affectedPlayers.push(...firstAttackResult.affectedPlayers);
     damageResult.totalDamage += firstAttackResult.totalDamage;
 
-    // 두 번째 공격 (150ms 후)
-    setTimeout(() => {
-      const secondAttackResult = this.applyMeleeSweepDamage(player, baseDamage * 0.5, x, y, targetX, targetY, attackRange, angleOffset);
-      // 두 번째 공격 결과는 별도로 브로드캐스트
-      this.gameStateManager.io.emit('player-skill-used', {
-        playerId: player.id,
-        skillType: 'basic_attack_second',
-        timestamp: Date.now(),
-        x: x,
-        y: y,
-        targetX: targetX,
-        targetY: targetY,
-        team: player.team,
-        damageResult: secondAttackResult
-      });
-    }, 150);
+    // 두 번째 공격 (즉시 실행)
+    const secondAttackResult = this.applyMeleeSweepDamage(player, baseDamage * 0.5, x, y, targetX, targetY, attackRange, angleOffset);
+    damageResult.affectedEnemies.push(...secondAttackResult.affectedEnemies);
+    damageResult.affectedPlayers.push(...secondAttackResult.affectedPlayers);
+    damageResult.totalDamage += secondAttackResult.totalDamage;
 
     return damageResult;
   }
