@@ -439,14 +439,3 @@ if (typeof module !== 'undefined' && module.exports) {
         createSkillTypeMap
     };
 }
-
-// ES6 모듈 export (클라이언트 번들러용)
-export {
-    JobClasses,
-    JobRequirements,
-    getJobInfo,
-    canChangeJob,
-    calculateStats,
-    getSkillInfo,
-    createSkillTypeMap
-};
