@@ -422,6 +422,11 @@ class SkillManager {
   handleBasicAttack(player, targetX, targetY) {
     const now = Date.now();
     
+    // 기절 상태에서는 기본 공격 사용 불가
+    if (player.isStunned) {
+      return { success: false, error: 'Cannot use basic attack while stunned' };
+    }
+    
     // 기본 공격 쿨다운 체크 (직업별로 다름)
     const cooldowns = {
       'slime': 600,
@@ -522,11 +527,27 @@ class SkillManager {
         break;
 
       case 'sweep':
-        this.applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult);
+        // 휩쓸기는 지연 데미지 처리
+        const sweepDelay = skillInfo.delay || 1000; // 기본값 1초
+        
+        console.log(`휩쓸기 스킬 사용! 플레이어: ${player.id}, 지연시간: ${sweepDelay}ms`);
+        
+        // 지연 시간 후 데미지 적용
+        setTimeout(() => {
+          console.log(`휩쓸기 지연 데미지 적용! 플레이어: ${player.id}`);
+          this.applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult);
+        }, sweepDelay);
         break;
 
       case 'thrust':
-        this.applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult);
+        // 찌르기는 지연 데미지 처리
+        const delay = skillInfo.delay || 1500; // 기본값 1.5초
+        
+        // 지연 시간 후 데미지 적용
+        setTimeout(() => {
+          console.log(`찌르기 지연 데미지 적용! 플레이어: ${player.id}`);
+          this.applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult);
+        }, delay);
         break;
     }
 
@@ -709,6 +730,16 @@ class SkillManager {
 
   // 공통 데미지 적용 메서드들
   applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult) {
+    console.log(`applySweepDamage 호출됨! 플레이어: ${player.id}, 범위: ${range}, 데미지: ${damage}`);
+    
+    // JobClasses에서 휩쓸기 스킬의 stunDuration 값 가져오기
+    const { getJobInfo } = require('../../shared/JobClasses.js');
+    const warriorJobInfo = getJobInfo('warrior');
+    const sweepSkill = warriorJobInfo.skills.find(skill => skill.type === 'sweep');
+    const stunDuration = sweepSkill ? sweepSkill.stunDuration : 2000; // 기본값 2초
+    
+    console.log(`기절 지속시간: ${stunDuration}ms`);
+    
     // 적들 대상
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
@@ -732,13 +763,20 @@ class SkillManager {
       if (this.isInSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
         const actualDamage = damage;
         targetPlayer.takeDamage(actualDamage);
+        
+        // 기절 효과 적용
+        console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
+        targetPlayer.startStun(stunDuration);
+        
         damageResult.affectedPlayers.push({
           id: targetPlayer.id,
           damage: damage,
           actualDamage: actualDamage,
           x: targetPlayer.x,
           y: targetPlayer.y,
-          team: targetPlayer.team
+          team: targetPlayer.team,
+          isStunned: true,
+          stunDuration: stunDuration
         });
         damageResult.totalDamage += actualDamage;
       }
@@ -841,7 +879,12 @@ class SkillManager {
       angleDiff = 2 * Math.PI - angleDiff;
     }
     
-    const angleOffset = Math.PI / 3; // 60도
+    // JobClasses에서 휩쓸기 스킬의 angleOffset 값 가져오기
+    const { getJobInfo } = require('../../shared/JobClasses.js');
+    const warriorJobInfo = getJobInfo('warrior');
+    const sweepSkill = warriorJobInfo.skills.find(skill => skill.type === 'sweep');
+    const angleOffset = sweepSkill ? sweepSkill.angleOffset : Math.PI / 3; // 기본값 60도
+    
     return angleDiff <= angleOffset;
   }
 

@@ -42,6 +42,11 @@ class ServerPlayer {
     this.stealthStartTime = 0;
     this.stealthDuration = 0;
     
+    // 기절 상태
+    this.isStunned = false;
+    this.stunStartTime = 0;
+    this.stunDuration = 0;
+    
     // 무적 상태 (치트)
     this.isInvincible = false;
   }
@@ -136,6 +141,7 @@ class ServerPlayer {
       jobClass: this.jobClass,
       direction: this.direction,
       isJumping: this.isJumping,
+      isStunned: this.isStunned, // 기절 상태 추가
       size: this.size,
       attack: this.attack,
       speed: this.speed,
@@ -280,6 +286,11 @@ class ServerPlayer {
       return { success: false, error: 'Cannot use skill while jumping' };
     }
 
+    // 기절 상태에서는 스킬 사용 불가
+    if (this.isStunned) {
+      return { success: false, error: 'Cannot use skill while stunned' };
+    }
+
     // 스킬 사용 처리
     this.skillCooldowns[skillType] = now;
     
@@ -342,6 +353,50 @@ class ServerPlayer {
   endJump() {
     this.isJumping = false;
     this.currentActions.jump = null;
+  }
+
+  /**
+   * 기절 상태 시작
+   */
+  startStun(duration) {
+    this.isStunned = true;
+    this.stunStartTime = Date.now();
+    this.stunDuration = duration;
+    
+    // 기절 지속시간 후 자동 해제
+    setTimeout(() => {
+      if (this.isStunned) {
+        this.endStun();
+      }
+    }, duration);
+    
+    
+    // 기절 상태 변경을 모든 클라이언트에게 즉시 알림
+    if (global.io) {
+      global.io.emit('player-stunned', {
+        playerId: this.id,
+        isStunned: true,
+        duration: duration
+      });
+    }
+  }
+
+  /**
+   * 기절 상태 종료
+   */
+  endStun() {
+    this.isStunned = false;
+    this.stunStartTime = 0;
+    this.stunDuration = 0;
+    
+    // 기절 상태 해제를 모든 클라이언트에게 즉시 알림
+    if (global.io) {
+      global.io.emit('player-stunned', {
+        playerId: this.id,
+        isStunned: false,
+        duration: 0
+      });
+    }
   }
 
   /**

@@ -121,8 +121,11 @@ const JobClasses = {
                 name: '휩쓸기',
                 description: '부채꼴 범위 공격으로 적을 기절시킵니다.',
                 cooldown: 3000,
-                damage: 'attack * 1.5',
-                range: 80,
+                damage: 'attack',
+                range: 100,
+                angleOffset: Math.PI / 4, 
+                delay: 1000, // 1초 시전 시간
+                stunDuration: 2000, // 2초 기절 지속시간
                 key: 'E',
                 type: 'sweep'
             },
@@ -131,7 +134,9 @@ const JobClasses = {
                 description: '직사각형 범위 공격으로 강력한 데미지를 입힙니다.',
                 cooldown: 4000,
                 damage: 'attack * 3',
-                range: 120,
+                range: 200,
+                width: 50, // 직사각형의 가로 길이
+                delay: 1500, // 1.5초 지연 데미지
                 key: 'R',
                 type: 'thrust'
             }

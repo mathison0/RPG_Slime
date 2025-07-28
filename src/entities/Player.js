@@ -294,6 +294,16 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
         
+        // 전사 스킬 사용 중이면 이동 불가
+        if (this.isUsingWarriorSkill) {
+            return;
+        }
+        
+        // 기절 상태면 이동 불가
+        if (this.isStunned) {
+            return;
+        }
+        
         let movingUp = false;
         let movingDown = false;
         let movingLeft = false;
@@ -358,6 +368,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
 
+        // 기절 상태에서는 기본 공격 사용 불가
+        if (this.isStunned) {
+            return;
+        }
+
         // 중복 실행 방지 (마지막 클릭 시간 체크)
         const currentTime = this.scene.time.now;
         if (this.lastClickTime && currentTime - this.lastClickTime < 100) {
@@ -386,6 +401,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     handleSkills() {
         // 죽은 상태에서는 스킬과 점프 사용 불가
         if (this.isDead) {
+            return;
+        }
+
+        // 기절 상태에서는 스킬과 점프 사용 불가
+        if (this.isStunned) {
             return;
         }
 
@@ -542,7 +562,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      */
     updateJobSprite() {
         // 스킬 사용 중일 때는 스프라이트 변경하지 않음
-        if (this.isUsingSlimeSkill || this.isUsingRoarSkill) {
+        if (this.isUsingSlimeSkill || this.isUsingRoarSkill || this.isUsingWarriorSkill) {
             return;
         }
         
@@ -708,6 +728,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.setPosition(data.x, data.y);
         this.direction = data.direction;
         this.isJumping = data.isJumping;
+        this.isStunned = data.isStunned; // 기절 상태 추가
         this.updateJobSprite();
     }
 
