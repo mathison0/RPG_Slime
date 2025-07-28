@@ -1452,6 +1452,53 @@ export default class NetworkEventManager {
     }
 
     /**
+     * 돌진 이펙트
+     */
+    showChargeEffect(player, data = null) {
+        // 플레이어에게 빨간색 틴트 적용
+        player.setTint(0xff6666);
+        
+        // 돌진 효과 메시지
+        const chargeText = this.scene.add.text(
+            player.x, 
+            player.y - 60, 
+            '돌진!', 
+            {
+                fontSize: '16px',
+                fill: '#ff0000',
+                stroke: '#000000',
+                strokeThickness: 2
+            }
+        ).setOrigin(0.5);
+        
+        // 돌진 궤적 이펙트 생성
+        const trail = this.scene.add.graphics();
+        trail.lineStyle(3, 0xff0000, 0.7);
+        trail.beginPath();
+        trail.moveTo(player.x, player.y);
+        
+        // 서버에서 받은 지속시간 사용 (기본값 500ms)
+        const duration = data?.skillInfo?.duration || 500;
+        
+        // 텍스트 제거
+        this.scene.time.delayedCall(1000, () => {
+            if (chargeText.active) {
+                chargeText.destroy();
+            }
+        });
+        
+        // 돌진 완료 후 틴트 제거 및 궤적 정리
+        this.scene.time.delayedCall(duration, () => {
+            if (player.active) {
+                player.clearTint();
+            }
+            if (trail.active) {
+                trail.destroy();
+            }
+        });
+    }
+
+    /**
      * 게임 상태 리셋
      */
     resetGameState() {

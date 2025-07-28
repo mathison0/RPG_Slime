@@ -43,8 +43,8 @@ export default class WarriorJob extends BaseJob {
     /**
      * 울부짖기 스킬 (Q키)
      */
-    useRoar() {
-        const skillKey = 'roar';
+    useCharge() {
+        const skillKey = 'skill1'; // 통일된 스킬 키 사용
         
         // 쿨타임 체크
         if (!this.isSkillAvailable(skillKey)) {

@@ -22,30 +22,17 @@ export default class MechanicJob extends BaseJob {
     }
 
     /**
-     * 와드 스킬
-     */
-    useWard() {
-        // 다른 플레이어면 실행하지 않음
-        if (this.player.isOtherPlayer) {
-            return;
-        }
-        
-        // 네트워크 매니저가 없으면 실행하지 않음
-        if (!this.player.networkManager) {
-            console.log('NetworkManager가 없어서 스킬을 사용할 수 없습니다.');
-            return;
-        }
-
-        // 서버에 스킬 사용 요청
-        this.player.networkManager.useSkill('ward');
-        
-        console.log('와드 스킬 서버 요청 전송');
-    }
-
-    /**
      * 수리 스킬
      */
     useRepair() {
+        const skillKey = 'skill1'; // 통일된 스킬 키 사용
+        
+        // 쿨타임 체크
+        if (!this.isSkillAvailable(skillKey)) {
+            this.showCooldownMessage();
+            return;
+        }
+        
         // 다른 플레이어면 실행하지 않음
         if (this.player.isOtherPlayer) {
             return;
@@ -56,22 +43,15 @@ export default class MechanicJob extends BaseJob {
             console.log('NetworkManager가 없어서 스킬을 사용할 수 없습니다.');
             return;
         }
+        
+        const skillInfo = this.jobInfo.skills[0]; // 수리 스킬
+        
+        // 쿨타임 설정
+        this.setSkillCooldown(skillKey, skillInfo.cooldown);
 
         // 서버에 스킬 사용 요청
         this.player.networkManager.useSkill('repair');
         
         console.log('수리 스킬 서버 요청 전송');
-    }
-
-    /**
-     * 쿨타임 정보 반환
-     */
-    getSkillCooldowns() {
-        return {
-            1: {
-                remaining: this.getRemainingCooldown('repair'),
-                max: this.jobInfo.skills[0].cooldown
-            }
-        };
     }
 } 
