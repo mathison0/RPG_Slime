@@ -190,8 +190,23 @@ function getDynamicPlayerSize() {
     };
 }
 
-// CommonJS export (서버와 클라이언트 모두 지원)
-module.exports = {
+// UMD 패턴 - CommonJS와 ES6 모듈 둘 다 지원
+// CommonJS export (서버용) - 조건부 처리
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        AssetConfig,
+        getPlayerSpriteKey,
+        isJobSupported,
+        getSpriteSize,
+        getUISize,
+        updateServerConfig,
+        getDynamicWallSize,
+        getDynamicPlayerSize
+    };
+}
+
+// ES6 named exports (클라이언트 번들러용)
+export {
     AssetConfig,
     getPlayerSpriteKey,
     isJobSupported,
