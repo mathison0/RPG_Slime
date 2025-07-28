@@ -28,6 +28,7 @@ const JobClasses = {
                 cooldown: 1000,
                 damage: 'attack',
                 range: 50,
+                duration: 400,
                 key: '1',
                 type: 'spread'
             },
@@ -116,13 +117,32 @@ const JobClasses = {
         },
         skills: [
             {
-                name: '돌진',
-                description: '앞으로 빠르게 돌진하여 적을 공격합니다.',
-                cooldown: 5000,
-                damage: 'attack * 1.5',
-                range: 100,
-                key: '1',
-                type: 'charge'
+                name: '울부짖기',
+                description: '강력한 울부짖기로 주변 적들을 위협합니다.',
+                cooldown: 1000,
+                damage: 0,
+                range: 50,
+                duration: 400,
+                key: 'Q',
+                type: 'roar'
+            },
+            {
+                name: '휩쓸기',
+                description: '부채꼴 범위 공격으로 적을 기절시킵니다.',
+                cooldown: 3000,
+                damage: 'attack * 1.2',
+                range: 80,
+                key: 'E',
+                type: 'sweep'
+            },
+            {
+                name: '찌르기',
+                description: '직사각형 범위 공격으로 강력한 데미지를 입힙니다.',
+                cooldown: 4000,
+                damage: 'attack * 2.0',
+                range: 120,
+                key: 'R',
+                type: 'thrust'
             }
         ],
         color: 0xff0000,
@@ -327,15 +347,4 @@ if (typeof module !== 'undefined' && module.exports) {
         getSkillInfo,
         createSkillTypeMap
     };
-}
-
-// ES6 export (번들러용)
-export {
-    JobClasses,
-    JobRequirements,
-    getJobInfo,
-    canChangeJob,
-    calculateStats,
-    getSkillInfo,
-    createSkillTypeMap
-}; 
+} 

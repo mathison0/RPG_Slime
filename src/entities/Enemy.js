@@ -71,6 +71,10 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         
         // 서버에서 관리되는 적은 클라이언트에서 AI 실행하지 않음
         if (this.isServerControlled) {
+            // 서버에서 받은 속도로 이동만 처리
+            if (this.vx !== undefined && this.vy !== undefined) {
+                this.setVelocity(this.vx, this.vy);
+            }
             return;
         }
         
@@ -283,5 +287,27 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     // 네트워크 ID 설정
     setNetworkId(id) {
         this.networkId = id;
+    }
+
+    /**
+     * 서버에서 받은 체력 정보로 업데이트
+     */
+    updateHealthFromServer() {
+        // 서버에서 이미 데미지가 적용되었으므로 클라이언트에서는 시각적 효과만 처리
+        if (this.hp <= 0 && !this.isDead) {
+            this.die();
+        }
+    }
+
+    /**
+     * 서버에서 체력 정보 설정
+     */
+    setHealthFromServer(hp, maxHp) {
+        this.hp = hp;
+        this.maxHp = maxHp;
+        
+        if (this.hp <= 0 && !this.isDead) {
+            this.die();
+        }
     }
 }

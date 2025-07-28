@@ -1,5 +1,6 @@
 import BaseJob from './BaseJob.js';
-import { getJobInfo } from '../../../shared/JobClasses.js';
+// JobClasses functions available via window.JobClassesModule
+const { getJobInfo } = window.JobClassesModule;
 
 /**
  * 메카닉 직업 클래스

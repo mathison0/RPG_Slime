@@ -8,6 +8,7 @@ const gameConfig = {
   MAP_HEIGHT_TILES: 120,
   TILE_SIZE: 100,
   SPAWN_WIDTH_TILES: 6,
+  SPAWN_BARRIER_EXTRA_TILES: 4, // 스폰 구역보다 추가로 확장할 타일 수
   PLAZA_SIZE_TILES: 30,
   
   // 계산된 픽셀 크기 (하위 호환성을 위해 유지)
@@ -50,6 +51,13 @@ const gameConfig = {
     VISION_RANGE: 300,
     DEFAULT_SIZE: 64,
     DISCONNECT_TIMEOUT: 300000 // 5분
+  },
+  
+  // 스폰 배리어 관련 설정
+  SPAWN_BARRIER: {
+    DAMAGE_INTERVAL: 1000, // 1초마다 데미지
+    DAMAGE_PERCENT: 0.1, // 최대 체력의 10%
+    WARNING_ENABLED: true
   },
   
   // 서버 관련 설정

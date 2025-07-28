@@ -341,6 +341,9 @@ export default class MinimapManager {
             });
         }
         
+        // 핑 위치 그리기 (빅맵에 표시)
+        this.drawBigMapPings(scale);
+        
         // 내 플레이어
         this.bigMap.fillStyle(0x0099ff);
         this.bigMap.fillCircle(this.scene.player.x * scale, this.scene.player.y * scale, 5);
@@ -383,6 +386,53 @@ export default class MinimapManager {
     }
 
     /**
+     * 빅맵에서 핑 위치 그리기
+     */
+    drawBigMapPings(scale) {
+        if (!this.scene.pingManager) return;
+        
+        const size = this.bigMapSize;
+        
+        // 활성 핑 화살표들의 위치를 빅맵에 표시
+        for (const [pingId, arrowData] of this.scene.pingManager.activePingArrows) {
+            const { pingX, pingY } = arrowData;
+            
+            const pingMapX = pingX * scale;
+            const pingMapY = pingY * scale;
+            
+            // 빅맵 범위 내에 있는 핑만 표시
+            if (pingMapX >= 0 && pingMapX <= size && pingMapY >= 0 && pingMapY <= size) {
+                // 핑 위치를 빨간색 점으로 표시
+                this.bigMap.fillStyle(0xff0000, 0.8);
+                this.bigMap.fillCircle(pingMapX, pingMapY, 3);
+                
+                // 핑 테두리
+                this.bigMap.lineStyle(1, 0xffffff, 1.0);
+                this.bigMap.strokeCircle(pingMapX, pingMapY, 3);
+            }
+        }
+        
+        // 핑 위치 정보가 있는 모든 오브젝트들도 빅맵에 표시
+        this.scene.children.list.forEach(child => {
+            if (child.pingWorldX !== undefined && child.pingWorldY !== undefined) {
+                const pingMapX = child.pingWorldX * scale;
+                const pingMapY = child.pingWorldY * scale;
+                
+                // 빅맵 범위 내에 있는 핑만 표시
+                if (pingMapX >= 0 && pingMapX <= size && pingMapY >= 0 && pingMapY <= size) {
+                    // 핑 위치를 빨간색 점으로 표시
+                    this.bigMap.fillStyle(0xff0000, 0.8);
+                    this.bigMap.fillCircle(pingMapX, pingMapY, 3);
+                    
+                    // 핑 테두리
+                    this.bigMap.lineStyle(1, 0xffffff, 1.0);
+                    this.bigMap.strokeCircle(pingMapX, pingMapY, 3);
+                }
+            }
+        });
+    }
+
+    /**
      * 맵 토글 처리
      */
     handleMapToggle() {
@@ -390,6 +440,11 @@ export default class MinimapManager {
             this.bigMapVisible = !this.bigMapVisible;
             this.bigMap.setVisible(this.bigMapVisible);
             this.minimap.setVisible(!this.bigMapVisible);
+            
+            // 빅맵이 표시될 때 핑 위치도 함께 업데이트
+            if (this.bigMapVisible) {
+                this.drawBigMap();
+            }
         }
     }
 

@@ -192,6 +192,107 @@ class GameStateManager {
   }
 
   /**
+   * 스폰 배리어 구역에 있는 플레이어들 체크 및 데미지 적용
+   */
+  checkSpawnBarrierDamage() {
+    if (!this.mapData) return [];
+    
+    const damagedPlayers = [];
+    const now = Date.now();
+    
+    for (const player of this.players.values()) {
+      // 죽은 플레이어는 데미지 체크에서 제외
+      if (player.isDead) {
+        continue;
+      }
+      
+      if (!player.lastSpawnBarrierCheck) {
+        player.lastSpawnBarrierCheck = now;
+        continue;
+      }
+      
+      // 스폰 배리어 데미지 간격 체크 (1초)
+      if (now - player.lastSpawnBarrierCheck < gameConfig.SPAWN_BARRIER.DAMAGE_INTERVAL) {
+        continue;
+      }
+      
+      // 상대팀 스폰 배리어 구역에 있는지 체크
+      const inEnemyBarrierZone = this.isInEnemySpawnBarrierZone(player);
+      
+      if (inEnemyBarrierZone) {
+        // 체력 감소
+        const damage = Math.ceil(player.maxHp * gameConfig.SPAWN_BARRIER.DAMAGE_PERCENT);
+        player.hp = Math.max(0, player.hp - damage);
+        
+        // 즉시 사망 상태 확인 및 설정
+        const isDead = player.hp <= 0;
+        if (isDead) {
+          player.isDead = true;
+          console.log(`플레이어 ${player.id} 스폰 배리어로 사망 처리 완료`);
+        }
+        
+        damagedPlayers.push({
+          playerId: player.id,
+          damage: damage,
+          currentHp: player.hp,
+          maxHp: player.maxHp,
+          isDead: isDead
+        });
+        
+        console.log(`플레이어 ${player.id} 스폰 배리어 데미지: -${damage} HP (${player.hp}/${player.maxHp}) isDead: ${isDead}`);
+        
+        player.lastSpawnBarrierCheck = now;
+      } else {
+        // 스폰 배리어 구역에 없으면 타이머 리셋
+        player.lastSpawnBarrierCheck = now;
+      }
+    }
+    
+    return damagedPlayers;
+  }
+  
+  /**
+   * 플레이어가 상대팀 스폰 배리어 구역에 있는지 체크
+   */
+  isInEnemySpawnBarrierZone(player) {
+    if (!this.mapData) return false;
+    
+    const extraWidth = gameConfig.SPAWN_BARRIER_EXTRA_TILES * gameConfig.TILE_SIZE;
+    const extraHeight = extraWidth; // 상하좌우 동일하게 확장
+    
+    if (player.team === 'red') {
+      // 빨간팀 플레이어가 파란팀 스폰 배리어 구역에 있는지 체크
+      const blueBarrierZone = {
+        x: this.mapData.blueSpawnRect.x - extraWidth,
+        y: this.mapData.blueSpawnRect.y - extraHeight,
+        right: this.mapData.blueSpawnRect.x + this.mapData.blueSpawnRect.width + extraWidth,
+        bottom: this.mapData.blueSpawnRect.y + this.mapData.blueSpawnRect.height + extraHeight
+      };
+      
+      return player.x >= blueBarrierZone.x && 
+             player.x <= blueBarrierZone.right &&
+             player.y >= blueBarrierZone.y && 
+             player.y <= blueBarrierZone.bottom;
+             
+    } else if (player.team === 'blue') {
+      // 파란팀 플레이어가 빨간팀 스폰 배리어 구역에 있는지 체크
+      const redBarrierZone = {
+        x: this.mapData.redSpawnRect.x - extraWidth,
+        y: this.mapData.redSpawnRect.y - extraHeight,
+        right: this.mapData.redSpawnRect.x + this.mapData.redSpawnRect.width + extraWidth,
+        bottom: this.mapData.redSpawnRect.y + this.mapData.redSpawnRect.height + extraHeight
+      };
+      
+      return player.x >= redBarrierZone.x && 
+             player.x <= redBarrierZone.right &&
+             player.y >= redBarrierZone.y && 
+             player.y <= redBarrierZone.bottom;
+    }
+    
+    return false;
+  }
+
+  /**
    * 게임 상태 리셋
    */
   reset() {

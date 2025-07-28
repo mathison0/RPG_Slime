@@ -99,8 +99,14 @@ class NetworkManager {
             this.emit('enemy-damaged', data);
         });
 
-        this.socket.on('enemies-update', (data) => {
-            this.emit('enemies-update', data);
+        // 플레이어 데미지 이벤트
+        this.socket.on('player-damaged', (data) => {
+            this.emit('player-damaged', data);
+        });
+
+        // 플레이어 상태 업데이트 이벤트
+        this.socket.on('players-state-update', (data) => {
+            this.emit('players-state-update', data);
         });
 
         this.socket.on('player-job-changed', (data) => {
@@ -113,6 +119,26 @@ class NetworkManager {
       
         this.socket.on('player-ping', (data) => {
             this.emit('player-ping', data);
+        });
+
+        this.socket.on('spawn-barrier-damage', (data) => {
+            this.emit('spawn-barrier-damage', data);
+        });
+
+        this.socket.on('player-died', (data) => {
+            this.emit('player-died', data);
+        });
+
+        this.socket.on('player-respawned', (data) => {
+            this.emit('player-respawned', data);
+        });
+
+        this.socket.on('player-state-sync', (data) => {
+            this.emit('player-state-sync', data);
+        });
+
+        this.socket.on('ward-destroyed', (data) => {
+            this.emit('ward-destroyed', data);
         });
     }
 

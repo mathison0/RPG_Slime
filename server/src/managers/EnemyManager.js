@@ -102,32 +102,58 @@ class EnemyManager {
   }
 
   /**
-   * 적 스폰 타이머 중지
+   * 적 상태 업데이트 및 클라이언트 동기화
    */
-  stopSpawnTimer() {
-    if (this.spawnTimer) {
-      clearInterval(this.spawnTimer);
-      this.spawnTimer = null;
+  updateEnemies(deltaTime) {
+    const enemies = this.gameStateManager.enemies;
+    const players = this.gameStateManager.players;
+    
+    // 각 적 업데이트
+    for (const enemy of enemies.values()) {
+      enemy.update(players, deltaTime);
+      
+      // 사망한 적 처리
+      if (enemy.hp <= 0) {
+        this.handleEnemyDeath(enemy);
+      }
     }
+    
+    // 클라이언트에게 적 상태 전송 (매 프레임마다)
+    this.broadcastEnemyStates();
   }
 
   /**
-   * 적 AI 업데이트
+   * 적 사망 처리
    */
-  updateEnemies(deltaTime) {
-    const enemyUpdates = [];
+  handleEnemyDeath(enemy) {
+    // 클라이언트에게 적 사망 알림
+    this.io.emit('enemy-destroyed', {
+      enemyId: enemy.id,
+      x: enemy.x,
+      y: enemy.y
+    });
     
-    for (const [id, enemy] of this.gameStateManager.enemies) {
-      enemy.update(this.gameStateManager.players, deltaTime);
-      enemyUpdates.push(enemy.getState());
+    // 서버에서 적 제거
+    this.gameStateManager.removeEnemy(enemy.id);
+    
+    // 새로운 적 스폰 (약간의 지연 후)
+    setTimeout(() => {
+      this.spawnEnemy();
+    }, 1000);
+  }
+
+  /**
+   * 클라이언트에게 적 상태 브로드캐스트
+   */
+  broadcastEnemyStates() {
+    const enemiesState = [];
+    
+    for (const enemy of this.gameStateManager.enemies.values()) {
+      enemiesState.push(enemy.getState());
     }
     
-    // 클라이언트에게 적 상태 업데이트 전송
-    if (enemyUpdates.length > 0) {
-      this.io.emit('enemies-update', enemyUpdates);
-    }
-    
-    return enemyUpdates.length;
+    // 모든 클라이언트에게 적 상태 전송
+    this.io.emit('enemies-update', enemiesState);
   }
 
   /**

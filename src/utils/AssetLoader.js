@@ -58,58 +58,67 @@ export default class AssetLoader {
         const expBarSize = getUISize('EXP_BAR');
         
         // 적 스프라이트 (원형으로 생성)
-        scene.add.graphics()
+        const enemyGraphics = scene.add.graphics()
             .fillStyle(AssetConfig.COLORS.ENEMY)
-            .fillCircle(enemySize.RADIUS, enemySize.RADIUS, enemySize.RADIUS)
-            .generateTexture('enemy', enemySize.WIDTH, enemySize.HEIGHT);
+            .fillCircle(enemySize.RADIUS, enemySize.RADIUS, enemySize.RADIUS);
+        enemyGraphics.generateTexture('enemy', enemySize.WIDTH, enemySize.HEIGHT);
+        enemyGraphics.destroy();
         
         // 벽 스프라이트 (사각형으로 생성)
-        scene.add.graphics()
+        const wallGraphics = scene.add.graphics()
             .fillStyle(AssetConfig.COLORS.WALL)
-            .fillRect(0, 0, wallSize.WIDTH, wallSize.HEIGHT)
-            .generateTexture('wall', wallSize.WIDTH, wallSize.HEIGHT);
+            .fillRect(0, 0, wallSize.WIDTH, wallSize.HEIGHT);
+        wallGraphics.generateTexture('wall', wallSize.WIDTH, wallSize.HEIGHT);
+        wallGraphics.destroy();
         
         // 경험치 구슬 스프라이트
-        scene.add.graphics()
+        const expOrbGraphics = scene.add.graphics()
             .fillStyle(AssetConfig.COLORS.EXP_ORB)
-            .fillCircle(expOrbSize.RADIUS, expOrbSize.RADIUS, expOrbSize.RADIUS)
-            .generateTexture('exp_orb', expOrbSize.WIDTH, expOrbSize.HEIGHT);
+            .fillCircle(expOrbSize.RADIUS, expOrbSize.RADIUS, expOrbSize.RADIUS);
+        expOrbGraphics.generateTexture('exp_orb', expOrbSize.WIDTH, expOrbSize.HEIGHT);
+        expOrbGraphics.destroy();
         
         // 체력 포션 스프라이트
-        scene.add.graphics()
+        const healthPotionGraphics = scene.add.graphics()
             .fillStyle(AssetConfig.COLORS.HEALTH_POTION)
-            .fillCircle(healthPotionSize.RADIUS, healthPotionSize.RADIUS, healthPotionSize.RADIUS)
-            .generateTexture('health_potion', healthPotionSize.WIDTH, healthPotionSize.HEIGHT);
+            .fillCircle(healthPotionSize.RADIUS, healthPotionSize.RADIUS, healthPotionSize.RADIUS);
+        healthPotionGraphics.generateTexture('health_potion', healthPotionSize.WIDTH, healthPotionSize.HEIGHT);
+        healthPotionGraphics.destroy();
         
         // 투사체 스프라이트
-        scene.add.graphics()
+        const projectileGraphics = scene.add.graphics()
             .fillStyle(AssetConfig.COLORS.PROJECTILE)
-            .fillCircle(projectileSize.RADIUS, projectileSize.RADIUS, projectileSize.RADIUS)
-            .generateTexture('projectile', projectileSize.WIDTH, projectileSize.HEIGHT);
+            .fillCircle(projectileSize.RADIUS, projectileSize.RADIUS, projectileSize.RADIUS);
+        projectileGraphics.generateTexture('projectile', projectileSize.WIDTH, projectileSize.HEIGHT);
+        projectileGraphics.destroy();
         
         // 파티클 효과
-        scene.add.graphics()
+        const particleGraphics = scene.add.graphics()
             .fillStyle(AssetConfig.COLORS.PARTICLE)
-            .fillCircle(particleSize.RADIUS, particleSize.RADIUS, particleSize.RADIUS)
-            .generateTexture('particle', particleSize.WIDTH, particleSize.HEIGHT);
+            .fillCircle(particleSize.RADIUS, particleSize.RADIUS, particleSize.RADIUS);
+        particleGraphics.generateTexture('particle', particleSize.WIDTH, particleSize.HEIGHT);
+        particleGraphics.destroy();
         
         // UI 패널
-        scene.add.graphics()
+        const panelGraphics = scene.add.graphics()
             .fillStyle(AssetConfig.COLORS.UI_PANEL, AssetConfig.ALPHA.UI_PANEL)
-            .fillRect(0, 0, panelSize.WIDTH, panelSize.HEIGHT)
-            .generateTexture('ui_panel', panelSize.WIDTH, panelSize.HEIGHT);
+            .fillRect(0, 0, panelSize.WIDTH, panelSize.HEIGHT);
+        panelGraphics.generateTexture('ui_panel', panelSize.WIDTH, panelSize.HEIGHT);
+        panelGraphics.destroy();
         
         // 체력바
-        scene.add.graphics()
+        const healthBarGraphics = scene.add.graphics()
             .fillStyle(AssetConfig.COLORS.HEALTH_BAR)
-            .fillRect(0, 0, healthBarSize.WIDTH, healthBarSize.HEIGHT)
-            .generateTexture('health_bar', healthBarSize.WIDTH, healthBarSize.HEIGHT);
+            .fillRect(0, 0, healthBarSize.WIDTH, healthBarSize.HEIGHT);
+        healthBarGraphics.generateTexture('health_bar', healthBarSize.WIDTH, healthBarSize.HEIGHT);
+        healthBarGraphics.destroy();
         
         // 경험치바
-        scene.add.graphics()
+        const expBarGraphics = scene.add.graphics()
             .fillStyle(AssetConfig.COLORS.EXP_BAR)
-            .fillRect(0, 0, expBarSize.WIDTH, expBarSize.HEIGHT)
-            .generateTexture('exp_bar', expBarSize.WIDTH, expBarSize.HEIGHT);
+            .fillRect(0, 0, expBarSize.WIDTH, expBarSize.HEIGHT);
+        expBarGraphics.generateTexture('exp_bar', expBarSize.WIDTH, expBarSize.HEIGHT);
+        expBarGraphics.destroy();
     }
     
     static loadAdditionalAssets(scene) {
@@ -187,8 +196,10 @@ export default class AssetLoader {
     // 이미지 크기 정보를 저장하는 정적 변수
     static imageSizes = new Map();
     
-    // 이미지 크기 정보 저장
+    // 이미지 크기 정보 저장 및 균등화 로그
     static storeImageSizes(scene) {
+        const playerSize = this.getDynamicPlayerSize();
+        
         AssetConfig.SUPPORTED_JOBS.forEach(job => {
             AssetConfig.DIRECTIONS.forEach(direction => {
                 const textureKey = getPlayerSpriteKey(job, direction);
@@ -199,7 +210,6 @@ export default class AssetLoader {
                         width: source.width,
                         height: source.height
                     });
-                    console.log(`이미지 크기 저장: ${textureKey} - ${source.width}x${source.height}`);
                 } else {
                     console.warn(`텍스처가 존재하지 않음: ${textureKey}`);
                 }
@@ -207,34 +217,17 @@ export default class AssetLoader {
         });
     }
     
-    // 스프라이트 크기를 일정하게 조정하는 메서드
+    // 스프라이트 크기를 균등하게 조정하는 메서드 (모든 직업 동일 크기)
     static adjustSpriteSize(sprite, targetWidth = null, targetHeight = null) {
         const playerSize = this.getDynamicPlayerSize();
         const finalTargetWidth = targetWidth || playerSize.WIDTH;
         const finalTargetHeight = targetHeight || playerSize.HEIGHT;
         
-        const textureKey = sprite.texture.key;
-        const sizeInfo = this.imageSizes.get(textureKey);
+        // 모든 직업 스프라이트를 강제로 동일한 크기로 설정
+        // 비율 무시하고 정확히 지정된 크기로 맞춤
+        sprite.setDisplaySize(finalTargetWidth, finalTargetHeight);
         
-        if (sizeInfo) {
-            // 원본 이미지 크기 정보가 있으면 비율을 유지하면서 크기 조정
-            const aspectRatio = sizeInfo.width / sizeInfo.height;
-            
-            if (aspectRatio > 1) {
-                // 가로가 더 긴 경우
-                const newWidth = finalTargetWidth;
-                const newHeight = finalTargetWidth / aspectRatio;
-                sprite.setDisplaySize(newWidth, newHeight);
-            } else {
-                // 세로가 더 긴 경우
-                const newHeight = finalTargetHeight;
-                const newWidth = finalTargetHeight * aspectRatio;
-                sprite.setDisplaySize(newWidth, newHeight);
-            }
-        } else {
-            // 원본 크기 정보가 없으면 기본 크기로 설정
-            sprite.setDisplaySize(finalTargetWidth, finalTargetHeight);
-        }
+        const textureKey = sprite.texture.key;
     }
 
     // 에셋 설정 정보 접근용 메서드들
@@ -287,5 +280,25 @@ export default class AssetLoader {
     
     static getDynamicPlayerSize() {
         return getDynamicPlayerSize();
+    }
+    
+    // 표준화된 플레이어 크기 관련 유틸리티 메서드들
+    static getStandardPlayerSize() {
+        const config = getDynamicPlayerSize();
+        return config.STANDARD_SIZE;
+    }
+    
+    static getPlayerSizeRange() {
+        const config = getDynamicPlayerSize();
+        return {
+            min: config.MIN_SIZE,
+            max: config.MAX_SIZE,
+            growth: config.GROWTH_RATE
+        };
+    }
+    
+    static getStandardColliderSize() {
+        const config = getDynamicPlayerSize();
+        return config.COLLIDER_SIZE;
     }
 } 
