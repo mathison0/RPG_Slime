@@ -194,8 +194,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     
     updateSize() {
-        console.log(`updateSize 호출: this.size=${this.size}, 물리적 크기 업데이트 중...`);
-        
         // 화면 표시 크기와 물리적 충돌 크기를 동일하게 설정
         this.setDisplaySize(this.size, this.size);
         this.colliderSize = this.size; // 스프라이트 크기와 동일하게 설정
@@ -210,8 +208,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.body.setOffset(0, 0);
         }
         
-        console.log(`updateSize 완료: displaySize=${this.displayWidth}x${this.displayHeight}, colliderSize=${this.colliderSize}`);
-        
         // 디버그 박스 업데이트
         if (this.debugMode) {
             this.updateDebugBoxes();
@@ -220,15 +216,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     
     setSize(newSize) {
         const oldSize = this.size;
-        console.log(`setSize 호출: ${oldSize} -> ${newSize}, level=${this.level}, networkId=${this.networkId}, isOtherPlayer=${this.isOtherPlayer}`);
-        console.trace('setSize 호출 스택:'); // 호출 스택 추가
-        
         this.size = newSize;
         this.updateSize();
         
         // 네트워크 동기화 (크기가 실제로 변경된 경우만)
         if (oldSize !== newSize && this.networkManager && !this.isOtherPlayer) {
-            console.log(`setSize: 네트워크로 size 업데이트 전송: ${newSize}`);
             this.networkManager.updatePlayerPosition(this.x, this.y, this.direction, false, { size: newSize });
         }
     }
@@ -241,9 +233,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 캐릭터 크기를 서버에서 받은 값으로 업데이트 (크기 계산은 서버에서만 수행)
      */
     updateCharacterSize() {
-        // 서버에서 받은 크기 정보만 사용하고, 화면 표시만 업데이트
-        console.log(`updateCharacterSize: 서버에서 받은 size=${this.size} 사용, 화면 업데이트만 수행`);
-        
         // 직접 크기 설정 (크기 계산은 서버에서만 수행)
         this.updateSize();
     }
@@ -650,7 +639,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      */
     testLevelUp() {
         if (this.networkManager && !this.isOtherPlayer) {
-            console.log('서버에 레벨업 요청 전송');
             this.networkManager.requestLevelUp();
             this.effectManager.showMessage(this.x, this.y - 100, '레벨업 요청 전송!', { fill: '#ffff00' });
         }
