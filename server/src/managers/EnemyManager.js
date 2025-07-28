@@ -102,6 +102,16 @@ class EnemyManager {
   }
 
   /**
+   * 적 스폰 타이머 중지
+   */
+  stopSpawnTimer() {
+    if (this.spawnTimer) {
+      clearInterval(this.spawnTimer);
+      this.spawnTimer = null;
+    }
+  }
+
+  /**
    * 적 상태 업데이트 및 클라이언트 동기화
    */
   updateEnemies(deltaTime) {
