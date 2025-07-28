@@ -115,6 +115,18 @@ class NetworkManager {
             this.emit('enemy-damaged', data);
         });
 
+        this.socket.on('enemies-update', (data) => {
+            this.emit('enemies-update', data);
+        });
+
+        this.socket.on('player-death', (data) => {
+            this.emit('player-death', data);
+        });
+
+        this.socket.on('monster-attack', (data) => {
+            this.emit('monster-attack', data);
+        });
+
         // 플레이어 데미지 이벤트
         this.socket.on('player-damaged', (data) => {
             this.emit('player-damaged', data);
@@ -248,6 +260,15 @@ class NetworkManager {
         }
     }
 
+    // 플레이어 리스폰 요청
+    requestRespawn() {
+        if (this.isConnected) {
+            this.socket.emit('player-respawn-request', {
+                timestamp: Date.now()
+            });
+        }
+    }
+
     // 이벤트 리스너 등록
     on(eventName, callback) {
         if (!this.callbacks.has(eventName)) {
@@ -273,14 +294,6 @@ class NetworkManager {
             this.callbacks.get(eventName).forEach(callback => {
                 callback(data);
             });
-        }
-    }
-    
-    // 치트: 리스폰 요청 (자살)
-    requestRespawn() {
-        if (this.socket && this.isConnected) {
-            console.log('리스폰 요청 (자살)');
-            this.socket.emit('cheat-respawn');
         }
     }
 

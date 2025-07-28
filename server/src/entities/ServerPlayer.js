@@ -27,6 +27,7 @@ class ServerPlayer {
     this.lastUpdate = Date.now();
     this.nickname = 'Player';
     this.isDead = false; // 사망 상태
+    this.lastDamageSource = null; // 마지막 데미지 소스 추적
     
     // 스킬 관련
     this.skillCooldowns = {}; // 스킬별 마지막 사용 시간
@@ -42,6 +43,9 @@ class ServerPlayer {
     this.isStealth = false;
     this.stealthStartTime = 0;
     this.stealthDuration = 0;
+    
+    // 무적 상태 (치트)
+    this.isInvincible = false;
   }
 
   /**
@@ -116,6 +120,7 @@ class ServerPlayer {
       speed: this.speed,
       nickname: this.nickname,
       isDead: this.isDead, // 사망 상태 추가
+      isInvincible: this.isInvincible, // 무적 상태 추가
       activeActions: activeActions  // 액션 상태 정보 추가
     };
   }
@@ -180,30 +185,43 @@ class ServerPlayer {
   }
 
   /**
-   * 데미지 처리
+   * 데미지 처리 (사망 판정은 서버 메인 루프에서만 처리)
    */
   takeDamage(damage) {
     if (this.isDead) {
-      return false; // 이미 죽은 상태면 데미지 처리 안함
+      return; // 이미 죽은 상태면 데미지 처리 안함
+    }
+    
+    // 무적 상태 체크
+    if (this.isInvincible) {
+      return 0; // 무적 상태면 데미지 없음
     }
     
     const actualDamage = Math.max(1, damage - this.defense);
     this.hp = Math.max(0, this.hp - actualDamage);
     
-    if (this.hp <= 0) {
-      this.isDead = true;
-      return true; // 사망
-    }
-    
-    return false; // 생존
+    // 사망 판정은 메인 게임 루프에서만 처리하므로 여기서는 HP만 업데이트
+    return actualDamage;
+  }
+
+  /**
+   * 무적 상태 토글
+   */
+  toggleInvincible() {
+    this.isInvincible = !this.isInvincible;
+    console.log(`플레이어 ${this.id} 무적 상태: ${this.isInvincible}`);
+    return this.isInvincible;
   }
 
   /**
    * 플레이어 리스폰 (사망 상태 해제)
    */
   respawn() {
+    console.log('플레이어 리스폰');
     this.isDead = false;
     this.hp = this.maxHp;
+    // 데미지 소스 추적 정보 리셋
+    this.lastDamageSource = null;
   }
 
   /**

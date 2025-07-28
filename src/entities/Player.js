@@ -51,6 +51,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.direction = 'front';
         this.lastDirection = 'front';
         
+        // 네트워크 동기화 관련
+        this.lastNetworkX = this.x;
+        this.lastNetworkY = this.y;
+        this.lastNetworkDirection = this.direction;
+        
         // 상태
         this.isJumping = false;
         this.team = team;
@@ -58,6 +63,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.isDead = false; // 사망 상태
         this.visionRange = 300;
         this.minimapVisionRange = 200;
+        
+        // 디버그 모드 최적화
+        this.lastEnemyDebugUpdate = 0;
+        this.enemyDebugUpdateInterval = 200; // 200ms마다 업데이트
         
         // 물리 속성
         this.setCollideWorldBounds(true);
@@ -154,18 +163,18 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 case 'warrior':
                     this.job = new WarriorJob(this);
                     break;
-                            case 'mechanic':
-                this.job = new MechanicJob(this);
-                break;
-            case 'archer':
-                this.job = new ArcherJob(this);
-                break;
-            case 'supporter':
-                this.job = new SupporterJob(this);
-                break;
-            default:
-                this.job = new SlimeJob(this);
-                break;
+                case 'mechanic':
+                    this.job = new MechanicJob(this);
+                    break;
+                case 'archer':
+                    this.job = new ArcherJob(this);
+                    break;
+                case 'supporter':
+                    this.job = new SupporterJob(this);
+                    break;
+                default:
+                    this.job = new SlimeJob(this);
+                    break;
             }
         } catch (error) {
             console.error('직업 생성 중 오류 발생:', error);
@@ -270,7 +279,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 이동 처리
+     * 이동 처리 (클라이언트에서 처리)
      */
     handleMovement() {
         // 죽은 상태에서는 이동 불가
@@ -374,7 +383,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     /**
-     * 스킬 입력 처리
+     * 스킬 입력 처리 (서버 권한 방식)
      */
     handleSkills() {
         // 죽은 상태에서는 스킬과 점프 사용 불가
@@ -384,30 +393,22 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
         // 스페이스바로 점프 (모든 직업 공통)
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
-            if (this.job) {
-                this.job.useJump();
-            }
+            this.requestSkillUse('jump');
         }
 
-        // Q키 또는 1번키로 첫 번째 스킬
-        if (Phaser.Input.Keyboard.JustDown(this.qKey) || Phaser.Input.Keyboard.JustDown(this.oneKey)) {
-            if (this.job) {
-                this.job.useSkill(1);
-            }
+        // Q키로 첫 번째 스킬
+        if (Phaser.Input.Keyboard.JustDown(this.qKey)) {
+            this.requestSkillUse('skill1');
         }
         
-        // E키 또는 2번키로 두 번째 스킬
-        if (Phaser.Input.Keyboard.JustDown(this.eKey) || Phaser.Input.Keyboard.JustDown(this.twoKey)) {
-            if (this.job) {
-                this.job.useSkill(2);
-            }
+        // E키로 두 번째 스킬
+        if (Phaser.Input.Keyboard.JustDown(this.eKey)) {
+            this.requestSkillUse('skill2');
         }
         
-        // R키 또는 3번키로 세 번째 스킬
-        if (Phaser.Input.Keyboard.JustDown(this.rKey) || Phaser.Input.Keyboard.JustDown(this.threeKey)) {
-            if (this.job) {
-                this.job.useSkill(3);
-            }
+        // R키로 세 번째 스킬
+        if (Phaser.Input.Keyboard.JustDown(this.rKey)) {
+            this.requestSkillUse('skill3');
         }
         
         // F키로 전직
@@ -484,7 +485,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 네트워크 위치 동기화
+     * 네트워크 위치 동기화 (주기적으로 서버에 위치 전송)
      */
     syncNetworkPosition() {
         if (this.networkManager && !this.isJumping && 
@@ -497,7 +498,20 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 직업 변경
+     * 서버에 스킬 사용 요청
+     */
+    requestSkillUse(skillType) {
+        if (this.networkManager) {
+            // 타겟이 필요한 스킬의 경우 마우스 위치 전송
+            const pointer = this.scene.input.activePointer;
+            const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
+            
+            this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y);
+        }
+    }
+    
+    /**
+     * 직업 변경 (서버에서 받은 결과로만 처리)
      */
     changeJob(jobClass) {
         this.jobClass = jobClass;
@@ -509,21 +523,20 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (this.skillCooldownUI && !this.isOtherPlayer) {
             this.skillCooldownUI.refreshForJobChange();
         }
-        
-        // 네트워크 동기화
-        if (this.networkManager && !this.isOtherPlayer) {
-            this.networkManager.changeJob(jobClass);
-        }
     }
     
     /**
-     * 직업 선택 UI (간단한 순환 방식)
+     * 직업 변경 요청 (서버 권한 방식)
      */
     showJobSelection() {
         const jobs = ['slime', 'assassin', 'ninja', 'warrior', 'mage', 'mechanic', 'archer', 'supporter'];
         const currentIndex = jobs.indexOf(this.jobClass);
         const nextIndex = (currentIndex + 1) % jobs.length;
-        this.changeJob(jobs[nextIndex]);
+        
+        // 서버에 직업 변경 요청
+        if (this.networkManager && !this.isOtherPlayer) {
+            this.networkManager.changeJob(jobs[nextIndex]);
+        }
     }
     
     /**
@@ -587,51 +600,24 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return; // 이미 죽은 상태면 데미지 받지 않음
         }
         
-        if (this.isInvincible) {
-            this.effectManager.showMessage(this.x, this.y - 30, '무적!', { fill: '#00ff00' });
-            return;
-        }
-        
-        // 방어력 계산 제거 (서버와 동일하게)
-        const actualDamage = damage;
-        this.hp = Math.max(0, this.hp - actualDamage);
-        
-        // 데미지 표시
-        this.effectManager.showDamageText(this.x, this.y, actualDamage);
+        // 데미지 표시 (무적 상태는 서버에서 처리됨)
+        this.effectManager.showDamageText(this.x, this.y, damage);
         
         this.updateUI();
         
-        if (this.hp <= 0) {
-            this.isDead = true;
-            this.die();
-        }
+        // 사망 판정은 서버에서만 처리하므로 클라이언트에서는 제거
     }
     
     /**
-     * 공격력 가져오기 (직업별 보너스 포함)
-     */
-    getAttackDamage() {
-        let damage = this.attack;
-        
-        // 어쌔신/닌자의 은신 보너스 처리
-        if ((this.jobClass === 'assassin' || this.jobClass === 'ninja') && this.job) {
-            damage = this.job.getAttackDamage();
-        }
-        
-        return damage;
-    }
-    
-    /**
-     * 무적 모드 토글
+     * 무적 모드 토글 (서버에 요청)
      */
     toggleInvincible() {
-        this.isInvincible = !this.isInvincible;
-        
-        const message = this.isInvincible ? '무적 모드 ON' : '무적 모드 OFF';
-        const color = this.isInvincible ? '#00ff00' : '#ff0000';
-        
-        this.effectManager.showMessage(this.x, this.y - 80, message, { fill: color });
-        this.updateUI();
+        if (this.networkManager && this.networkManager.socket && this.networkManager.isConnected) {
+            this.networkManager.socket.emit('player-invincible-request', {});
+            console.log('무적 상태 토글 요청을 서버에 전송');
+        } else {
+            console.warn('네트워크 매니저가 없거나 연결되지 않아서 무적 상태를 토글할 수 없습니다');
+        }
     }
     
     /**
@@ -641,16 +627,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (this.networkManager && !this.isOtherPlayer) {
             this.networkManager.requestLevelUp();
             this.effectManager.showMessage(this.x, this.y - 100, '레벨업 요청 전송!', { fill: '#ffff00' });
-        }
-    }
-    
-    /**
-     * 서버에서 받은 체력 정보로 업데이트
-     */
-    updateHealthFromServer() {
-        // 서버에서 이미 데미지가 적용되었으므로 클라이언트에서는 시각적 효과만 처리
-        if (this.hp <= 0 && !this.isDead) {
-            this.die();
         }
     }
 
@@ -686,10 +662,15 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 자살 (테스트용)
+     * 자살 (치트) - 서버에 사망 요청
      */
     suicide() {
-        this.die();
+        if (this.networkManager && this.networkManager.socket && this.networkManager.isConnected) {
+            this.networkManager.socket.emit('player-suicide-request', {});
+            console.log('자살 치트 요청을 서버에 전송');
+        } else {
+            console.warn('네트워크 매니저가 없거나 연결되지 않아서 자살 치트를 사용할 수 없습니다');
+        }
     }
     
     /**
@@ -809,9 +790,13 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         if (this.debugMode) {
             this.createDebugBoxes();
+            this.createEnemyDebugBoxes(); // 몬스터 디버그 정보 추가
+            this.lastEnemyDebugUpdate = 0; // 디버그 타이머 초기화 (즉시 업데이트되도록)
             this.effectManager.showMessage(this.x, this.y - 120, '디버그 모드 ON', { fill: '#00ffff' });
         } else {
             this.destroyDebugBoxes();
+            this.destroyEnemyDebugBoxes(); // 몬스터 디버그 정보 제거
+            this.lastEnemyDebugUpdate = 0; // 디버그 타이머 초기화
             this.effectManager.showMessage(this.x, this.y - 120, '디버그 모드 OFF', { fill: '#888888' });
         }
     }
@@ -857,6 +842,13 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // 디버그 정보 텍스트 업데이트
         this.updateDebugInfo();
+        
+        // 몬스터 디버그 정보 업데이트 (성능 최적화: 일정 간격마다만 업데이트)
+        const currentTime = Date.now();
+        if (currentTime - this.lastEnemyDebugUpdate > this.enemyDebugUpdateInterval) {
+            this.updateEnemyDebugBoxes();
+            this.lastEnemyDebugUpdate = currentTime;
+        }
     }
     
     /**
@@ -907,10 +899,134 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     /**
+     * 몬스터 디버그 박스 생성
+     */
+    createEnemyDebugBoxes() {
+        this.destroyEnemyDebugBoxes(); // 기존 박스 제거
+        
+        if (!this.scene.enemies || !this.debugMode) return;
+        
+        // 몬스터 디버그 정보를 저장할 배열 초기화
+        this.enemyDebugBoxes = [];
+        this.enemyDebugTexts = [];
+        
+        // 타이머 초기화해서 즉시 업데이트되도록 함
+        this.lastEnemyDebugUpdate = 0;
+        this.updateEnemyDebugBoxes();
+    }
+    
+    /**
+     * 몬스터 디버그 박스 업데이트 (시야 범위 내 몬스터만)
+     */
+    updateEnemyDebugBoxes() {
+        if (!this.debugMode || !this.scene.enemies) return;
+        
+        // 기존 디버그 정보 제거
+        this.destroyEnemyDebugBoxes();
+        
+        // 몬스터 디버그 정보를 저장할 배열 초기화
+        this.enemyDebugBoxes = [];
+        this.enemyDebugTexts = [];
+        
+        const enemies = this.scene.enemies.getChildren();
+        
+        // 디버그 시야 범위 (일반 시야 범위보다 넓게 설정)
+        const debugVisionRange = this.visionRange * 1.5;
+        const debugVisionRangeSquared = debugVisionRange * debugVisionRange; // 제곱근 계산 최적화
+        
+        let visibleEnemyCount = 0;
+        let totalEnemyCount = 0;
+        
+        enemies.forEach((enemy, index) => {
+            if (!enemy.active) return;
+            
+            totalEnemyCount++;
+            
+            // 플레이어와 몬스터 간의 거리 계산 (제곱근 생략으로 성능 최적화)
+            const dx = enemy.x - this.x;
+            const dy = enemy.y - this.y;
+            const distanceSquared = dx * dx + dy * dy;
+            
+            // 시야 범위 내에 있는지 확인
+            if (distanceSquared > debugVisionRangeSquared) {
+                return; // 시야 범위 밖이면 스킵
+            }
+            
+            visibleEnemyCount++;
+            
+            // 몬스터 스프라이트 크기 박스 (녹색)
+            const spriteBox = this.scene.add.graphics();
+            spriteBox.lineStyle(2, 0x00ff00);
+            spriteBox.setDepth(1000);
+            const spriteX = enemy.x - enemy.displayWidth / 2;
+            const spriteY = enemy.y - enemy.displayHeight / 2;
+            spriteBox.strokeRect(spriteX, spriteY, enemy.displayWidth, enemy.displayHeight);
+            
+            // 몬스터 물리 바디 크기 박스 (주황색)
+            const bodyBox = this.scene.add.graphics();
+            bodyBox.lineStyle(2, 0xff8800);
+            bodyBox.setDepth(1001);
+            if (enemy.body) {
+                bodyBox.strokeRect(enemy.body.x, enemy.body.y, enemy.body.width, enemy.body.height);
+            }
+            
+            // 몬스터 정보 텍스트
+            const spriteInfo = `스프라이트: ${enemy.displayWidth}x${enemy.displayHeight}`;
+            const bodyInfo = enemy.body ? `물리바디: ${enemy.body.width}x${enemy.body.height}` : '물리바디: 없음';
+            const statsInfo = `HP: ${enemy.hp}/${enemy.maxHp}`;
+            const attackInfo = `공격력: ${enemy.attack}`;
+            const typeInfo = `타입: ${enemy.type}`;
+            const distanceInfo = `거리: ${Math.round(Math.sqrt(distanceSquared))}`;
+            const debugInfo = `${spriteInfo}\n${bodyInfo}\n${statsInfo}\n${attackInfo}\n${typeInfo}\n${distanceInfo}`;
+            
+            const debugText = this.scene.add.text(enemy.x + 50, enemy.y - 60, debugInfo, {
+                fontSize: '10px',
+                fill: '#ffffff',
+                backgroundColor: '#000000',
+                padding: { x: 4, y: 4 }
+            }).setOrigin(0);
+            debugText.setDepth(1002);
+            
+            // 배열에 저장
+            this.enemyDebugBoxes.push(spriteBox, bodyBox);
+            this.enemyDebugTexts.push(debugText);
+        });
+        
+        // 성능 정보 로그 (가끔씩만 출력)
+        if (totalEnemyCount > 0 && Math.random() < 0.1) { // 10% 확률로만 로그 출력
+            console.log(`디버그 몬스터: ${visibleEnemyCount}/${totalEnemyCount} (시야범위: ${Math.round(debugVisionRange)})`);
+        }
+    }
+    
+    /**
+     * 몬스터 디버그 박스 제거
+     */
+    destroyEnemyDebugBoxes() {
+        if (this.enemyDebugBoxes) {
+            this.enemyDebugBoxes.forEach(box => {
+                if (box && box.active) {
+                    box.destroy();
+                }
+            });
+            this.enemyDebugBoxes = [];
+        }
+        
+        if (this.enemyDebugTexts) {
+            this.enemyDebugTexts.forEach(text => {
+                if (text && text.active) {
+                    text.destroy();
+                }
+            });
+            this.enemyDebugTexts = [];
+        }
+    }
+
+    /**
      * 정리 작업
      */
     destroy() {
         this.destroyDebugBoxes();
+        this.destroyEnemyDebugBoxes();
         // 스킬 이펙트 타이머 정리
         if (this.roarEffectTimer) {
             this.scene.time.removeEvent(this.roarEffectTimer);

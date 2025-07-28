@@ -29,7 +29,7 @@ class GameServer {
     this.port = process.env.PORT || gameConfig.SERVER.DEFAULT_PORT;
     
     // 매니저들 초기화
-    this.gameStateManager = new GameStateManager();
+    this.gameStateManager = new GameStateManager(this.io);
     this.enemyManager = new EnemyManager(this.io, this.gameStateManager);
     this.socketEventManager = new SocketEventManager(this.io, this.gameStateManager, this.enemyManager);
     
@@ -184,33 +184,74 @@ class GameServer {
         this.io.emit('player-left', { playerId });
       });
       
-      // 적 AI 업데이트
-      this.enemyManager.updateEnemies(deltaTime);
+      // 몬스터 AI 업데이트
+      this.enemyManager.updateMonsters(deltaTime);
       
       // 스폰 배리어 데미지 체크
       const damagedPlayers = this.gameStateManager.checkSpawnBarrierDamage();
       if (damagedPlayers.length > 0) {
         damagedPlayers.forEach(damageInfo => {
-          // 모든 플레이어에게 데미지 이벤트 전송 (다른 플레이어들도 데미지 이펙트를 볼 수 있도록)
           this.io.emit('spawn-barrier-damage', damageInfo);
           console.log(`스폰 배리어 데미지 이벤트 전송: ${damageInfo.playerId}, -${damageInfo.damage}HP`);
-          
-          // 사망 처리
-          if (damageInfo.isDead) {
-            this.io.emit('player-died', {
-              playerId: damageInfo.playerId,
-              cause: 'spawn-barrier'
-            });
-            console.log(`플레이어 사망 이벤트 전송: ${damageInfo.playerId} (스폰 배리어)`);
-          }
         });
       }
+      
+      // 플레이어 상태 업데이트 및 사망 처리
+      this.updatePlayerStates();
       
       this.syncPlayerStatus();
       
     } catch (error) {
       ServerUtils.errorLog('게임 루프 오류', { error: error.message, stack: error.stack });
     }
+  }
+
+  /**
+   * 플레이어 상태 업데이트 및 사망 처리
+   */
+  updatePlayerStates() {
+    const allPlayers = this.gameStateManager.getAllPlayers();
+    
+    allPlayers.forEach(player => {
+      // HP가 0 이하이고 아직 사망 처리되지 않은 플레이어 처리
+      if (player.hp <= 0 && !player.isDead) {
+        // HP를 정확히 0으로 설정
+        player.hp = 0;
+        
+        // 사망 플래그 설정
+        player.isDead = true;
+        
+        // 사망 원인 판단 (간단한 로직)
+        let deathCause = 'unknown';
+        let killerId = null;
+        let killerType = 'unknown';
+        
+        // 최근 데미지 소스 추적
+        if (player.lastDamageSource) {
+          if (player.lastDamageSource.type === 'monster') {
+            deathCause = 'monster';
+            killerId = player.lastDamageSource.id;
+            killerType = 'monster';
+          } else if (player.lastDamageSource.type === 'spawn-barrier') {
+            deathCause = 'spawn-barrier';
+            killerType = 'environment';
+          } else if (player.lastDamageSource.type === 'suicide') {
+            deathCause = 'suicide';
+            killerType = 'cheat';
+          }
+        }
+        
+        // 사망 이벤트 전송 (통합된 이벤트 사용)
+        this.io.emit('player-died', {
+          playerId: player.id,
+          cause: deathCause,
+          killerId: killerId,
+          killerType: killerType
+        });
+        
+        console.log(`플레이어 사망 처리: ${player.id} (원인: ${deathCause})`);
+      }
+    });
   }
 
   /**
@@ -303,21 +344,23 @@ class GameServer {
       case 'players':
         console.log('👥 플레이어 목록:', this.gameStateManager.getPlayersState());
         break;
-      case 'enemies':
-        console.log('👹 적 통계:', this.enemyManager.getEnemyStats());
+      case 'monsters':
+        console.log('👹 몬스터 통계:', this.enemyManager.getMonsterStats());
         break;
-      case 'clear-enemies':
-        this.enemyManager.clearAllEnemies();
-        console.log('🧹 모든 적 제거됨');
+      case 'clear-monsters':
+        this.enemyManager.clearAllMonsters();
+        console.log('🧹 모든 몬스터 제거됨');
         break;
-      case 'spawn-enemy':
+      case 'spawn-monster':
         const type = args[0] || 'basic';
-        const enemy = this.enemyManager.spawnEnemyOfType(type, gameConfig.MAP_WIDTH_TILES * gameConfig.TILE_SIZE / 2, gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE / 2);
-        console.log(`👹 적 스폰: ${enemy ? enemy.type : '실패'}`);
+        const x = parseInt(args[1]) || gameConfig.MAP_WIDTH_TILES * gameConfig.TILE_SIZE / 2;
+        const y = parseInt(args[2]) || gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE / 2;
+        const monster = this.enemyManager.spawnMonsterAt(type, x, y);
+        console.log(`👹 몬스터 스폰: ${monster ? monster.type : '실패'}`);
         break;
       default:
         console.log('❓ 알 수 없는 명령어:', command);
-        console.log('📋 사용 가능한 명령어: stats, memory, players, enemies, clear-enemies, spawn-enemy');
+        console.log('📋 사용 가능한 명령어: stats, memory, players, monsters, clear-monsters, spawn-monster');
     }
   }
 }

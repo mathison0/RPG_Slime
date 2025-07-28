@@ -275,6 +275,31 @@ export default class MinimapManager {
             });
         }
         
+        // 적들 그리기 (주황색) - 방문한 지역에서만 표시
+        if (this.scene.enemies?.children) {
+            this.scene.enemies.getChildren().forEach(enemy => {
+                if (enemy.active) {
+                    // 적이 있는 타일이 발견된 지역인지 확인
+                    const enemyCol = Math.floor(enemy.x / this.scene.TILE_SIZE);
+                    const enemyRow = Math.floor(enemy.y / this.scene.TILE_SIZE);
+                    
+                    // 타일 인덱스가 유효하고 해당 타일이 발견된 상태인지 확인
+                    if (enemyRow >= 0 && enemyRow < this.mapRows && 
+                        enemyCol >= 0 && enemyCol < this.mapCols &&
+                        this.discovered[enemyRow] && this.discovered[enemyRow][enemyCol]) {
+                        
+                        const enemyX = (enemy.x - offsetX) * scale;
+                        const enemyY = (enemy.y - offsetY) * scale;
+                        
+                        if (enemyX >= 0 && enemyX <= size && enemyY >= 0 && enemyY <= size) {
+                            this.minimap.fillStyle(0xff6600); // 주황색
+                            this.minimap.fillCircle(enemyX, enemyY, 3);
+                        }
+                    }
+                }
+            });
+        }
+        
         // 내 플레이어 (중앙에 파란색)
         this.minimap.fillStyle(0x0099ff);
         this.minimap.fillCircle(size / 2, size / 2, 4);
@@ -335,6 +360,31 @@ export default class MinimapManager {
                         if (otherPlayer.depth === 950) {
                             this.bigMap.fillStyle(0xff0000);
                             this.bigMap.fillCircle(playerX, playerY, 4);
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 적들 그리기 (주황색) - 방문한 지역에서만 표시
+        if (this.scene.enemies?.children) {
+            this.scene.enemies.getChildren().forEach(enemy => {
+                if (enemy.active) {
+                    // 적이 있는 타일이 발견된 지역인지 확인
+                    const enemyCol = Math.floor(enemy.x / this.scene.TILE_SIZE);
+                    const enemyRow = Math.floor(enemy.y / this.scene.TILE_SIZE);
+                    
+                    // 타일 인덱스가 유효하고 해당 타일이 발견된 상태인지 확인
+                    if (enemyRow >= 0 && enemyRow < this.mapRows && 
+                        enemyCol >= 0 && enemyCol < this.mapCols &&
+                        this.discovered[enemyRow] && this.discovered[enemyRow][enemyCol]) {
+                        
+                        const enemyX = enemy.x * scale;
+                        const enemyY = enemy.y * scale;
+                        
+                        if (enemyX >= 0 && enemyX <= size && enemyY >= 0 && enemyY <= size) {
+                            this.bigMap.fillStyle(0xff6600); // 주황색
+                            this.bigMap.fillCircle(enemyX, enemyY, 3);
                         }
                     }
                 }
