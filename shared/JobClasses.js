@@ -427,20 +427,8 @@ function createSkillTypeMap() {
     return skillMap;
 }
 
-// ES6 모듈 export (기본)
-export {
-    JobClasses,
-    JobRequirements,
-    getJobInfo,
-    canChangeJob,
-    calculateStats,
-    getSkillInfo,
-    createSkillTypeMap
-};
-
-// CommonJS와 브라우저 환경 지원
+// CommonJS 지원 (서버용)
 if (typeof module !== 'undefined' && module.exports) {
-    // CommonJS (서버용)
     module.exports = {
         JobClasses,
         JobRequirements,
@@ -450,15 +438,15 @@ if (typeof module !== 'undefined' && module.exports) {
         getSkillInfo,
         createSkillTypeMap
     };
-} else if (typeof window !== 'undefined') {
-    // 브라우저 환경 (클라이언트용)
-    window.JobClassesModule = {
-        JobClasses,
-        JobRequirements,
-        getJobInfo,
-        canChangeJob,
-        calculateStats,
-        getSkillInfo,
-        createSkillTypeMap
-    };
-} 
+}
+
+// ES6 모듈 export (클라이언트 번들러용)
+export {
+    JobClasses,
+    JobRequirements,
+    getJobInfo,
+    canChangeJob,
+    calculateStats,
+    getSkillInfo,
+    createSkillTypeMap
+};
