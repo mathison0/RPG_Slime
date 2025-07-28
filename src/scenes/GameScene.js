@@ -42,6 +42,9 @@ export default class GameScene extends Phaser.Scene {
         this.isTabActive = true;
         this.wasJumping = false;
         
+        // 스폰 구역 상태
+        this.inEnemySpawnZone = false;
+        
         // 매니저들
         this.networkManager = null;
         this.networkEventManager = null;
@@ -442,6 +445,108 @@ export default class GameScene extends Phaser.Scene {
         }
     }
     
+    /**
+     * 스폰 구역 상태 체크 (경고 메시지용)
+     */
+    checkSpawnZoneStatus() {
+        if (!this.player) return;
+        
+        // 상대팀 스폰 배리어 구역에 있는지 체크
+        const playerX = this.player.x;
+        const playerY = this.player.y;
+        let inEnemyBarrierZone = false;
+        
+        // 서버 설정에서 스폰 배리어 구역 계산
+        const extraWidth = 4 * 100; // SPAWN_BARRIER_EXTRA_TILES * TILE_SIZE (서버와 동일)
+        const extraHeight = extraWidth;
+        
+        if (this.player.team === 'red' && this.blueSpawnRect) {
+            // 빨간팀 플레이어가 파란팀 스폰 배리어 구역에 있는지 체크
+            const blueBarrierZone = {
+                x: this.blueSpawnRect.x - extraWidth,
+                y: this.blueSpawnRect.y - extraHeight,
+                right: this.blueSpawnRect.right + extraWidth,
+                bottom: this.blueSpawnRect.bottom + extraHeight
+            };
+            
+            inEnemyBarrierZone = playerX >= blueBarrierZone.x && 
+                               playerX <= blueBarrierZone.right &&
+                               playerY >= blueBarrierZone.y && 
+                               playerY <= blueBarrierZone.bottom;
+                               
+        } else if (this.player.team === 'blue' && this.redSpawnRect) {
+            // 파란팀 플레이어가 빨간팀 스폰 배리어 구역에 있는지 체크
+            const redBarrierZone = {
+                x: this.redSpawnRect.x - extraWidth,
+                y: this.redSpawnRect.y - extraHeight,
+                right: this.redSpawnRect.right + extraWidth,
+                bottom: this.redSpawnRect.bottom + extraHeight
+            };
+            
+            inEnemyBarrierZone = playerX >= redBarrierZone.x && 
+                               playerX <= redBarrierZone.right &&
+                               playerY >= redBarrierZone.y && 
+                               playerY <= redBarrierZone.bottom;
+        }
+        
+        if (inEnemyBarrierZone) {
+            if (!this.inEnemySpawnZone) {
+                // 처음 들어갔을 때
+                this.inEnemySpawnZone = true;
+                this.showSpawnZoneWarning();
+                console.log('상대팀 스폰 배리어 구역 진입 - 경고 표시');
+            }
+        } else {
+            if (this.inEnemySpawnZone) {
+                // 스폰 구역에서 나갔을 때
+                this.inEnemySpawnZone = false;
+                this.hideSpawnZoneWarning();
+                console.log('상대팀 스폰 배리어 구역 탈출 - 경고 숨김');
+            }
+        }
+    }
+    
+    /**
+     * 스폰 구역 경고 메시지 표시
+     */
+    showSpawnZoneWarning() {
+        if (this.spawnZoneWarningText) {
+            this.spawnZoneWarningText.destroy();
+        }
+        
+        this.spawnZoneWarningText = this.add.text(
+            this.scale.width / 2,
+            100,
+            '⚠️ 적 스폰 구역! 체력이 감소합니다! ⚠️',
+            {
+                fontSize: '24px',
+                fill: '#ff0000',
+                fontStyle: 'bold',
+                stroke: '#000',
+                strokeThickness: 3
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(1000);
+        
+        // 깜빡이는 효과
+        this.tweens.add({
+            targets: this.spawnZoneWarningText,
+            alpha: 0.3,
+            duration: 500,
+            yoyo: true,
+            repeat: -1
+        });
+    }
+    
+    /**
+     * 스폰 구역 경고 메시지 숨기기
+     */
+    hideSpawnZoneWarning() {
+        if (this.spawnZoneWarningText) {
+            this.spawnZoneWarningText.destroy();
+            this.spawnZoneWarningText = null;
+        }
+    }
+    
     update(time, delta) {
         // 플레이어가 생성되지 않았으면 대기
         if (!this.player) {
@@ -462,9 +567,9 @@ export default class GameScene extends Phaser.Scene {
         
         // 벽 충돌 체크 (점프 중이 아닐 때만)
         if (!this.player.isJumping) {
-            const collidingWall = this.mapManager.checkPlayerWallCollision();
-            if (collidingWall) {
-                this.mapManager.pushPlayerOutOfWall(collidingWall);
+            const collidingWalls = this.mapManager.checkPlayerWallCollision();
+            if (collidingWalls && collidingWalls.length > 0) {
+                this.mapManager.pushPlayerOutOfWall(collidingWalls);
             }
         }
         
@@ -502,6 +607,9 @@ export default class GameScene extends Phaser.Scene {
 
         // 이동 제한
         this.mapManager.restrictMovement();
+        
+        // 스폰 구역 상태 체크 (경고 메시지용)
+        this.checkSpawnZoneStatus();
     }
 
     /**
@@ -536,6 +644,279 @@ export default class GameScene extends Phaser.Scene {
             this.cheatManager.destroy();
         }
         
+        // 스폰 구역 경고 텍스트 정리
+        this.hideSpawnZoneWarning();
+        
+        // 리스폰 타이머 텍스트 정리
+        if (this.respawnTimerText) {
+            this.respawnTimerText.destroy();
+            this.respawnTimerText = null;
+        }
+        
+        // 사망 오버레이 정리
+        this.removeDeathOverlay();
+        
         super.destroy();
+    }
+
+    /**
+     * 플레이어 사망 처리
+     */
+    handlePlayerDeath(cause = 'unknown') {
+        console.log('플레이어 사망 처리 시작:', cause);
+        
+        if (!this.player) {
+            console.warn('플레이어가 존재하지 않아 사망 처리를 건너뜁니다');
+            return;
+        }
+
+        // 현재 위치 저장 (사망 메시지용)
+        const deathX = this.player.x;
+        const deathY = this.player.y;
+
+        // 즉시 캐릭터 숨기기 및 조작 불가능하게 만들기
+        this.player.isDead = true; // 사망 상태 설정
+        this.player.setVisible(false);
+        this.player.setActive(false);
+        
+        // 색상 초기화 (데미지로 인한 빨간색 제거)
+        this.player.clearTint();
+        
+        // 진행 중인 모든 타이머 정리 (데미지 틴트 타이머 등)
+        if (this.time && this.time.getAllEvents) {
+            this.time.getAllEvents().forEach(event => {
+                if (event.callback && event.callback.toString().includes('clearTint')) {
+                    event.remove();
+                }
+            });
+        }
+        
+        // 물리 바디 비활성화
+        if (this.player.body) {
+            this.player.body.setEnable(false);
+        }
+
+        // 사망 메시지 표시 (저장된 위치 사용)
+        let deathMessage = '사망!';
+        if (cause === 'spawn-barrier') {
+            deathMessage = '스폰 배리어로 사망!';
+        }
+        
+        this.effectManager.showMessage(
+            deathX, 
+            deathY, 
+            deathMessage, 
+            { fill: '#ff0000', fontSize: '24px' }
+        );
+        
+        // 사망 시퀀스 시작
+        this.startDeathSequence();
+    }
+
+    /**
+     * 사망 시퀀스 시작 (화면 효과 + 타이머)
+     */
+    startDeathSequence() {
+        console.log('사망 시퀀스 시작');
+        
+        // 화면 오버레이로 흑백 효과 구현
+        this.createDeathOverlay();
+        
+        // 3초 카운트다운 타이머 표시
+        this.showRespawnTimer(3);
+    }
+
+    /**
+     * 사망 시 화면 오버레이 생성
+     */
+    createDeathOverlay() {
+        // 기존 오버레이가 있다면 제거
+        if (this.deathOverlay) {
+            this.deathOverlay.destroy();
+        }
+        
+        // 반투명한 회색 오버레이 생성하여 흑백 효과 연출
+        this.deathOverlay = this.add.rectangle(
+            0, 0,
+            this.scale.width * 2, // 카메라가 움직여도 전체 화면을 덮도록 충분히 큰 크기
+            this.scale.height * 2,
+            0x000000, // 검은색
+            0.6 // 60% 투명도
+        ).setOrigin(0, 0).setScrollFactor(0).setDepth(1500);
+        
+                 // 추가로 회색 필터 효과
+         this.deathGrayOverlay = this.add.rectangle(
+             0, 0,
+             this.scale.width * 2,
+             this.scale.height * 2,
+             0x808080, // 회색
+             0.3 // 30% 투명도
+         ).setOrigin(0, 0).setScrollFactor(0).setDepth(1501);
+     }
+
+     /**
+      * 사망 오버레이 제거
+      */
+     removeDeathOverlay() {
+         if (this.deathOverlay) {
+             this.deathOverlay.destroy();
+             this.deathOverlay = null;
+         }
+         
+         if (this.deathGrayOverlay) {
+             this.deathGrayOverlay.destroy();
+             this.deathGrayOverlay = null;
+         }
+     }
+
+    /**
+     * 리스폰 타이머 표시
+     */
+    showRespawnTimer(seconds) {
+        // 기존 타이머 텍스트가 있다면 제거
+        if (this.respawnTimerText) {
+            this.respawnTimerText.destroy();
+        }
+        
+        // 타이머 텍스트 생성
+        this.respawnTimerText = this.add.text(
+            this.scale.width / 2,
+            this.scale.height / 2,
+            `리스폰까지: ${seconds}초`,
+            {
+                fontSize: '32px',
+                fill: '#ffffff',
+                fontStyle: 'bold',
+                stroke: '#000000',
+                strokeThickness: 4,
+                align: 'center'
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(2000);
+        
+        // 1초마다 카운트다운
+        const countdown = () => {
+            seconds--;
+            if (seconds > 0) {
+                this.respawnTimerText.setText(`리스폰까지: ${seconds}초`);
+                this.time.delayedCall(1000, countdown);
+            } else {
+                // 타이머 완료 - 즉시 리스폰 실행
+                this.respawnPlayer();
+            }
+        };
+        
+        // 첫 번째 카운트다운 시작
+        this.time.delayedCall(1000, countdown);
+    }
+
+    /**
+     * 플레이어 리스폰
+     */
+    respawnPlayer() {
+        console.log('플레이어 리스폰 시작');
+        
+        if (!this.player) {
+            console.warn('플레이어가 존재하지 않아 리스폰을 건너뜁니다');
+            return;
+        }
+        
+        // 화면 오버레이 제거
+        this.removeDeathOverlay();
+        
+        // 타이머 텍스트 제거
+        if (this.respawnTimerText) {
+            this.respawnTimerText.destroy();
+            this.respawnTimerText = null;
+        }
+        
+        // 플레이어를 스폰 구역의 랜덤한 위치에 배치
+        const spawnPosition = this.getRandomSpawnPosition();
+        if (spawnPosition) {
+            // 플레이어 다시 활성화
+            this.player.isDead = false; // 사망 상태 해제
+            this.player.setVisible(true);
+            this.player.setActive(true);
+            
+            // 색상 초기화 (데미지로 인한 빨간색 제거)
+            this.player.clearTint();
+            
+            // 위치 설정 (스프라이트와 물리 바디 모두)
+            this.player.setPosition(spawnPosition.x, spawnPosition.y);
+            if (this.player.body) {
+                this.player.body.setEnable(true);
+                this.player.body.reset(spawnPosition.x, spawnPosition.y);
+            }
+            
+            // 방향을 front로 초기화
+            this.player.direction = 'front';
+            this.player.updateJobSprite();
+            
+            // 이름표도 다시 표시
+            if (this.player.nameText) {
+                this.player.nameText.setVisible(true);
+                this.player.updateNameTextPosition();
+            }
+            
+            // HP 완전 회복
+            this.player.hp = this.player.maxHp;
+            this.player.updateUI();
+            
+            // 서버에 리스폰 알림
+            this.networkManager.emit('player-respawned', {
+                x: spawnPosition.x,
+                y: spawnPosition.y
+            });
+            
+            // 카메라가 플레이어를 다시 따라가도록 설정
+            this.cameras.main.startFollow(this.player);
+            
+            // 리스폰 이펙트
+            this.effectManager.showExplosion(spawnPosition.x, spawnPosition.y, 0x00ff00, 50);
+            this.effectManager.showMessage(
+                spawnPosition.x, 
+                spawnPosition.y - 50, 
+                '리스폰!', 
+                { fill: '#00ff00', fontSize: '20px' }
+            );
+            
+            console.log('플레이어 리스폰 완료:', spawnPosition);
+        } else {
+            console.error('스폰 위치를 찾을 수 없어 리스폰에 실패했습니다');
+        }
+    }
+
+    /**
+     * 랜덤한 스폰 위치 반환
+     */
+    getRandomSpawnPosition() {
+        if (!this.player?.team) {
+            console.warn('플레이어 팀 정보가 없어 기본 위치로 리스폰');
+            return { x: this.scale.width / 2, y: this.scale.height / 2 };
+        }
+        
+        let spawnRect = null;
+        if (this.player.team === 'red' && this.redSpawnRect) {
+            spawnRect = this.redSpawnRect;
+        } else if (this.player.team === 'blue' && this.blueSpawnRect) {
+            spawnRect = this.blueSpawnRect;
+        }
+        
+        if (spawnRect) {
+            // 스폰 구역 내 랜덤한 위치 생성
+            const padding = 200; // 벽에서 조금 떨어진 위치
+            const x = Phaser.Math.Between(
+                spawnRect.x + padding, 
+                spawnRect.right - padding
+            );
+            const y = Phaser.Math.Between(
+                spawnRect.y + padding, 
+                spawnRect.bottom - padding
+            );
+            
+            return { x, y };
+        } else {
+            console.warn('스폰 구역 정보가 없어 기본 위치로 리스폰');
+            return { x: this.scale.width / 2, y: this.scale.height / 2 };
+        }
     }
 }

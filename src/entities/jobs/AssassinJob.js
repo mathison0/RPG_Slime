@@ -1,5 +1,6 @@
 import BaseJob from './BaseJob.js';
-import { getJobInfo } from '../../../shared/JobClasses.js';
+// JobClasses functions available via window.JobClassesModule
+const { getJobInfo } = window.JobClassesModule;
 
 /**
  * 어쌔신/닌자 직업 클래스
@@ -33,7 +34,13 @@ export default class AssassinJob extends BaseJob {
      * 은신 스킬
      */
     useStealth() {
-        const skillKey = 'stealth';
+        const skillKey = 'skill1'; // 통일된 스킬 키 사용
+        
+        // 쿨타임 체크
+        if (!this.isSkillAvailable(skillKey)) {
+            this.showCooldownMessage();
+            return;
+        }
         
         // 다른 플레이어면 실행하지 않음
         if (this.player.isOtherPlayer) {
@@ -45,6 +52,11 @@ export default class AssassinJob extends BaseJob {
             console.log('NetworkManager가 없어서 스킬을 사용할 수 없습니다.');
             return;
         }
+        
+        const skillInfo = this.jobInfo.skills[0]; // 은신 스킬
+        
+        // 쿨타임 설정
+        this.setSkillCooldown(skillKey, skillInfo.cooldown);
 
         // 서버에 스킬 사용 요청
         this.player.networkManager.useSkill('stealth');
@@ -96,18 +108,6 @@ export default class AssassinJob extends BaseJob {
      */
     isStealthed() {
         return this.isStealth;
-    }
-
-    /**
-     * 쿨타임 정보 반환
-     */
-    getSkillCooldowns() {
-        return {
-            1: {
-                remaining: this.getRemainingCooldown('stealth'),
-                max: this.jobInfo.skills[0].cooldown
-            }
-        };
     }
 
     /**

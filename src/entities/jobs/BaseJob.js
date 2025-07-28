@@ -1,3 +1,5 @@
+import { getJobInfo } from '../../../shared/JobClasses.js';
+
 /**
  * 기본 직업 클래스
  * 모든 직업 클래스의 기본이 되는 클래스
@@ -51,6 +53,44 @@ export default class BaseJob {
         const now = this.scene.time.now;
         const cooldownEnd = this.skillCooldowns.get(skillKey) || 0;
         return Math.max(0, cooldownEnd - now);
+    }
+
+    /**
+     * 모든 스킬의 쿨타임 정보 반환 (UI용)
+     * @returns {Object} - 스킬별 쿨타임 정보
+     */
+    getSkillCooldowns() {
+        const cooldowns = {};
+        
+        // 기본 스킬들 확인 (1: 기본 스킬, 2: 추가 스킬, 3: 추가 스킬)
+        for (let i = 1; i <= 3; i++) {
+            const remaining = this.getRemainingCooldown(`skill${i}`);
+            if (remaining > 0 || this.skillCooldowns.has(`skill${i}`)) {
+                cooldowns[i] = {
+                    remaining: remaining,
+                    max: this.getSkillMaxCooldown(i)
+                };
+            }
+        }
+        
+        return cooldowns;
+    }
+
+    /**
+     * 스킬의 최대 쿨타임 반환
+     * @param {number} skillNumber - 스킬 번호
+     * @returns {number} - 최대 쿨타임 (ms)
+     */
+    getSkillMaxCooldown(skillNumber) {
+        const jobInfo = getJobInfo(this.player.jobClass);
+        const skillIndex = skillNumber - 1; // 배열 인덱스는 0부터 시작
+        
+        if (jobInfo.skills && jobInfo.skills[skillIndex]) {
+            return jobInfo.skills[skillIndex].cooldown;
+        }
+        
+        // 기본값
+        return 3000;
     }
 
     /**

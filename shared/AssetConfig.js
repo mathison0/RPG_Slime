@@ -11,7 +11,13 @@ const AssetConfig = {
     SPRITE_SIZES: {
         PLAYER: {
             WIDTH: 64,
-            HEIGHT: 64
+            HEIGHT: 64,
+            // 표준화된 플레이어 크기 설정
+            STANDARD_SIZE: 64,        // 모든 직업의 기본 표준 크기
+            MIN_SIZE: 38,             // 최소 크기 (레벨 1, 표준의 60%)
+            MAX_SIZE: 77,             // 최대 크기 (표준의 120%)
+            COLLIDER_SIZE: 32,        // 표준 충돌 박스 크기 (모든 직업 동일)
+            GROWTH_RATE: 2            // 레벨당 증가 픽셀
         },
         ENEMY: {
             WIDTH: 32,
@@ -153,17 +159,35 @@ function getDynamicWallSize() {
 }
 
 /**
- * 동적 플레이어 크기 계산 (서버 설정 기반)
+ * 동적 플레이어 크기 계산 (서버 설정 기반, 표준화 적용)
  * @returns {object} 플레이어 크기 객체
  */
 function getDynamicPlayerSize() {
+    const baseConfig = AssetConfig.SPRITE_SIZES.PLAYER;
+    
     if (AssetConfig._serverConfig && AssetConfig._serverConfig.PLAYER) {
+        const serverSize = AssetConfig._serverConfig.PLAYER.DEFAULT_SIZE || baseConfig.STANDARD_SIZE;
         return {
-            WIDTH: AssetConfig._serverConfig.PLAYER.DEFAULT_SIZE || 64,
-            HEIGHT: AssetConfig._serverConfig.PLAYER.DEFAULT_SIZE || 64
+            WIDTH: serverSize,
+            HEIGHT: serverSize,
+            STANDARD_SIZE: serverSize,
+            MIN_SIZE: Math.floor(serverSize * 0.6),
+            MAX_SIZE: Math.floor(serverSize * 1.2),
+            COLLIDER_SIZE: baseConfig.COLLIDER_SIZE,
+            GROWTH_RATE: baseConfig.GROWTH_RATE
         };
     }
-    return { WIDTH: 64, HEIGHT: 64 }; // 기본값
+    
+    // 기본값 (표준화된 설정 포함)
+    return {
+        WIDTH: baseConfig.STANDARD_SIZE,
+        HEIGHT: baseConfig.STANDARD_SIZE,
+        STANDARD_SIZE: baseConfig.STANDARD_SIZE,
+        MIN_SIZE: baseConfig.MIN_SIZE,
+        MAX_SIZE: baseConfig.MAX_SIZE,
+        COLLIDER_SIZE: baseConfig.COLLIDER_SIZE,
+        GROWTH_RATE: baseConfig.GROWTH_RATE
+    };
 }
 
 // CommonJS와 ES6 모듈 지원

@@ -1,5 +1,5 @@
 const gameConfig = require('../config/GameConfig');
-const { getSkillInfo } = require('../../../shared/JobClasses');
+const { getSkillInfo } = require('../utils/JobClassesServer');
 
 /**
  * 서버측 플레이어 클래스
@@ -25,6 +25,7 @@ class ServerPlayer {
     this.visionRange = gameConfig.PLAYER.VISION_RANGE;
     this.lastUpdate = Date.now();
     this.nickname = 'Player';
+    this.isDead = false; // 사망 상태
     
     // 스킬 관련
     this.skillCooldowns = {}; // 스킬별 마지막 사용 시간
@@ -113,6 +114,7 @@ class ServerPlayer {
       defense: this.defense,
       speed: this.speed,
       nickname: this.nickname,
+      isDead: this.isDead, // 사망 상태 추가
       activeActions: activeActions  // 액션 상태 정보 추가
     };
   }
@@ -158,9 +160,27 @@ class ServerPlayer {
    * 데미지 처리
    */
   takeDamage(damage) {
+    if (this.isDead) {
+      return false; // 이미 죽은 상태면 데미지 처리 안함
+    }
+    
     const actualDamage = Math.max(1, damage - this.defense);
     this.hp = Math.max(0, this.hp - actualDamage);
-    return this.hp <= 0; // 사망 여부 반환
+    
+    if (this.hp <= 0) {
+      this.isDead = true;
+      return true; // 사망
+    }
+    
+    return false; // 생존
+  }
+
+  /**
+   * 플레이어 리스폰 (사망 상태 해제)
+   */
+  respawn() {
+    this.isDead = false;
+    this.hp = this.maxHp;
   }
 
   /**

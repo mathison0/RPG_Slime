@@ -1,5 +1,6 @@
 import BaseJob from './BaseJob.js';
-import { getJobInfo } from '../../../shared/JobClasses.js';
+// JobClasses functions available via window.JobClassesModule
+const { getJobInfo } = window.JobClassesModule;
 
 /**
  * 전사 직업 클래스
@@ -46,8 +47,8 @@ export default class WarriorJob extends BaseJob {
     /**
      * 울부짖기 스킬 (Q키)
      */
-    useRoar() {
-        const skillKey = 'roar';
+    useCharge() {
+        const skillKey = 'skill1'; // 통일된 스킬 키 사용
         
         // 쿨타임 체크
         if (!this.isSkillAvailable(skillKey)) {
@@ -97,7 +98,7 @@ export default class WarriorJob extends BaseJob {
      * 휩쓸기 스킬 (E키)
      */
     useSweep() {
-        const skillKey = 'sweep';
+        const skillKey = 'skill2';
         
         console.log('휩쓸기 시도 - isSweeping:', this.isSweeping, 'isOtherPlayer:', this.player.isOtherPlayer);
         
@@ -170,7 +171,7 @@ export default class WarriorJob extends BaseJob {
      * 찌르기 스킬 (R키)
      */
     useThrust() {
-        const skillKey = 'thrust';
+        const skillKey = 'skill3';
         
         // 쿨타임 체크
         if (!this.isSkillAvailable(skillKey)) {
