@@ -1,5 +1,5 @@
 // ES6 wrapper for AssetConfig CommonJS module
-import AssetConfigModule from './AssetConfig.js';
+import * as AssetConfigModule from './AssetConfig.js';
 
 export const {
     AssetConfig,
