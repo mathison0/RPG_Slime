@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import HealthBar from '../ui/HealthBar.js';
 
 /**
  * 서버 제어 적 클래스
@@ -27,8 +28,14 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         // 상태 플래그
         this.isDead = false;
         
+        // UI 요소
+        this.healthBar = null;
+        
         // 기본 물리 설정
         this.initializePhysics();
+        
+        // 체력바 생성
+        this.createHealthBar();
         
         // 애니메이션 관련
         this.lastAttackTime = 0;
@@ -54,6 +61,42 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
      */
     setNetworkId(id) {
         this.networkId = id;
+    }
+    
+    /**
+     * 체력바 생성 (이름표 없음)
+     */
+    createHealthBar() {
+        if (this.healthBar) {
+            this.healthBar.destroy();
+        }
+        
+        // 적 체력바 설정 (체력바만, 이름표 없음)
+        const healthBarConfig = {
+            barWidth: 40,
+            barHeight: 5,
+            borderWidth: 1,
+            backgroundColor: 0x000000,
+            borderColor: 0xffffff,
+            healthColor: 0xff8800, // 적은 주황색
+            lowHealthColor: 0xff0000,
+            lowHealthThreshold: 0.3,
+            yOffsetFromTop: -8, // 엔티티 위쪽 가장자리에서 8px 위에
+            depth: 105
+        };
+        
+        this.healthBar = new HealthBar(this.scene, this, healthBarConfig);
+        this.updateHealthBar();
+    }
+    
+    /**
+     * 체력바 업데이트
+     */
+    updateHealthBar() {
+        if (this.healthBar) {
+            this.healthBar.updateHealth(this.hp, this.maxHp);
+            this.healthBar.updatePosition();
+        }
     }
     
     /**
@@ -94,6 +137,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         if (enemyData.isAttacking) {
             this.playAttackAnimation();
         }
+        
+        // 체력바 업데이트
+        this.updateHealthBar();
     }
     
     /**
@@ -206,7 +252,13 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
      * 정리 작업
      */
     destroy() {
-        // HP 바가 있다면 제거
+        // 체력바가 있다면 제거
+        if (this.healthBar) {
+            this.healthBar.destroy();
+            this.healthBar = null;
+        }
+        
+        // HP 바가 있다면 제거 (기존 코드 호환성)
         if (this.hpBar) {
             this.hpBar.destroy();
             this.hpBar = null;

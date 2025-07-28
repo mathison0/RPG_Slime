@@ -49,20 +49,50 @@ export default class MapManager {
      * 기존 맵 요소들 제거
      */
     destroyExistingMap() {
-        if (this.scene.walls) {
-            this.scene.walls.clear(true, true);
-        }
-        
-        if (this.scene.spawnBarriers) {
-            this.scene.spawnBarriers.clear(true, true);
-        }
-        
-        // 기존 스폰 구역 표시 제거
-        this.scene.children.list.forEach(child => {
-            if (child.type === 'Rectangle' && child.depth === -1) {
-                child.destroy();
+        try {
+            // 벽 그룹 안전하게 제거
+            if (this.scene.walls && this.scene.walls.active) {
+                // 개별 요소들 먼저 제거
+                const wallChildren = [...this.scene.walls.getChildren()];
+                wallChildren.forEach(wall => {
+                    if (wall && wall.active) {
+                        wall.destroy();
+                    }
+                });
+                // 그룹 자체 제거
+                this.scene.walls.clear(true, true);
             }
-        });
+            
+            // 스폰 배리어 그룹 안전하게 제거
+            if (this.scene.spawnBarriers && this.scene.spawnBarriers.active) {
+                // 개별 요소들 먼저 제거
+                const barrierChildren = [...this.scene.spawnBarriers.getChildren()];
+                barrierChildren.forEach(barrier => {
+                    if (barrier && barrier.active) {
+                        barrier.destroy();
+                    }
+                });
+                // 그룹 자체 제거
+                this.scene.spawnBarriers.clear(true, true);
+            }
+            
+            // 기존 스폰 구역 표시 제거
+            if (this.scene.children && this.scene.children.list) {
+                const childrenToDestroy = this.scene.children.list.filter(child => 
+                    child && child.active && child.type === 'Rectangle' && child.depth === -1
+                );
+                childrenToDestroy.forEach(child => {
+                    try {
+                        child.destroy();
+                    } catch (e) {
+                        console.warn('스폰 구역 제거 중 오류:', e);
+                    }
+                });
+            }
+        } catch (error) {
+            console.warn('기존 맵 제거 중 오류 발생:', error);
+            // 오류가 발생해도 계속 진행
+        }
     }
 
     /**

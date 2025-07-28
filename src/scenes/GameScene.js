@@ -129,13 +129,21 @@ export default class GameScene extends Phaser.Scene {
         }
         
         // 다른 플레이어들 제거
-        if (this.otherPlayers?.children) {
-            this.otherPlayers.clear(true, true);
+        if (this.otherPlayers && this.otherPlayers.active) {
+            try {
+                this.otherPlayers.clear(true, true);
+            } catch (e) {
+                console.warn('다른 플레이어 제거 중 오류:', e);
+            }
         }
         
         // 적들 제거
-        if (this.enemies?.children) {
-            this.enemies.clear(true, true);
+        if (this.enemies && this.enemies.active) {
+            try {
+                this.enemies.clear(true, true);
+            } catch (e) {
+                console.warn('적 제거 중 오류:', e);
+            }
         }
         
         // 네트워크 상태 초기화
@@ -861,29 +869,66 @@ export default class GameScene extends Phaser.Scene {
             }
             
             // 다른 플레이어들 제거
-            if (this.otherPlayers) {
-                this.otherPlayers.clear(true, true);
+            if (this.otherPlayers && this.otherPlayers.active) {
+                try {
+                    this.otherPlayers.clear(true, true);
+                } catch (e) {
+                    console.warn('다른 플레이어 제거 중 오류:', e);
+                }
             }
             
             // 적들 제거
-            if (this.enemies) {
-                this.enemies.clear(true, true);
+            if (this.enemies && this.enemies.active) {
+                try {
+                    this.enemies.clear(true, true);
+                } catch (e) {
+                    console.warn('적 제거 중 오류:', e);
+                }
             }
             
             // 벽 제거
-            if (this.walls) {
-                this.walls.clear(true, true);
+            if (this.walls && this.walls.active) {
+                try {
+                    // 개별 요소들 먼저 안전하게 제거
+                    const wallChildren = [...this.walls.getChildren()];
+                    wallChildren.forEach(wall => {
+                        if (wall && wall.active) {
+                            wall.destroy();
+                        }
+                    });
+                    this.walls.clear(true, true);
+                } catch (e) {
+                    console.warn('벽 제거 중 오류:', e);
+                }
             }
             
             // 스폰 배리어 제거
-            if (this.spawnBarriers) {
-                this.spawnBarriers.clear(true, true);
+            if (this.spawnBarriers && this.spawnBarriers.active) {
+                try {
+                    // 개별 요소들 먼저 안전하게 제거
+                    const barrierChildren = [...this.spawnBarriers.getChildren()];
+                    barrierChildren.forEach(barrier => {
+                        if (barrier && barrier.active) {
+                            barrier.destroy();
+                        }
+                    });
+                    this.spawnBarriers.clear(true, true);
+                } catch (e) {
+                    console.warn('스폰 배리어 제거 중 오류:', e);
+                }
             }
             
             // 와드 제거
             if (this.activeWard) {
-                this.activeWard.destroy();
-                this.activeWard = null;
+                try {
+                    if (this.activeWard.sprite && this.activeWard.sprite.active) {
+                        this.activeWard.sprite.destroy();
+                    }
+                    this.activeWard = null;
+                } catch (e) {
+                    console.warn('와드 제거 중 오류:', e);
+                    this.activeWard = null;
+                }
             }
             
             // 매니저들 정리

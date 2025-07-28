@@ -1,4 +1,4 @@
-import { getJobInfo } from '../../shared/JobClasses.js';
+// JobClasses는 서버에서 관리하므로 import 제거
 
 /**
  * 기본 직업 클래스
@@ -77,16 +77,18 @@ export default class BaseJob {
     }
 
     /**
-     * 스킬의 최대 쿨타임 반환
+     * 스킬의 최대 쿨타임 반환 (서버에서 받은 정보 사용)
      * @param {number} skillNumber - 스킬 번호
      * @returns {number} - 최대 쿨타임 (ms)
      */
     getSkillMaxCooldown(skillNumber) {
-        const jobInfo = getJobInfo(this.player.jobClass);
-        const skillIndex = skillNumber - 1; // 배열 인덱스는 0부터 시작
-        
-        if (jobInfo.skills && jobInfo.skills[skillIndex]) {
-            return jobInfo.skills[skillIndex].cooldown;
+        // 서버에서 받은 스킬 쿨타임 정보 사용
+        if (this.player.serverSkillCooldowns) {
+            for (const [skillType, cooldownInfo] of Object.entries(this.player.serverSkillCooldowns)) {
+                if (cooldownInfo.key === skillNumber.toString() || cooldownInfo.key === `${skillNumber}`) {
+                    return cooldownInfo.total;
+                }
+            }
         }
         
         // 기본값

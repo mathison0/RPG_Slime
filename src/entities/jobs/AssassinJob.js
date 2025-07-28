@@ -1,5 +1,5 @@
 import BaseJob from './BaseJob.js';
-import { getJobInfo } from '../../shared/JobClasses.js';
+// JobClasses는 서버에서 관리하므로 import 제거
 
 /**
  * 어쌔신/닌자 직업 클래스
@@ -7,7 +7,7 @@ import { getJobInfo } from '../../shared/JobClasses.js';
 export default class AssassinJob extends BaseJob {
     constructor(player) {
         super(player);
-        this.jobInfo = getJobInfo(player.jobClass);
+        // 직업 정보는 서버에서 받아옴
         
         // 은신 관련 상태
         this.isStealth = false;
@@ -52,10 +52,9 @@ export default class AssassinJob extends BaseJob {
             return;
         }
         
-        const skillInfo = this.jobInfo.skills[0]; // 은신 스킬
+        // 스킬 정보는 서버에서 처리됨
         
-        // 쿨타임 설정
-        this.setSkillCooldown(skillKey, skillInfo.cooldown);
+        // 쿨타임은 서버에서 관리됨
 
         // 서버에 스킬 사용 요청
         this.player.networkManager.useSkill('stealth');
@@ -119,23 +118,7 @@ export default class AssassinJob extends BaseJob {
         }
     }
 
-    // 기본 공격 (마우스 좌클릭) - 어쌔신은 부채꼴 근접 공격
-    useBasicAttack(targetX, targetY) {
-        const currentTime = this.player.scene.time.now;
-        if (currentTime - this.lastBasicAttackTime < this.basicAttackCooldown) {
-            return false; // 쿨다운 중
-        }
-
-        // 은신 상태에서는 기본 공격 막기 (은신 해제 후 공격하므로)
-        if (this.isStealth) {
-            return false;
-        }
-
-        this.lastBasicAttackTime = currentTime;
-        
-        // 어쌔신은 근접 공격
-        return this.useMeleeAttack(targetX, targetY);
-    }
+    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
 
 
 

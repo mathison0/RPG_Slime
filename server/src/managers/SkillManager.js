@@ -14,6 +14,11 @@ class SkillManager {
    * 스킬 사용 시도
    */
   useSkill(player, skillType, targetX = null, targetY = null) {
+    // 죽은 플레이어는 스킬 사용 불가
+    if (player.isDead) {
+      return { success: false, error: 'Cannot use skills while dead' };
+    }
+
     // 기본 공격 처리
     if (skillType === 'basic_attack') {
       return this.handleBasicAttack(player, targetX, targetY);
@@ -531,6 +536,11 @@ class SkillManager {
    * 기본 공격 처리
    */
   handleBasicAttack(player, targetX, targetY) {
+    // 죽은 플레이어는 기본 공격 불가
+    if (player.isDead) {
+      return { success: false, error: 'Cannot attack while dead' };
+    }
+
     const now = Date.now();
     
     // 기본 공격 쿨다운 체크 (직업별로 다름)

@@ -263,20 +263,89 @@ class GameServer {
   syncPlayerStatus() {
     const players = this.gameStateManager.getAllPlayers();
     if (players.length > 0) {
-      const playerStates = players.map(player => ({
-        id: player.id,
-        x: player.x,
-        y: player.y,
-        hp: player.hp,
-        maxHp: player.maxHp,
-        level: player.level,
-        jobClass: player.jobClass,
-        team: player.team,
-        size: player.size  // size 정보 추가
-      }));
+      const playerStates = players.map(player => {
+        // 기본 상태 정보
+        const state = {
+          id: player.id,
+          x: player.x,
+          y: player.y,
+          hp: player.hp,
+          maxHp: player.maxHp,
+          level: player.level,
+          jobClass: player.jobClass,
+          team: player.team,
+          size: player.size,
+          // 전체 스탯 정보 추가
+          stats: {
+            attack: player.attack,
+            defense: player.defense || 0,
+            speed: player.speed,
+            visionRange: player.visionRange
+          },
+          // 직업 정보 추가
+          jobInfo: {
+            name: this.getJobName(player.jobClass),
+            description: this.getJobDescription(player.jobClass)
+          },
+          // 스킬 쿨타임 정보 추가
+          skillCooldowns: this.getPlayerSkillCooldowns(player),
+          // 활성 효과들
+          activeEffects: Array.from(player.activeEffects || []),
+          // 은신 상태
+          isStealth: player.isStealth || false
+        };
+        
+        return state;
+      });
       
       this.io.emit('players-state-update', playerStates);
     }
+  }
+
+  /**
+   * 직업명 조회
+   */
+  getJobName(jobClass) {
+    const { getJobInfo } = require('./shared/JobClasses');
+    const jobInfo = getJobInfo(jobClass);
+    return jobInfo ? jobInfo.name : jobClass;
+  }
+
+  /**
+   * 직업 설명 조회
+   */
+  getJobDescription(jobClass) {
+    const { getJobInfo } = require('./shared/JobClasses');
+    const jobInfo = getJobInfo(jobClass);
+    return jobInfo ? jobInfo.description : '';
+  }
+
+  /**
+   * 플레이어의 스킬 쿨타임 정보 조회
+   */
+  getPlayerSkillCooldowns(player) {
+    const { getJobInfo } = require('./shared/JobClasses');
+    const jobInfo = getJobInfo(player.jobClass);
+    const cooldowns = {};
+    
+    if (jobInfo && jobInfo.skills) {
+      const now = Date.now();
+      
+      jobInfo.skills.forEach(skill => {
+        const skillType = skill.type;
+        const lastUsed = player.skillCooldowns[skillType] || 0;
+        const remainingTime = Math.max(0, (lastUsed + skill.cooldown) - now);
+        
+        cooldowns[skillType] = {
+          remaining: remainingTime,
+          total: skill.cooldown,
+          name: skill.name,
+          key: skill.key
+        };
+      });
+    }
+    
+    return cooldowns;
   }
 
   /**

@@ -107,20 +107,7 @@ export default class ArcherJob extends BaseJob {
         }
     }
 
-    // 기본 공격 (마우스 좌클릭)
-    useBasicAttack(targetX, targetY) {
-        const currentTime = this.player.scene.time.now;
-        if (currentTime - this.lastBasicAttackTime < this.basicAttackCooldown) {
-            return false; // 쿨다운 중
-        }
-
-        this.lastBasicAttackTime = currentTime;
-        
-        // 투사체 생성
-        this.createProjectile(targetX, targetY);
-        
-        return true;
-    }
+    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
 
     createProjectile(targetX, targetY) {
         // 투사체 생성 (화살 스프라이트 사용)

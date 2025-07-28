@@ -1,5 +1,5 @@
 import BaseJob from './BaseJob.js';
-import { getJobInfo } from '../../shared/JobClasses.js';
+// JobClasses는 서버에서 관리하므로 import 제거
 
 /**
  * 전사 직업 클래스
@@ -7,7 +7,7 @@ import { getJobInfo } from '../../shared/JobClasses.js';
 export default class WarriorJob extends BaseJob {
     constructor(player) {
         super(player);
-        this.jobInfo = getJobInfo('warrior');
+        // 직업 정보는 서버에서 받아옴
         
         // 울부짖기 관련 상태
         this.isRoaring = false;
@@ -60,10 +60,9 @@ export default class WarriorJob extends BaseJob {
             return;
         }
         
-        const skillInfo = this.jobInfo.skills[0]; // 울부짖기 스킬
+        // 스킬 정보는 서버에서 처리됨
         
-        // 쿨타임 설정 (즉시 설정)
-        this.setSkillCooldown(skillKey, skillInfo.cooldown);
+        // 쿨타임은 서버에서 관리됨
         
         // 울부짖기 상태 활성화
         this.isRoaring = true;
@@ -113,10 +112,9 @@ export default class WarriorJob extends BaseJob {
             return;
         }
         
-        const skillInfo = this.jobInfo.skills[1]; // 휩쓸기 스킬
+        // 스킬 정보는 서버에서 처리됨
         
-        // 쿨타임 설정
-        this.setSkillCooldown(skillKey, skillInfo.cooldown);
+        // 쿨타임은 서버에서 관리됨
         
         // 휩쓸기 상태 활성화
         this.isSweeping = true;
@@ -183,10 +181,9 @@ export default class WarriorJob extends BaseJob {
             return;
         }
         
-        const skillInfo = this.jobInfo.skills[2]; // 찌르기 스킬
+        // 스킬 정보는 서버에서 처리됨
         
-        // 쿨타임 설정
-        this.setSkillCooldown(skillKey, skillInfo.cooldown);
+        // 쿨타임은 서버에서 관리됨
         
         // 찌르기 상태 활성화
         this.isThrusting = true;
@@ -205,7 +202,7 @@ export default class WarriorJob extends BaseJob {
         const centerX = this.player.x;
         const centerY = this.player.y;
         const width = 40;
-        const height = skillInfo.range;
+        const height = 120; // 기본 범위값 사용
         
         // 마우스 커서 위치 가져오기
         const mouseX = this.scene.input.mousePointer.worldX;
@@ -341,24 +338,11 @@ export default class WarriorJob extends BaseJob {
      * 쿨타임 정보 반환
      */
     getSkillCooldowns() {
-        const roarSkill = this.jobInfo.skills[0];
-        const sweepSkill = this.jobInfo.skills[1];
-        const thrustSkill = this.jobInfo.skills[2];
-        
-        return {
-            Q: {
-                remaining: this.getRemainingCooldown('roar'),
-                max: roarSkill ? roarSkill.cooldown : 1000
-            },
-            E: {
-                remaining: this.getRemainingCooldown('sweep'),
-                max: sweepSkill ? sweepSkill.cooldown : 3000
-            },
-            R: {
-                remaining: this.getRemainingCooldown('thrust'),
-                max: thrustSkill ? thrustSkill.cooldown : 6000
-            }
-        };
+        // 서버에서 받은 쿨타임 정보를 사용
+        if (this.player.serverSkillCooldowns) {
+            return this.player.serverSkillCooldowns;
+        }
+        return {};
     }
 
     /**
@@ -377,40 +361,7 @@ export default class WarriorJob extends BaseJob {
         }
     }
 
-    // 기본 공격 (마우스 좌클릭) - 부채꼴 근접 공격
-    useBasicAttack(targetX, targetY) {
-        const currentTime = this.player.scene.time.now;
-        if (currentTime - this.lastBasicAttackTime < this.basicAttackCooldown) {
-            return false; // 쿨다운 중
-        }
-
-        // 스킬 사용 중에는 기본 공격 막기
-        if (this.isSweeping || this.isThrusting || this.isRoaring) {
-            return false;
-        }
-
-        this.lastBasicAttackTime = currentTime;
-        
-        // 부채꼴 공격 범위 설정
-        const attackRange = 60;
-        const angleOffset = Math.PI / 6; // 30도 (π/6)
-        
-        // 마우스 커서 위치 기준으로 부채꼴 공격
-        const centerX = this.player.x;
-        const centerY = this.player.y;
-        
-        // 플레이어에서 마우스 커서까지의 각도 계산
-        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, targetX, targetY);
-        
-        // 부채꼴의 시작과 끝 각도 계산
-        const startAngle = angleToMouse - angleOffset;
-        const endAngle = angleToMouse + angleOffset;
-        
-        this.createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, attackRange);
-        this.performMeleeAttack(centerX, centerY, startAngle, endAngle, attackRange);
-        
-        return true;
-    }
+    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
 
     createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, radius) {
         // 부채꼴 근접 공격 이펙트 (빨간색 부채꼴)
