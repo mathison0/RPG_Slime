@@ -1322,32 +1322,39 @@ export default class NetworkEventManager {
      * 마법 폭발 이펙트 생성
      */
     createMagicExplosion(x, y) {
-        console.log('마법 폭발 효과 생성:', x, y);
-        const explosion = this.scene.add.circle(x, y, 20, 0xff00ff, 0.8);
+        console.log('마법 범위 공격 효과 생성:', x, y);
+        // 범위 공격 반지름
+        const explosionRadius = 60;
+        
+        // 폭발 이펙트 생성 (시각적 효과만)
+        const explosion = this.scene.add.circle(x, y, explosionRadius, 0xff00ff, 0.3);
         this.scene.tweens.add({
             targets: explosion,
-            scaleX: 2,
-            scaleY: 2,
+            scaleX: 1.5,
+            scaleY: 1.5,
             alpha: 0,
-            duration: 300,
+            duration: 400,
             onComplete: () => {
                 explosion.destroy();
             }
         });
+        
+        // 서버에서 데미지 처리를 담당하므로 클라이언트에서는 시각적 효과만 처리
+        // 데미지 처리 로직 제거됨
     }
 
     /**
-     * 화살 폭발 이펙트 생성
+     * 화살 폭발 이펙트 생성 (매우 작게)
      */
     createArrowExplosion(x, y) {
         console.log('화살 폭발 효과 생성:', x, y);
-        const explosion = this.scene.add.circle(x, y, 20, 0xFF8C00, 0.8);
+        const explosion = this.scene.add.circle(x, y, 5, 0xFF8C00, 0.6);
         this.scene.tweens.add({
             targets: explosion,
-            scaleX: 2,
-            scaleY: 2,
+            scaleX: 1.5,
+            scaleY: 1.5,
             alpha: 0,
-            duration: 300,
+            duration: 200,
             onComplete: () => {
                 explosion.destroy();
             }
@@ -1355,17 +1362,17 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 표창 폭발 이펙트 생성
+     * 표창 폭발 이펙트 생성 (매우 작게)
      */
     createShurikenExplosion(x, y) {
         console.log('표창 폭발 효과 생성:', x, y);
-        const explosion = this.scene.add.circle(x, y, 20, 0x800080, 0.8);
+        const explosion = this.scene.add.circle(x, y, 5, 0x800080, 0.6);
         this.scene.tweens.add({
             targets: explosion,
-            scaleX: 2,
-            scaleY: 2,
+            scaleX: 1.5,
+            scaleY: 1.5,
             alpha: 0,
-            duration: 300,
+            duration: 200,
             onComplete: () => {
                 explosion.destroy();
             }
@@ -1373,17 +1380,17 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 슬라임 폭발 이펙트 생성
+     * 슬라임 폭발 이펙트 생성 (매우 작게)
      */
     createSlimeExplosion(x, y) {
         console.log('슬라임 폭발 효과 생성:', x, y);
-        const explosion = this.scene.add.circle(x, y, 20, 0x00ff00, 0.8);
+        const explosion = this.scene.add.circle(x, y, 5, 0x00ff00, 0.6);
         this.scene.tweens.add({
             targets: explosion,
-            scaleX: 2,
-            scaleY: 2,
+            scaleX: 1.5,
+            scaleY: 1.5,
             alpha: 0,
-            duration: 300,
+            duration: 200,
             onComplete: () => {
                 explosion.destroy();
             }
@@ -1394,24 +1401,36 @@ export default class NetworkEventManager {
      * 슬라임 기본 공격 이펙트 (원거리 투사체)
      */
     showSlimeBasicAttackEffect(player, targetX, targetY) {
-        // 투사체 생성 (녹색 빛나는 점)
-        const projectile = this.scene.add.circle(player.x, player.y, 4, 0x00ff00, 1);
+        // 투사체 생성 (슬라임 투사체 스프라이트 사용)
+        const projectile = this.scene.add.sprite(player.x, player.y, 'slime_basic_attack');
         this.scene.physics.add.existing(projectile);
         
+        // 투사체 크기 설정
+        projectile.setDisplaySize(12, 12);
+        
         // 투사체 콜라이더 설정
-        projectile.body.setCircle(4);
+        projectile.body.setCircle(32);
         projectile.body.setCollideWorldBounds(false);
         projectile.body.setBounce(0, 0);
         projectile.body.setDrag(0, 0);
         
+        // 커서 방향으로 특정 거리까지 날아가도록 계산
+        const angle = Phaser.Math.Angle.Between(player.x, player.y, targetX, targetY);
+        const maxDistance = 250; // 최대 사정거리
+        const finalX = player.x + Math.cos(angle) * maxDistance;
+        const finalY = player.y + Math.sin(angle) * maxDistance;
+        
+        // 투사체 회전 (슬라임 투사체가 날아가는 방향을 향하도록)
+        projectile.setRotation(angle);
+        
         // 투사체 이동 (Tween 사용 + 물리 바디 위치 업데이트)
-        const distance = Phaser.Math.Distance.Between(player.x, player.y, targetX, targetY);
+        const distance = Phaser.Math.Distance.Between(player.x, player.y, finalX, finalY);
         const duration = (distance / 250) * 1000; // 250은 투사체 속도
         
         const moveTween = this.scene.tweens.add({
             targets: projectile,
-            x: targetX,
-            y: targetY,
+            x: finalX,
+            y: finalY,
             duration: duration,
             ease: 'Linear',
             onUpdate: () => {
@@ -1427,13 +1446,10 @@ export default class NetworkEventManager {
             }
         });
         
-        // 투사체 이펙트 (빛나는 효과)
+        // 투사체 이펙트 (미세한 크기 변화)
         const effectTween = this.scene.tweens.add({
             targets: projectile,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            alpha: 0.5,
-            duration: 200,
+            
             yoyo: true,
             repeat: -1
         });
@@ -1451,15 +1467,7 @@ export default class NetworkEventManager {
         // 투사체에 파괴 함수 저장
         projectile.destroyProjectile = destroyProjectile;
         
-        // 투사체와 적 충돌 체크
-        this.scene.physics.add.overlap(projectile, this.scene.enemies, (projectile, enemy) => {
-            if (projectile && projectile.active) {
-                this.createSlimeExplosion(projectile.x, projectile.y);
-                projectile.destroyProjectile();
-            }
-        });
-        
-        // 투사체와 벽 충돌 체크
+        // 투사체와 벽 충돌 체크 (시각적 효과만)
         this.scene.physics.add.collider(projectile, this.scene.walls, (projectile, wall) => {
             if (projectile && projectile.active) {
                 this.createSlimeExplosion(projectile.x, projectile.y);
@@ -1467,31 +1475,20 @@ export default class NetworkEventManager {
             }
         });
         
-        // 다른 플레이어와의 충돌 (적팀만)
+        // 다른 플레이어와의 충돌 (시각적 효과만, 데미지는 서버에서 처리)
         if (this.scene.otherPlayers && this.scene.otherPlayers.getChildren) {
             this.scene.physics.add.overlap(projectile, this.scene.otherPlayers, (projectile, otherPlayer) => {
-                // 현재 화면의 로컬 플레이어 팀 정보 사용
-                const localPlayerTeam = this.scene.player?.team;
-                console.log('슬라임 투사체가 다른 플레이어와 충돌:', otherPlayer?.team, 'vs', localPlayerTeam);
-                console.log('otherPlayer 정보:', otherPlayer?.networkId, otherPlayer?.team);
-                console.log('로컬 플레이어 정보:', this.scene.player?.networkId, localPlayerTeam);
-                console.log('네트워크 ID 비교:', otherPlayer?.networkId, 'vs', player?.networkId);
-                
                 // 발사한 플레이어 자신과는 충돌하지 않도록 제외
                 if (otherPlayer && otherPlayer.networkId === player.networkId) {
-                    console.log('자신과의 충돌 - 무시');
                     return;
                 }
                 
-                // 다른 팀 플레이어와만 충돌 처리 (로컬 플레이어 팀 정보 사용)
-                if (otherPlayer && otherPlayer.team && localPlayerTeam && otherPlayer.team !== localPlayerTeam) {
+                // 다른 팀 플레이어와만 충돌 처리 (발사한 플레이어 팀과 충돌 대상 플레이어 팀 비교)
+                if (otherPlayer && otherPlayer.team && player.team && otherPlayer.team !== player.team) {
                     if (projectile && projectile.active) {
-                        console.log('슬라임 투사체가 다른 팀 플레이어와 충돌 - 폭발 효과 생성');
                         this.createSlimeExplosion(projectile.x, projectile.y);
                         projectile.destroyProjectile();
                     }
-                } else {
-                    console.log('팀 조건 불일치 또는 같은 팀 - 폭발 효과 생성 안함');
                 }
             });
         }
@@ -1503,18 +1500,12 @@ export default class NetworkEventManager {
                 const localPlayerTeam = this.scene.player?.team;
                 const shooterTeam = player?.team;
                 
-                console.log('슬라임 투사체가 로컬 플레이어와 충돌:', shooterTeam, 'vs', localPlayerTeam);
-                console.log('발사자 정보:', player?.networkId, shooterTeam);
-                console.log('로컬 플레이어 정보:', this.scene.player?.networkId, localPlayerTeam);
-                
                 if (shooterTeam && localPlayerTeam && shooterTeam !== localPlayerTeam) {
                     if (projectile && projectile.active) {
                         console.log('슬라임 투사체가 다른 팀 로컬 플레이어와 충돌 - 폭발 효과 생성');
                         this.createSlimeExplosion(projectile.x, projectile.y);
                         projectile.destroyProjectile();
                     }
-                } else {
-                    console.log('같은 팀 로컬 플레이어와 충돌 - 폭발 효과 생성 안함');
                 }
             });
         }
@@ -1531,24 +1522,36 @@ export default class NetworkEventManager {
      * 닌자 기본 공격 이펙트 (원거리 투사체)
      */
     showNinjaBasicAttackEffect(player, targetX, targetY) {
-        // 투사체 생성 (보라색 빛나는 점)
-        const projectile = this.scene.add.circle(player.x, player.y, 4, 0x800080, 1);
+        // 투사체 생성 (수리검 스프라이트 사용)
+        const projectile = this.scene.add.sprite(player.x, player.y, 'ninja_basic_attack');
         this.scene.physics.add.existing(projectile);
         
+        // 투사체 크기 설정
+        projectile.setDisplaySize(18, 18);
+        
         // 투사체 콜라이더 설정
-        projectile.body.setCircle(4);
+        projectile.body.setCircle(20);
         projectile.body.setCollideWorldBounds(false);
         projectile.body.setBounce(0, 0);
         projectile.body.setDrag(0, 0);
         
+        // 커서 방향으로 특정 거리까지 날아가도록 계산
+        const angle = Phaser.Math.Angle.Between(player.x, player.y, targetX, targetY);
+        const maxDistance = 300; // 최대 사정거리
+        const finalX = player.x + Math.cos(angle) * maxDistance;
+        const finalY = player.y + Math.sin(angle) * maxDistance;
+        
+        // 투사체 회전 (수리검이 날아가는 방향을 향하도록)
+        projectile.setRotation(angle);
+        
         // 투사체 이동 (Tween 사용 + 물리 바디 위치 업데이트)
-        const distance = Phaser.Math.Distance.Between(player.x, player.y, targetX, targetY);
+        const distance = Phaser.Math.Distance.Between(player.x, player.y, finalX, finalY);
         const duration = (distance / 300) * 1000; // 300은 투사체 속도
         
         const moveTween = this.scene.tweens.add({
             targets: projectile,
-            x: targetX,
-            y: targetY,
+            x: finalX,
+            y: finalY,
             duration: duration,
             ease: 'Linear',
             onUpdate: () => {
@@ -1564,14 +1567,11 @@ export default class NetworkEventManager {
             }
         });
         
-        // 투사체 이펙트 (빛나는 효과)
+        // 투사체 이펙트 (회전 효과)
         const effectTween = this.scene.tweens.add({
             targets: projectile,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            alpha: 0.5,
-            duration: 200,
-            yoyo: true,
+            angle: projectile.angle + 360,
+            duration: 1000,
             repeat: -1
         });
         
@@ -1588,15 +1588,7 @@ export default class NetworkEventManager {
         // 투사체에 파괴 함수 저장
         projectile.destroyProjectile = destroyProjectile;
         
-        // 투사체와 적 충돌 체크
-        this.scene.physics.add.overlap(projectile, this.scene.enemies, (projectile, enemy) => {
-            if (projectile && projectile.active) {
-                this.createShurikenExplosion(projectile.x, projectile.y);
-                projectile.destroyProjectile();
-            }
-        });
-        
-        // 투사체와 벽 충돌 체크
+        // 투사체와 벽 충돌 체크 (시각적 효과만)
         this.scene.physics.add.collider(projectile, this.scene.walls, (projectile, wall) => {
             if (projectile && projectile.active) {
                 this.createShurikenExplosion(projectile.x, projectile.y);
@@ -1604,28 +1596,20 @@ export default class NetworkEventManager {
             }
         });
         
-        // 다른 플레이어와의 충돌 (적팀만)
+        // 다른 플레이어와의 충돌 (시각적 효과만, 데미지는 서버에서 처리)
         if (this.scene.otherPlayers && this.scene.otherPlayers.getChildren) {
             this.scene.physics.add.overlap(projectile, this.scene.otherPlayers, (projectile, otherPlayer) => {
-                // 현재 화면의 로컬 플레이어 팀 정보 사용
-                const localPlayerTeam = this.scene.player?.team;
-                console.log('닌자 투사체가 다른 플레이어와 충돌:', otherPlayer?.team, 'vs', localPlayerTeam);
-                
                 // 발사한 플레이어 자신과는 충돌하지 않도록 제외
                 if (otherPlayer && otherPlayer.networkId === player.networkId) {
-                    console.log('자신과의 충돌 - 무시');
                     return;
                 }
                 
-                // 다른 팀 플레이어와만 충돌 처리 (로컬 플레이어 팀 정보 사용)
-                if (otherPlayer && otherPlayer.team && localPlayerTeam && otherPlayer.team !== localPlayerTeam) {
+                // 다른 팀 플레이어와만 충돌 처리 (발사한 플레이어 팀과 충돌 대상 플레이어 팀 비교)
+                if (otherPlayer && otherPlayer.team && player.team && otherPlayer.team !== player.team) {
                     if (projectile && projectile.active) {
-                        console.log('닌자 투사체가 다른 팀 플레이어와 충돌 - 폭발 효과 생성');
                         this.createShurikenExplosion(projectile.x, projectile.y);
                         projectile.destroyProjectile();
                     }
-                } else {
-                    console.log('팀 조건 불일치 또는 같은 팀 - 폭발 효과 생성 안함');
                 }
             });
         }
@@ -1637,18 +1621,12 @@ export default class NetworkEventManager {
                 const localPlayerTeam = this.scene.player?.team;
                 const shooterTeam = player?.team;
                 
-                console.log('닌자 투사체가 로컬 플레이어와 충돌:', shooterTeam, 'vs', localPlayerTeam);
-                console.log('발사자 정보:', player?.networkId, shooterTeam);
-                console.log('로컬 플레이어 정보:', this.scene.player?.networkId, localPlayerTeam);
-                
                 if (shooterTeam && localPlayerTeam && shooterTeam !== localPlayerTeam) {
                     if (projectile && projectile.active) {
                         console.log('닌자 투사체가 다른 팀 로컬 플레이어와 충돌 - 폭발 효과 생성');
                         this.createShurikenExplosion(projectile.x, projectile.y);
                         projectile.destroyProjectile();
                     }
-                } else {
-                    console.log('같은 팀 로컬 플레이어와 충돌 - 폭발 효과 생성 안함');
                 }
             });
         }
@@ -1665,24 +1643,36 @@ export default class NetworkEventManager {
      * 궁수 기본 공격 이펙트 (원거리 투사체)
      */
     showArcherBasicAttackEffect(player, targetX, targetY) {
-        // 투사체 생성 (주황색 빛나는 점)
-        const projectile = this.scene.add.circle(player.x, player.y, 4, 0xFF8C00, 1);
+        // 투사체 생성 (화살 스프라이트 사용)
+        const projectile = this.scene.add.sprite(player.x, player.y, 'archer_basic_attack');
         this.scene.physics.add.existing(projectile);
         
+        // 투사체 크기 설정
+        projectile.setDisplaySize(16, 16);
+        
         // 투사체 콜라이더 설정
-        projectile.body.setCircle(4);
+        projectile.body.setCircle(24);
         projectile.body.setCollideWorldBounds(false);
         projectile.body.setBounce(0, 0);
         projectile.body.setDrag(0, 0);
         
+        // 커서 방향으로 특정 거리까지 날아가도록 계산
+        const angle = Phaser.Math.Angle.Between(player.x, player.y, targetX, targetY);
+        const maxDistance = 400; // 최대 사정거리
+        const finalX = player.x + Math.cos(angle) * maxDistance;
+        const finalY = player.y + Math.sin(angle) * maxDistance;
+        
+        // 투사체 회전 (화살이 날아가는 방향을 향하도록)
+        projectile.setRotation(angle);
+        
         // 투사체 이동 (Tween 사용 + 물리 바디 위치 업데이트)
-        const distance = Phaser.Math.Distance.Between(player.x, player.y, targetX, targetY);
-        const duration = (distance / 350) * 1000; // 350은 투사체 속도
+        const distance = Phaser.Math.Distance.Between(player.x, player.y, finalX, finalY);
+        const duration = (distance / 300) * 1000; // 300은 투사체 속도
         
         const moveTween = this.scene.tweens.add({
             targets: projectile,
-            x: targetX,
-            y: targetY,
+            x: finalX,
+            y: finalY,
             duration: duration,
             ease: 'Linear',
             onUpdate: () => {
@@ -1698,13 +1688,8 @@ export default class NetworkEventManager {
             }
         });
         
-        // 투사체 이펙트 (빛나는 효과)
         const effectTween = this.scene.tweens.add({
             targets: projectile,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            alpha: 0.5,
-            duration: 200,
             yoyo: true,
             repeat: -1
         });
@@ -1722,15 +1707,7 @@ export default class NetworkEventManager {
         // 투사체에 파괴 함수 저장
         projectile.destroyProjectile = destroyProjectile;
         
-        // 투사체와 적 충돌 체크
-        this.scene.physics.add.overlap(projectile, this.scene.enemies, (projectile, enemy) => {
-            if (projectile && projectile.active) {
-                this.createArrowExplosion(projectile.x, projectile.y);
-                projectile.destroyProjectile();
-            }
-        });
-        
-        // 투사체와 벽 충돌 체크
+        // 투사체와 벽 충돌 체크 (시각적 효과만)
         this.scene.physics.add.collider(projectile, this.scene.walls, (projectile, wall) => {
             if (projectile && projectile.active) {
                 this.createArrowExplosion(projectile.x, projectile.y);
@@ -1738,28 +1715,20 @@ export default class NetworkEventManager {
             }
         });
         
-        // 다른 플레이어와의 충돌 (적팀만)
+        // 다른 플레이어와의 충돌 (시각적 효과만, 데미지는 서버에서 처리)
         if (this.scene.otherPlayers && this.scene.otherPlayers.getChildren) {
             this.scene.physics.add.overlap(projectile, this.scene.otherPlayers, (projectile, otherPlayer) => {
-                // 현재 화면의 로컬 플레이어 팀 정보 사용
-                const localPlayerTeam = this.scene.player?.team;
-                console.log('궁수 투사체가 다른 플레이어와 충돌:', otherPlayer?.team, 'vs', localPlayerTeam);
-                
                 // 발사한 플레이어 자신과는 충돌하지 않도록 제외
                 if (otherPlayer && otherPlayer.networkId === player.networkId) {
-                    console.log('자신과의 충돌 - 무시');
                     return;
                 }
                 
-                // 다른 팀 플레이어와만 충돌 처리 (로컬 플레이어 팀 정보 사용)
-                if (otherPlayer && otherPlayer.team && localPlayerTeam && otherPlayer.team !== localPlayerTeam) {
+                // 다른 팀 플레이어와만 충돌 처리 (발사한 플레이어 팀과 충돌 대상 플레이어 팀 비교)
+                if (otherPlayer && otherPlayer.team && player.team && otherPlayer.team !== player.team) {
                     if (projectile && projectile.active) {
-                        console.log('궁수 투사체가 다른 플레이어와 충돌 - 폭발 효과 생성');
                         this.createArrowExplosion(projectile.x, projectile.y);
                         projectile.destroyProjectile();
                     }
-                } else {
-                    console.log('팀 조건 불일치 또는 같은 팀 - 폭발 효과 생성 안함');
                 }
             });
         }
@@ -1771,18 +1740,12 @@ export default class NetworkEventManager {
                 const localPlayerTeam = this.scene.player?.team;
                 const shooterTeam = player?.team;
                 
-                console.log('궁수 투사체가 로컬 플레이어와 충돌:', shooterTeam, 'vs', localPlayerTeam);
-                console.log('발사자 정보:', player?.networkId, shooterTeam);
-                console.log('로컬 플레이어 정보:', this.scene.player?.networkId, localPlayerTeam);
-                
                 if (shooterTeam && localPlayerTeam && shooterTeam !== localPlayerTeam) {
                     if (projectile && projectile.active) {
                         console.log('궁수 투사체가 다른 팀 로컬 플레이어와 충돌 - 폭발 효과 생성');
                         this.createArrowExplosion(projectile.x, projectile.y);
                         projectile.destroyProjectile();
                     }
-                } else {
-                    console.log('같은 팀 로컬 플레이어와 충돌 - 폭발 효과 생성 안함');
                 }
             });
         }
@@ -1809,14 +1772,20 @@ export default class NetworkEventManager {
         projectile.body.setBounce(0, 0);
         projectile.body.setDrag(0, 0);
         
+        // 커서 방향으로 특정 거리까지 날아가도록 계산
+        const angle = Phaser.Math.Angle.Between(player.x, player.y, targetX, targetY);
+        const maxDistance = 350; // 최대 사정거리
+        const finalX = player.x + Math.cos(angle) * maxDistance;
+        const finalY = player.y + Math.sin(angle) * maxDistance;
+        
         // 투사체 이동 (Tween 사용 + 물리 바디 위치 업데이트)
-        const distance = Phaser.Math.Distance.Between(player.x, player.y, targetX, targetY);
+        const distance = Phaser.Math.Distance.Between(player.x, player.y, finalX, finalY);
         const duration = (distance / 280) * 1000; // 280은 투사체 속도
         
         const moveTween = this.scene.tweens.add({
             targets: projectile,
-            x: targetX,
-            y: targetY,
+            x: finalX,
+            y: finalY,
             duration: duration,
             ease: 'Linear',
             onUpdate: () => {
@@ -1827,6 +1796,8 @@ export default class NetworkEventManager {
             },
             onComplete: () => {
                 if (projectile.active) {
+                    // 최대 사거리에 도달했을 때 범위 공격 실행
+                    this.createMagicExplosion(projectile.x, projectile.y);
                     projectile.destroy();
                 }
             }
@@ -1856,44 +1827,30 @@ export default class NetworkEventManager {
         // 투사체에 파괴 함수 저장
         projectile.destroyProjectile = destroyProjectile;
         
-        // 투사체와 적 충돌 체크
-        this.scene.physics.add.overlap(projectile, this.scene.enemies, (projectile, enemy) => {
-            if (projectile && projectile.active) {
-                this.createMagicExplosion(projectile.x, projectile.y);
-                projectile.destroyProjectile();
-            }
-        });
-        
-        // 투사체와 벽 충돌 체크
+        // 투사체와 벽 충돌 체크 (시각적 효과만)
         this.scene.physics.add.collider(projectile, this.scene.walls, (projectile, wall) => {
             if (projectile && projectile.active) {
+                // 마법사는 벽 충돌 시에도 범위 공격 실행
                 this.createMagicExplosion(projectile.x, projectile.y);
                 projectile.destroyProjectile();
             }
         });
         
-        // 다른 플레이어와의 충돌 (적팀만)
+        // 다른 플레이어와의 충돌 (시각적 효과만, 데미지는 서버에서 처리)
         if (this.scene.otherPlayers && this.scene.otherPlayers.getChildren) {
             this.scene.physics.add.overlap(projectile, this.scene.otherPlayers, (projectile, otherPlayer) => {
-                // 현재 화면의 로컬 플레이어 팀 정보 사용
-                const localPlayerTeam = this.scene.player?.team;
-                console.log('마법사 투사체가 다른 플레이어와 충돌:', otherPlayer?.team, 'vs', localPlayerTeam);
-                
                 // 발사한 플레이어 자신과는 충돌하지 않도록 제외
                 if (otherPlayer && otherPlayer.networkId === player.networkId) {
-                    console.log('자신과의 충돌 - 무시');
                     return;
                 }
                 
-                // 다른 팀 플레이어와만 충돌 처리 (로컬 플레이어 팀 정보 사용)
-                if (otherPlayer && otherPlayer.team && localPlayerTeam && otherPlayer.team !== localPlayerTeam) {
+                // 다른 팀 플레이어와만 충돌 처리 (발사한 플레이어 팀과 충돌 대상 플레이어 팀 비교)
+                if (otherPlayer && otherPlayer.team && player.team && otherPlayer.team !== player.team) {
                     if (projectile && projectile.active) {
-                        console.log('마법사 투사체가 다른 팀 플레이어와 충돌 - 폭발 효과 생성');
+                        // 마법사는 충돌 시 범위 공격 실행
                         this.createMagicExplosion(projectile.x, projectile.y);
                         projectile.destroyProjectile();
                     }
-                } else {
-                    console.log('팀 조건 불일치 또는 같은 팀 - 폭발 효과 생성 안함');
                 }
             });
         }
@@ -1905,18 +1862,12 @@ export default class NetworkEventManager {
                 const localPlayerTeam = this.scene.player?.team;
                 const shooterTeam = player?.team;
                 
-                console.log('마법사 투사체가 로컬 플레이어와 충돌:', shooterTeam, 'vs', localPlayerTeam);
-                console.log('발사자 정보:', player?.networkId, shooterTeam);
-                console.log('로컬 플레이어 정보:', this.scene.player?.networkId, localPlayerTeam);
-                
                 if (shooterTeam && localPlayerTeam && shooterTeam !== localPlayerTeam) {
                     if (projectile && projectile.active) {
                         console.log('마법사 투사체가 다른 팀 로컬 플레이어와 충돌 - 폭발 효과 생성');
                         this.createMagicExplosion(projectile.x, projectile.y);
                         projectile.destroyProjectile();
                     }
-                } else {
-                    console.log('같은 팀 로컬 플레이어와 충돌 - 폭발 효과 생성 안함');
                 }
             });
         }

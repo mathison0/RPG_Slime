@@ -17,12 +17,10 @@ class ServerPlayer {
     this.hp = this.maxHp;
     this.speed = gameConfig.PLAYER.DEFAULT_SPEED;
     this.attack = gameConfig.PLAYER.DEFAULT_ATTACK;
-    this.defense = gameConfig.PLAYER.DEFAULT_DEFENSE;
     this.jobClass = 'slime';
     this.direction = 'front';
     this.isJumping = false;
     this.size = gameConfig.PLAYER.DEFAULT_SIZE;
-    console.log(`ServerPlayer 생성: size=${this.size} (level=${this.level}, jobClass=${this.jobClass})`);
     this.visionRange = gameConfig.PLAYER.VISION_RANGE;
     this.lastUpdate = Date.now();
     this.nickname = 'Player';
@@ -116,7 +114,6 @@ class ServerPlayer {
       isJumping: this.isJumping,
       size: this.size,
       attack: this.attack,
-      defense: this.defense,
       speed: this.speed,
       nickname: this.nickname,
       isDead: this.isDead, // 사망 상태 추가
@@ -197,8 +194,7 @@ class ServerPlayer {
       return 0; // 무적 상태면 데미지 없음
     }
     
-    const actualDamage = Math.max(1, damage - this.defense);
-    this.hp = Math.max(0, this.hp - actualDamage);
+    this.hp = Math.max(0, this.hp - damage);
     
     // 사망 판정은 메인 게임 루프에서만 처리하므로 여기서는 HP만 업데이트
     return actualDamage;
@@ -368,9 +364,7 @@ class ServerPlayer {
       }
     }
     
-    // 기본 공격력과 레벨을 반영한 데미지 계산
-    const levelBonus = (this.level - 1) * 5;
-    return Math.round((baseDamage + levelBonus) * 0.8);
+    return Math.round(baseDamage);
   }
 
   /**
@@ -414,30 +408,6 @@ class ServerPlayer {
    */
   setSize(newSize) {
     this.size = Math.max(16, Math.min(256, newSize));
-    console.log(`플레이어 ${this.id} 크기 변경: ${this.size}`);
-  }
-
-  /**
-   * JobClasses를 사용한 초기 스탯 설정
-   */
-  initializeStatsFromJobClass() {
-    const stats = calculateStats(this.jobClass, this.level);
-    this.maxHp = stats.hp;
-    this.hp = this.maxHp;
-    this.attack = stats.attack;
-    this.defense = stats.defense;
-    this.speed = stats.speed;
-    this.visionRange = stats.visionRange;
-    
-    // 크기 계산 (GameConfig에서 가져옴)
-    const baseSize = gameConfig.PLAYER.SIZE.BASE_SIZE;
-    const growthRate = gameConfig.PLAYER.SIZE.GROWTH_RATE;
-    const maxSize = gameConfig.PLAYER.SIZE.MAX_SIZE;
-    
-    const targetSize = baseSize + (this.level - 1) * growthRate;
-    this.size = Math.min(targetSize, maxSize);
-    
-    console.log(`ServerPlayer 스탯 초기화: level=${this.level}, hp=${this.hp}/${this.maxHp}, attack=${this.attack}, size=${this.size}`);
   }
 }
 

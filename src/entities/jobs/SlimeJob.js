@@ -89,24 +89,36 @@ export default class SlimeJob extends BaseJob {
     }
 
     createProjectile(targetX, targetY) {
-        // 투사체 생성 (빛나는 점)
-        const projectile = this.player.scene.add.circle(this.player.x, this.player.y, 4, 0x00ff00, 1);
+        // 투사체 생성 (슬라임 투사체 스프라이트 사용)
+        const projectile = this.player.scene.add.sprite(this.player.x, this.player.y, 'slime_basic_attack');
         this.player.scene.physics.add.existing(projectile);
         
+        // 투사체 크기 설정
+        projectile.setDisplaySize(12, 12);
+        
         // 투사체 콜라이더 설정
-        projectile.body.setCircle(4); // 원형 콜라이더 설정
+        projectile.body.setCircle(32); // 원형 콜라이더 설정
         projectile.body.setCollideWorldBounds(false); // 월드 경계 충돌 비활성화
         projectile.body.setBounce(0, 0); // 튕김 없음
         projectile.body.setDrag(0, 0); // 저항 없음
         
+        // 커서 방향으로 특정 거리까지 날아가도록 계산
+        const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, targetX, targetY);
+        const maxDistance = 250; // 최대 사정거리
+        const finalX = this.player.x + Math.cos(angle) * maxDistance;
+        const finalY = this.player.y + Math.sin(angle) * maxDistance;
+        
+        // 투사체 회전 (슬라임 투사체가 날아가는 방향을 향하도록)
+        projectile.setRotation(angle);
+        
         // 투사체 이동 (Tween 사용 + 물리 바디 위치 업데이트)
-        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, targetX, targetY);
+        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, finalX, finalY);
         const duration = (distance / 250) * 1000; // 250은 투사체 속도
         
         const moveTween = this.player.scene.tweens.add({
             targets: projectile,
-            x: targetX,
-            y: targetY,
+            x: finalX,
+            y: finalY,
             duration: duration,
             ease: 'Linear',
             onUpdate: () => {
@@ -122,13 +134,9 @@ export default class SlimeJob extends BaseJob {
             }
         });
         
-        // 투사체 이펙트 (빛나는 효과)
+        // 투사체 이펙트 (미세한 크기 변화)
         const effectTween = this.player.scene.tweens.add({
             targets: projectile,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            alpha: 0.5,
-            duration: 200,
             yoyo: true,
             repeat: -1
         });
@@ -146,17 +154,7 @@ export default class SlimeJob extends BaseJob {
         // 투사체에 파괴 함수 저장
         projectile.destroyProjectile = destroyProjectile;
         
-        // 투사체와 적 충돌 체크
-        this.player.scene.physics.add.overlap(projectile, this.player.scene.enemies, (projectile, enemy) => {
-            console.log('슬라임 기본 공격 투사체가 적과 충돌');
-            if (projectile && projectile.active) {
-                // 적 충돌 시 폭발 이펙트 생성
-                this.createSlimeExplosion(projectile.x, projectile.y);
-                projectile.destroyProjectile();
-            }
-        });
-        
-        // 투사체와 벽 충돌 체크
+        // 투사체와 벽 충돌 체크 (시각적 효과만)
         this.player.scene.physics.add.collider(projectile, this.player.scene.walls, (projectile, wall) => {
             console.log('슬라임 투사체가 벽과 충돌!');
             if (projectile && projectile.active) {
@@ -166,7 +164,7 @@ export default class SlimeJob extends BaseJob {
             }
         });
         
-        // 다른 플레이어와의 충돌 (적팀만)
+        // 다른 플레이어와의 충돌 (시각적 효과만, 데미지는 서버에서 처리)
         this.player.scene.physics.add.overlap(projectile, this.player.scene.otherPlayers, (projectile, otherPlayer) => {
             if (otherPlayer && otherPlayer.team !== this.player.team) {
                 console.log('슬라임 투사체가 다른 팀 플레이어와 충돌!');
@@ -180,16 +178,16 @@ export default class SlimeJob extends BaseJob {
     }
 
     /**
-     * 슬라임 폭발 이펙트 생성
+     * 슬라임 폭발 이펙트 생성 (매우 작게)
      */
     createSlimeExplosion(x, y) {
-        const explosion = this.player.scene.add.circle(x, y, 20, 0x00ff00, 0.8);
+        const explosion = this.player.scene.add.circle(x, y, 5, 0x00ff00, 0.6);
         this.player.scene.tweens.add({
             targets: explosion,
-            scaleX: 2,
-            scaleY: 2,
+            scaleX: 1.5,
+            scaleY: 1.5,
             alpha: 0,
-            duration: 300,
+            duration: 200,
             onComplete: () => {
                 explosion.destroy();
             }

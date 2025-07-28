@@ -38,7 +38,6 @@ const gameConfig = {
   PLAYER: {
     DEFAULT_HP: 100,
     DEFAULT_ATTACK: 20,
-    DEFAULT_DEFENSE: 10,
     DEFAULT_SPEED: 200,
     VISION_RANGE: 300,
     DEFAULT_SIZE: 32, // AssetConfig의 MIN_SIZE와 맞춤 (레벨 1 기본 크기)

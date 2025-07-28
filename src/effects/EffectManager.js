@@ -8,7 +8,7 @@ export default class EffectManager {
     }
 
     /**
-     * 데미지 텍스트 표시
+     * 데미지 텍스트 표시 (비활성화됨)
      * @param {number} x - X 좌표
      * @param {number} y - Y 좌표
      * @param {number} damage - 데미지 값
