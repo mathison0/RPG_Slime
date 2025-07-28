@@ -268,91 +268,78 @@ class ServerPlayer {
   /**
    * 스킬 사용 시도
    */
-  useSkill(skillType, targetX = null, targetY = null) {
-    const skillInfo = getSkillInfo(this.jobClass, skillType);
-    if (!skillInfo) {
-      return { success: false, error: 'Invalid skill type' };
-    }
-
-    // 쿨타임 체크
-    const now = Date.now();
-    const lastUsed = this.skillCooldowns[skillType] || 0;
-    if (now - lastUsed < skillInfo.cooldown) {
-      return { success: false, error: 'Skill on cooldown' };
-    }
-
-    // 스킬별 특수 조건 체크
-    if (this.isJumping && skillType !== 'stealth') {
-      return { success: false, error: 'Cannot use skill while jumping' };
-    }
-
-    // 기절 상태에서는 스킬 사용 불가
-    if (this.isStunned) {
-      return { success: false, error: 'Cannot use skill while stunned' };
-    }
-
-    // 스킬 사용 처리
-    this.skillCooldowns[skillType] = now;
-    
-    // 액션 상태 업데이트
-    const duration = skillInfo.duration || 0;
-    if (duration > 0) {
-      this.currentActions.skills.set(skillType, {
-        startTime: now,
-        duration: duration,
-        endTime: now + duration,
-        skillInfo: {
-          range: this.calculateSkillRange(skillType, skillInfo.range),
-          damage: this.calculateSkillDamage(skillType, skillInfo.damage),
-          duration: duration,
-          heal: skillInfo.heal || 0
-        }
-      });
+  useSkill(skillType, targetX = null, targetY = null, skillManager = null) {
+    if (!skillManager) {
+      return { success: false, error: 'SkillManager not provided' };
     }
     
-    return {
-      success: true,
-      skillType,
-      timestamp: now,
-      playerId: this.id,
-      x: this.x,
-      y: this.y,
-      targetX,
-      targetY,
-      skillInfo: {
-        range: this.calculateSkillRange(skillType, skillInfo.range),
-        damage: this.calculateSkillDamage(skillType, skillInfo.damage),
-        duration: duration,
-        heal: skillInfo.heal || 0
-      }
-    };
+    return skillManager.useSkill(this, skillType, targetX, targetY);
   }
 
   /**
    * 점프 시작 처리
    */
-  startJump(duration = gameConfig.PLAYER.SKILLS.JUMP_DURATION) {
-    if (this.isJumping) {
+  startJump(duration, skillManager = null) {
+    if (!skillManager) {
       return false;
     }
     
-    const now = Date.now();
-    this.isJumping = true;
-    this.currentActions.jump = {
-      startTime: now,
-      duration: duration,
-      endTime: now + duration
-    };
-    
-    return true;
+    return skillManager.startJump(this, duration);
   }
 
   /**
    * 점프 종료 처리
    */
-  endJump() {
-    this.isJumping = false;
-    this.currentActions.jump = null;
+  endJump(skillManager = null) {
+    if (!skillManager) {
+      return;
+    }
+    
+    skillManager.endJump(this);
+  }
+
+  /**
+   * 기절 상태 시작
+   */
+  startStun(duration) {
+    this.isStunned = true;
+    this.stunStartTime = Date.now();
+    this.stunDuration = duration;
+    
+    // 기절 지속시간 후 자동 해제
+    setTimeout(() => {
+      if (this.isStunned) {
+        this.endStun();
+      }
+    }, duration);
+    
+    
+    // 기절 상태 변경을 모든 클라이언트에게 즉시 알림
+    if (global.io) {
+      global.io.emit('player-stunned', {
+        playerId: this.id,
+        isStunned: true,
+        duration: duration
+      });
+    }
+  }
+
+  /**
+   * 기절 상태 종료
+   */
+  endStun() {
+    this.isStunned = false;
+    this.stunStartTime = 0;
+    this.stunDuration = 0;
+    
+    // 기절 상태 해제를 모든 클라이언트에게 즉시 알림
+    if (global.io) {
+      global.io.emit('player-stunned', {
+        playerId: this.id,
+        isStunned: false,
+        duration: 0
+      });
+    }
   }
 
   /**
@@ -402,85 +389,15 @@ class ServerPlayer {
   /**
    * 액션 상태 정리 (만료된 액션들 제거)
    */
-  cleanupExpiredActions() {
-    const now = Date.now();
-    
-    // 점프 상태 확인
-    if (this.currentActions.jump && now >= this.currentActions.jump.endTime) {
-      this.endJump();
+  cleanupExpiredActions(skillManager = null) {
+    if (!skillManager) {
+      return;
     }
     
-    // 스킬 상태 확인
-    for (const [skillType, skillAction] of this.currentActions.skills) {
-      if (now >= skillAction.endTime) {
-        this.currentActions.skills.delete(skillType);
-      }
-    }
+    skillManager.cleanupExpiredActions(this);
   }
 
-  /**
-   * 스킬 범위 계산 (슬라임은 크기에 비례)
-   */
-  calculateSkillRange(skillType, baseRange) {
-    if (this.jobClass === 'slime' && skillType === 'spread') {
-      // 슬라임 퍼지기는 크기에 비례 (기본 크기는 Config에서 가져옴)
-      return Math.round(baseRange * (this.size / gameConfig.PLAYER.SKILLS.BASE_RANGE_REFERENCE));
-    }
-    return baseRange;
-  }
 
-  /**
-   * 스킬 데미지 계산
-   */
-  calculateSkillDamage(skillType, baseDamage) {
-    if (typeof baseDamage === 'string') {
-      // 문자열 수식 처리 (예: 'attack', 'attack * 1.5')
-      if (baseDamage === 'attack') {
-        baseDamage = this.attack;
-      } else if (baseDamage.includes('attack')) {
-        // 간단한 수식 계산 (attack * 1.5 등)
-        baseDamage = this.parseFormula(baseDamage, this.attack);
-      }
-    }
-    
-    return Math.round(baseDamage);
-  }
-
-  /**
-   * 안전한 수식 파싱 (eval 대신 사용)
-   * 'attack * 1.5', 'attack + 10' 등의 간단한 수식을 파싱
-   */
-  parseFormula(formula, attackValue) {
-    // 공백 제거
-    const cleanFormula = formula.replace(/\s/g, '');
-    
-    // attack 값으로 치환
-    const withValue = cleanFormula.replace(/attack/g, attackValue);
-    
-    // 간단한 수식 파싱 (*, +, -, / 지원)
-    const match = withValue.match(/^(\d+(?:\.\d+)?)\s*([+\-*/])\s*(\d+(?:\.\d+)?)$/);
-    if (match) {
-      const [, left, operator, right] = match;
-      const leftNum = parseFloat(left);
-      const rightNum = parseFloat(right);
-      
-      switch (operator) {
-        case '*': return Math.round(leftNum * rightNum);
-        case '/': return Math.round(leftNum / rightNum);
-        case '+': return Math.round(leftNum + rightNum);
-        case '-': return Math.round(leftNum - rightNum);
-        default: return attackValue;
-      }
-    }
-    
-    // 단순 숫자인 경우
-    const numMatch = withValue.match(/^(\d+(?:\.\d+)?)$/);
-    if (numMatch) {
-      return Math.round(parseFloat(numMatch[1]));
-    }
-    
-    return attackValue;
-  }
 
   /**
    * 콜라이더 크기 반환 (클라이언트와 동일한 로직)

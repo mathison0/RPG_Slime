@@ -137,6 +137,52 @@ class ServerEnemy {
   }
 
   /**
+   * 두 엔티티 간의 모서리 간 최단 거리 계산
+   * @param {Object} entity1 - 첫 번째 엔티티 (x, y, size)
+   * @param {Object} entity2 - 두 번째 엔티티 (x, y, size)
+   * @returns {number} 두 엔티티의 가장 가까운 모서리 간의 거리
+   */
+  calculateEdgeDistance(entity1, entity2) {
+    // 각 엔티티를 사각형으로 간주하여 경계 계산
+    const halfSize1 = entity1.size / 2;
+    const halfSize2 = entity2.size / 2;
+    
+    // 엔티티1의 경계
+    const left1 = entity1.x - halfSize1;
+    const right1 = entity1.x + halfSize1;
+    const top1 = entity1.y - halfSize1;
+    const bottom1 = entity1.y + halfSize1;
+    
+    // 엔티티2의 경계
+    const left2 = entity2.x - halfSize2;
+    const right2 = entity2.x + halfSize2;
+    const top2 = entity2.y - halfSize2;
+    const bottom2 = entity2.y + halfSize2;
+    
+    // 두 사각형 간의 거리 계산
+    let dx = 0;
+    let dy = 0;
+    
+    // X축 방향 거리
+    if (right1 < left2) {
+      dx = left2 - right1;
+    } else if (right2 < left1) {
+      dx = left1 - right2;
+    }
+    // 겹치는 경우 dx = 0
+    
+    // Y축 방향 거리
+    if (bottom1 < top2) {
+      dy = top2 - bottom1;
+    } else if (bottom2 < top1) {
+      dy = top1 - bottom2;
+    }
+    // 겹치는 경우 dy = 0
+    
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  /**
    * 몬스터 AI 업데이트
    */
   update(players, walls, delta) {
@@ -203,7 +249,7 @@ class ServerEnemy {
   }
 
   /**
-   * 타겟 추적 (벽 고려)
+   * 타겟 추적 (벽 고려 제거)
    */
   chaseTarget(walls, delta) {
     if (!this.target) return;
@@ -227,34 +273,23 @@ class ServerEnemy {
       this.vy = 0;
       return;
     }
+
+    const edgeDistance = this.calculateEdgeDistance(this, this.target);
     
     // 공격 범위 내에 있으면 공격 시도 (움직임 중단)
-    if (distance <= this.attackRange) {
+    if (edgeDistance <= this.attackRange) {
       this.vx = 0;
       this.vy = 0;
       this.tryAttack();
       return;
     }
     
-    // 타겟 방향으로 이동
+    // 타겟 방향으로 직진 이동
     const dirX = dx / distance;
     const dirY = dy / distance;
     
-    // 벽 충돌을 고려한 경로 찾기
-    const moveX = dirX * this.speed;
-    const moveY = dirY * this.speed;
-    
-    // 간단한 벽 회피 로직
-    const futureX = this.x + moveX * delta / 1000;
-    const futureY = this.y + moveY * delta / 1000;
-    
-    if (this.canMoveTo(futureX, futureY, walls)) {
-      this.vx = moveX;
-      this.vy = moveY;
-    } else {
-      // 벽에 막혔을 때 우회 경로 시도
-      this.findAlternativePath(dirX, dirY, walls);
-    }
+    this.vx = dirX * this.speed;
+    this.vy = dirY * this.speed;
   }
 
   /**
@@ -271,46 +306,24 @@ class ServerEnemy {
   }
 
   /**
-   * 이동 처리
+   * 이동 처리 (벽 충돌 체크 제거)
    */
   move(delta, walls) {
     const deltaTime = delta / 1000;
     const nextX = this.x + this.vx * deltaTime;
     const nextY = this.y + this.vy * deltaTime;
     
-    // 벽 충돌 체크 후 이동
-    if (this.canMoveTo(nextX, nextY, walls)) {
-      this.x = nextX;
-      this.y = nextY;
-    } else {
-      // 벽에 막혔을 때는 속도를 0으로 설정하고 배회 방향 변경
-      this.vx = 0;
-      this.vy = 0;
-      this.wanderDirection = Math.random() * Math.PI * 2;
-      this.wanderChangeTime = Date.now() + 500; // 0.5초 후 새 방향
-    }
+    // 벽 충돌 체크 없이 자유롭게 이동
+    this.x = nextX;
+    this.y = nextY;
   }
 
   /**
-   * 이동 가능 여부 체크 (벽과 구역 경계)
+   * 이동 가능 여부 체크 (구역 경계만 체크, 벽 충돌 제거)
    */
   canMoveTo(x, y, walls) {
-    // 구역 경계 체크
-    if (!this.isWithinBounds(x, y)) {
-      return false;
-    }
-    
-    // 벽 충돌 체크
-    for (const wall of walls) {
-      if (x < wall.x + wall.width &&
-          x + this.size > wall.x &&
-          y < wall.y + wall.height &&
-          y + this.size > wall.y) {
-        return false;
-      }
-    }
-    
-    return true;
+    // 구역 경계 체크만 수행
+    return this.isWithinBounds(x, y);
   }
 
   /**
@@ -351,35 +364,6 @@ class ServerEnemy {
   }
 
   /**
-   * 대안 경로 찾기 (간단한 벽 회피)
-   */
-  findAlternativePath(targetDirX, targetDirY, walls) {
-    // 여러 방향 시도
-    const directions = [
-      { x: -targetDirY, y: targetDirX }, // 90도 회전
-      { x: targetDirY, y: -targetDirX }, // -90도 회전
-      { x: -targetDirX, y: -targetDirY } // 180도 회전
-    ];
-    
-    for (const dir of directions) {
-      const moveX = dir.x * this.speed;
-      const moveY = dir.y * this.speed;
-      const futureX = this.x + moveX * 0.05; // 짧은 거리로 테스트
-      const futureY = this.y + moveY * 0.05;
-      
-      if (this.canMoveTo(futureX, futureY, walls)) {
-        this.vx = moveX;
-        this.vy = moveY;
-        return;
-      }
-    }
-    
-    // 모든 방향이 막혔으면 정지
-    this.vx = 0;
-    this.vy = 0;
-  }
-
-  /**
    * 구역 경계 체크 및 위치 조정
    */
   checkBounds() {
@@ -408,46 +392,6 @@ class ServerEnemy {
   }
 
   /**
-   * 벽 충돌 체크
-   */
-  checkWallCollision(walls) {
-    for (const wall of walls) {
-      if (this.x < wall.x + wall.width &&
-          this.x + this.size > wall.x &&
-          this.y < wall.y + wall.height &&
-          this.y + this.size > wall.y) {
-        
-        // 벽에서 밀어내기
-        const overlapX = Math.min(this.x + this.size - wall.x, wall.x + wall.width - this.x);
-        const overlapY = Math.min(this.y + this.size - wall.y, wall.y + wall.height - this.y);
-        
-        if (overlapX < overlapY) {
-          // 좌우로 밀어내기
-          if (this.x < wall.x) {
-            this.x = wall.x - this.size;
-            this.vx = -Math.abs(this.vx);
-          } else {
-            this.x = wall.x + wall.width;
-            this.vx = Math.abs(this.vx);
-          }
-        } else {
-          // 상하로 밀어내기
-          if (this.y < wall.y) {
-            this.y = wall.y - this.size;
-            this.vy = -Math.abs(this.vy);
-          } else {
-            this.y = wall.y + wall.height;
-            this.vy = Math.abs(this.vy);
-          }
-        }
-        
-        this.wanderDirection = Math.random() * Math.PI * 2;
-        break;
-      }
-    }
-  }
-
-  /**
    * 공격 시도
    */
   tryAttack() {
@@ -460,12 +404,6 @@ class ServerEnemy {
         return null;
       }
       
-      // 공격 범위 내에 있는지 다시 체크
-      const dx = this.target.x - this.x;
-      const dy = this.target.y - this.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      if (distance <= this.attackRange) {
         this.lastAttack = now;
         this.isAttacking = true;
         
@@ -489,7 +427,6 @@ class ServerEnemy {
             newHp: player.hp
           });
         }
-      }
     }
     return null;
   }

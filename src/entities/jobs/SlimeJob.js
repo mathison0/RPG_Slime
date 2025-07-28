@@ -1,5 +1,5 @@
 import BaseJob from './BaseJob.js';
-import { getJobInfo } from '../../shared/JobClasses.js';
+// JobClasses는 서버에서 관리하므로 import 제거
 
 /**
  * 슬라임 직업 클래스
@@ -7,7 +7,7 @@ import { getJobInfo } from '../../shared/JobClasses.js';
 export default class SlimeJob extends BaseJob {
     constructor(player) {
         super(player);
-        this.jobInfo = getJobInfo('slime');
+        // 직업 정보는 서버에서 받아옴
         this.lastBasicAttackTime = 0;
         this.basicAttackCooldown = 600; // 기본 공격 쿨다운 (밀리초)
     }
@@ -50,10 +50,9 @@ export default class SlimeJob extends BaseJob {
             return;
         }
         
-        const skillInfo = this.jobInfo.skills[0]; // 퍼지기 스킬
+        // 스킬 정보는 서버에서 처리됨
         
-        // 쿨타임 설정
-        this.setSkillCooldown(skillKey, skillInfo.cooldown);
+        // 쿨타임은 서버에서 관리됨
 
         // 서버에 스킬 사용 요청
         this.player.networkManager.useSkill('spread');
@@ -62,31 +61,17 @@ export default class SlimeJob extends BaseJob {
     }
 
     /**
-     * 쿨타임 정보 반환
+     * 쿨타임 정보 반환 (서버에서 받은 정보 사용)
      */
     getSkillCooldowns() {
-        return {
-            1: {
-                remaining: this.getRemainingCooldown('spread'),
-                max: this.jobInfo.skills[0].cooldown
-            }
-        };
-    }
-
-    // 기본 공격 (마우스 좌클릭)
-    useBasicAttack(targetX, targetY) {
-        const currentTime = this.player.scene.time.now;
-        if (currentTime - this.lastBasicAttackTime < this.basicAttackCooldown) {
-            return false; // 쿨다운 중
+        // 서버에서 받은 쿨타임 정보를 사용
+        if (this.player.serverSkillCooldowns) {
+            return this.player.serverSkillCooldowns;
         }
-
-        this.lastBasicAttackTime = currentTime;
-        
-        // 투사체 생성
-        this.createProjectile(targetX, targetY);
-        
-        return true;
+        return {};
     }
+
+    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
 
     createProjectile(targetX, targetY) {
         // 투사체 생성 (슬라임 투사체 스프라이트 사용)

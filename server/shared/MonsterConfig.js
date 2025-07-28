@@ -23,23 +23,23 @@ const BASE_MONSTER_STATS = {
   [MONSTER_TYPES.BASIC]: {
     hp: 50,
     attack: 15,
-    speed: 60,
+    speed: 80,
     size: 32,
     baseColor: { r: 180, g: 255, b: 180 }, // 밝은 초록
     exp: 10
   },
   [MONSTER_TYPES.CHARGE]: {
-    hp: 40,
-    attack: 20,
-    speed: 100,
+    hp: 30,
+    attack: 30,
+    speed: 160,
     size: 36,
     baseColor: { r: 255, g: 200, b: 100 }, // 밝은 주황
     exp: 15
   },
   [MONSTER_TYPES.ELITE]: {
-    hp: 80,
-    attack: 25,
-    speed: 50,
+    hp: 200,
+    attack: 50,
+    speed: 120,
     size: 44,
     baseColor: { r: 220, g: 150, b: 255 }, // 밝은 보라
     exp: 30
@@ -104,9 +104,9 @@ const MAX_MONSTERS_PER_LEVEL = {
 
 // 공통 설정
 const COMMON_CONFIG = {
-  AGGRO_RANGE: 120, // 기본 인식 범위 (어그로가 끌리는 범위) - 적당한 크기로 조정
-  MAX_AGGRO_RANGE: 200, // 최대 인식 범위 (어그로가 풀리는 범위) - 적당한 크기로 조정
-  ATTACK_RANGE: 35,
+  AGGRO_RANGE: 200, // 기본 인식 범위 (어그로가 끌리는 범위) - 적당한 크기로 조정
+  MAX_AGGRO_RANGE: 400, // 최대 인식 범위 (어그로가 풀리는 범위) - 적당한 크기로 조정
+  ATTACK_RANGE: 10,
   ATTACK_COOLDOWN: 1500,
   WANDER_SPEED: 50, // 배회할 때의 고정 속도 - 적당한 속도로 조정
   COLOR_INTENSITY_STEP: 0.2, // 레벨별 색깔 진해지는 정도

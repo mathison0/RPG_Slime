@@ -282,40 +282,7 @@ export default class SupporterJob extends BaseJob {
         }
     }
 
-    // 기본 공격 (마우스 좌클릭) - 부채꼴 근접 공격
-    useBasicAttack(targetX, targetY) {
-        const currentTime = this.player.scene.time.now;
-        if (currentTime - this.lastBasicAttackTime < this.basicAttackCooldown) {
-            return false; // 쿨다운 중
-        }
-
-        // 점프 중에는 기본 공격 막기
-        if (this.isJumping) {
-            return false;
-        }
-
-        this.lastBasicAttackTime = currentTime;
-        
-        // 부채꼴 공격 범위 설정
-        const attackRange = 55;
-        const angleOffset = Math.PI / 6; // 30도 (π/6)
-        
-        // 마우스 커서 위치 기준으로 부채꼴 공격
-        const centerX = this.player.x;
-        const centerY = this.player.y;
-        
-        // 플레이어에서 마우스 커서까지의 각도 계산
-        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, targetX, targetY);
-        
-        // 부채꼴의 시작과 끝 각도 계산
-        const startAngle = angleToMouse - angleOffset;
-        const endAngle = angleToMouse + angleOffset;
-        
-        this.createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, attackRange);
-        this.performMeleeAttack(centerX, centerY, startAngle, endAngle, attackRange);
-        
-        return true;
-    }
+    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
 
     createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, radius) {
         // 부채꼴 근접 공격 이펙트 (노란색 부채꼴)

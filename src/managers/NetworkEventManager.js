@@ -429,9 +429,7 @@ export default class NetworkEventManager {
             ? this.scene.player 
             : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
         
-        // 디버깅 로그 추가
         const isOwnPlayer = data.playerId === this.networkManager.playerId;
-        console.log(`${isOwnPlayer ? '본인' : '다른 플레이어'} 스킬 사용: ${data.skillType} (플레이어 ID: ${data.playerId})`);
         
         if (player) {
             // 본인 플레이어의 스킬 사용 성공 시 쿨타임 설정 (울부짖기는 이미 설정됨)
@@ -460,21 +458,12 @@ export default class NetworkEventManager {
                 this.handleSkillDamageResult(data.damageResult);
             }
             
-            // 본인 플레이어의 기본 공격은 이펙트를 생성하지 않음 (중복 방지)
-            if (isOwnPlayer && data.skillType === 'basic_attack') {
-                console.log('본인 플레이어의 기본 공격 이펙트 스킵 (중복 방지)');
-                return;
-            }
-            
-            // 타임스탬프 기반 이펙트 동기화
+            // 타임스탬프 기반 이펙트 동기화 (모든 스킬 타입 통일 처리)
             const currentTime = Date.now();
             const skillDelay = currentTime - data.timestamp;
             
-            console.log(`스킬 지연시간: ${skillDelay}ms`);
-            
             // 지연시간이 너무 크면 (1초 이상) 이펙트 스킵
             if (skillDelay > 1000) {
-                console.log(`스킬 이펙트 스킵 - 지연시간: ${skillDelay}ms`);
                 return;
             }
             
@@ -483,17 +472,13 @@ export default class NetworkEventManager {
             
             if (adjustedDelay > 0) {
                 // 지연해서 재생
-                console.log(`스킬 이펙트 지연 실행: ${adjustedDelay}ms 후`);
                 this.scene.time.delayedCall(adjustedDelay, () => {
                     this.showSkillEffect(player, data.skillType, data);
                 });
             } else {
                 // 즉시 재생
-                console.log('스킬 이펙트 즉시 실행');
                 this.showSkillEffect(player, data.skillType, data);
             }
-        } else {
-            console.warn(`플레이어를 찾을 수 없음: ${data.playerId}`);
         }
     }
 
@@ -698,13 +683,21 @@ export default class NetworkEventManager {
             }
             
             // 다른 플레이어들 제거
-            if (this.scene.otherPlayers) {
-                this.scene.otherPlayers.clear(true, true);
+            if (this.scene.otherPlayers && this.scene.otherPlayers.active) {
+                try {
+                    this.scene.otherPlayers.clear(true, true);
+                } catch (e) {
+                    console.warn('다른 플레이어 제거 중 오류:', e);
+                }
             }
             
             // 적들 제거
-            if (this.scene.enemies) {
-                this.scene.enemies.clear(true, true);
+            if (this.scene.enemies && this.scene.enemies.active) {
+                try {
+                    this.scene.enemies.clear(true, true);
+                } catch (e) {
+                    console.warn('적 제거 중 오류:', e);
+                }
             }
             
             // 기타 게임 오브젝트들 초기화
@@ -725,10 +718,33 @@ export default class NetworkEventManager {
         // 본인 플레이어 상태 업데이트
         const myPlayerState = playerStates.find(p => p.id === this.networkManager.playerId);
         if (myPlayerState && this.scene.player) {
+            // 기본 상태 정보
             this.scene.player.hp = myPlayerState.hp;
             this.scene.player.maxHp = myPlayerState.maxHp;
+            this.scene.player.level = myPlayerState.level;
+            this.scene.player.jobClass = myPlayerState.jobClass;
             
-            // size 정보 업데이트 추가
+            // 스탯 정보 업데이트 (서버에서 계산된 값 사용)
+            if (myPlayerState.stats) {
+                this.scene.player.attack = myPlayerState.stats.attack;
+                this.scene.player.defense = myPlayerState.stats.defense;
+                this.scene.player.speed = myPlayerState.stats.speed;
+                this.scene.player.visionRange = myPlayerState.stats.visionRange;
+            }
+            
+            // 직업 정보 저장 (UI에서 사용)
+            this.scene.player.jobInfo = myPlayerState.jobInfo;
+            
+            // 스킬 쿨타임 정보 저장
+            this.scene.player.serverSkillCooldowns = myPlayerState.skillCooldowns;
+            
+            // 활성 효과 정보
+            this.scene.player.activeEffects = new Set(myPlayerState.activeEffects || []);
+            
+            // 은신 상태
+            this.scene.player.isStealth = myPlayerState.isStealth;
+            
+            // size 정보 업데이트
             if (myPlayerState.size !== undefined && myPlayerState.size !== this.scene.player.size) {
                 this.scene.player.size = myPlayerState.size;
                 this.scene.player.updateSize();
@@ -750,7 +766,19 @@ export default class NetworkEventManager {
                 }
             }
             
-            this.scene.player.updateUI();
+            // 기절 상태 정보 업데이트
+            if (myPlayerState.isStunned !== undefined && myPlayerState.isStunned !== this.scene.player.isStunned) {
+                this.scene.player.isStunned = myPlayerState.isStunned;
+                console.log(`본인 플레이어 기절 상태: ${myPlayerState.isStunned}`);
+                
+                // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
+                if (myPlayerState.isStunned) {
+                    this.showStunEffect(this.scene.player, 2000); // 2초 기절
+                }
+            }
+            
+            // UI 업데이트 (서버에서 받은 정보 사용)
+            this.scene.player.updateUIFromServer();
         }
         
         // 다른 플레이어들 상태 업데이트
@@ -999,7 +1027,7 @@ export default class NetworkEventManager {
     handlePlayerJobChanged(data) {
         // 본인 플레이어 직업 변경 처리
         if (data.id === this.networkManager.playerId && this.scene.player) {
-            this.scene.player.changeJob(data.jobClass);
+            this.scene.player.setJobClass(data.jobClass);
             console.log(`본인 직업 변경: ${data.jobClass}`);
             return;
         }
@@ -1366,8 +1394,15 @@ export default class NetworkEventManager {
      */
     showBasicAttackEffect(player, data = null) {
         const jobClass = data?.jobClass || player.jobClass;
-        const targetX = data?.targetX || player.x;
-        const targetY = data?.targetY || player.y;
+        
+        // targetX, targetY를 숫자로 확실히 변환
+        let targetX = player.x;
+        let targetY = player.y;
+        
+        if (data && typeof data.targetX === 'number' && typeof data.targetY === 'number') {
+            targetX = data.targetX;
+            targetY = data.targetY;
+        }
         
         // 직업별 기본 공격 이펙트 처리
         switch (jobClass) {

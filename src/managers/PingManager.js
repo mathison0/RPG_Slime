@@ -401,15 +401,23 @@ export default class PingManager {
      * 정리 작업
      */
     destroy() {
-        if (this.pings) {
-            this.pings.clear(true, true);
+        if (this.pings && this.pings.active) {
+            try {
+                this.pings.clear(true, true);
+            } catch (e) {
+                console.warn('핑 제거 중 오류:', e);
+            }
         }
         
         if (this.pingMessageText) {
             this.pingMessageText.destroy();
         }
         
-        this.activePingArrows.clear();
-        this.activePingPositions.clear();
+        if (this.activePingArrows) {
+            this.activePingArrows.clear();
+        }
+        if (this.activePingPositions) {
+            this.activePingPositions.clear();
+        }
     }
 } 

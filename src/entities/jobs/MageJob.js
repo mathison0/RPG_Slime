@@ -44,10 +44,9 @@ export default class MageJob extends BaseJob {
             return;
         }
         
-        const skillInfo = this.jobInfo.skills[0]; // 와드 스킬
+        // 스킬 정보는 서버에서 처리됨
         
-        // 쿨타임 설정
-        this.setSkillCooldown(skillKey, skillInfo.cooldown);
+        // 쿨타임은 서버에서 관리됨
         
         // 와드 생성
         const ward = this.scene.add.sprite(this.player.x, this.player.y, 'ward');
@@ -62,11 +61,11 @@ export default class MageJob extends BaseJob {
         ward.hp = 40;
         ward.maxHp = 40;
         
-        // 와드 정보 저장
+        // 와드 정보 저장 (기본 범위값 사용)
         this.scene.activeWard = { 
             x: this.player.x, 
             y: this.player.y, 
-            radius: skillInfo.range,
+            radius: 120, // 기본 범위값
             sprite: ward,
             hp: ward.hp,
             maxHp: ward.maxHp
@@ -93,8 +92,8 @@ export default class MageJob extends BaseJob {
                 try {
                     this.scene.enemies.getChildren().forEach(enemy => {
                         if (enemy && !enemy.isDead) {
-                            const distance = Phaser.Math.Distance.Between(ward.x, ward.y, enemy.x, enemy.y);
-                            if (distance <= skillInfo.range) {
+                                                    const distance = Phaser.Math.Distance.Between(ward.x, ward.y, enemy.x, enemy.y);
+                        if (distance <= 120) { // 기본 범위값
                                 if (!enemy.wardDetected) {
                                     enemy.wardDetected = true;
                                     enemy.setTint(0xff0000);
@@ -169,13 +168,12 @@ export default class MageJob extends BaseJob {
             return;
         }
         
-        const skillInfo = this.jobInfo.skills[1]; // 얼음 장판 스킬
+        // 스킬 정보는 서버에서 처리됨
         
-        // 쿨타임 설정
-        this.setSkillCooldown(skillKey, skillInfo.cooldown);
+        // 쿨타임은 서버에서 관리됨
         
         // 얼음 장판 생성
-        const iceField = this.scene.add.circle(this.player.x, this.player.y, skillInfo.range, 0x87ceeb, 0.4);
+        const iceField = this.scene.add.circle(this.player.x, this.player.y, 100, 0x87ceeb, 0.4);
         this.scene.physics.add.existing(iceField);
         iceField.body.setImmovable(true);
         
@@ -216,7 +214,7 @@ export default class MageJob extends BaseJob {
         });
         
         // 6초 후 얼음 장판 제거
-        this.scene.time.delayedCall(skillInfo.duration, () => {
+        this.scene.time.delayedCall(6000, () => { // 기본 지속시간
             iceField.destroy();
         });
 
@@ -240,21 +238,21 @@ export default class MageJob extends BaseJob {
             return;
         }
         
-        const skillInfo = this.jobInfo.skills[2]; // 마법 투사체 스킬
+        // 스킬 정보는 서버에서 처리됨
         
-        // 쿨타임 설정
-        this.setSkillCooldown(skillKey, skillInfo.cooldown);
+        // 쿨타임은 서버에서 관리됨
         
         // 마우스 커서의 월드 좌표 가져오기
         const pointer = this.scene.input.activePointer;
         const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
         
         // 사거리 제한
+        const maxRange = 400; // 기본 범위값
         const initialDistance = Phaser.Math.Distance.Between(this.player.x, this.player.y, worldPoint.x, worldPoint.y);
-        if (initialDistance > skillInfo.range) {
+        if (initialDistance > maxRange) {
             const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, worldPoint.x, worldPoint.y);
-            worldPoint.x = this.player.x + Math.cos(angle) * skillInfo.range;
-            worldPoint.y = this.player.y + Math.sin(angle) * skillInfo.range;
+            worldPoint.x = this.player.x + Math.cos(angle) * maxRange;
+            worldPoint.y = this.player.y + Math.sin(angle) * maxRange;
         }
         
         // 마법 투사체 생성
@@ -395,36 +393,14 @@ export default class MageJob extends BaseJob {
      * 쿨타임 정보 반환
      */
     getSkillCooldowns() {
-        return {
-            1: {
-                remaining: this.getRemainingCooldown('ward'),
-                max: this.jobInfo.skills[0].cooldown
-            },
-            2: {
-                remaining: this.getRemainingCooldown('ice_field'),
-                max: this.jobInfo.skills[1].cooldown
-            },
-            3: {
-                remaining: this.getRemainingCooldown('magic_missile'),
-                max: this.jobInfo.skills[2].cooldown
-            }
-        };
-    }
-
-    // 기본 공격 (마우스 좌클릭)
-    useBasicAttack(targetX, targetY) {
-        const currentTime = this.player.scene.time.now;
-        if (currentTime - this.lastBasicAttackTime < this.basicAttackCooldown) {
-            return false; // 쿨다운 중
+        // 서버에서 받은 쿨타임 정보를 사용
+        if (this.player.serverSkillCooldowns) {
+            return this.player.serverSkillCooldowns;
         }
-
-        this.lastBasicAttackTime = currentTime;
-        
-        // 투사체 생성
-        this.createProjectile(targetX, targetY);
-        
-        return true;
+        return {};
     }
+
+    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
 
     createProjectile(targetX, targetY) {
         // 투사체 생성 (빛나는 점)
