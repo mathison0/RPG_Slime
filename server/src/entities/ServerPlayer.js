@@ -1,6 +1,5 @@
 const gameConfig = require('../config/GameConfig');
-const { getSkillInfo } = require('../utils/JobClassesServer');
-const { calculateStats } = require('../../../shared/JobClasses');
+const { getSkillInfo, calculateStats } = require('../../../shared/JobClasses');
 
 /**
  * 서버측 플레이어 클래스

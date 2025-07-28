@@ -190,35 +190,8 @@ function getDynamicPlayerSize() {
     };
 }
 
-// CommonJS와 ES6 모듈 지원
-if (typeof module !== 'undefined' && module.exports) {
-    // CommonJS (서버용)
-    module.exports = {
-        AssetConfig,
-        getPlayerSpriteKey,
-        isJobSupported,
-        getSpriteSize,
-        getUISize,
-        updateServerConfig,
-        getDynamicWallSize,
-        getDynamicPlayerSize
-    };
-} else if (typeof window !== 'undefined') {
-    // 브라우저 환경 (클라이언트용)
-    window.AssetConfigModule = {
-        AssetConfig,
-        getPlayerSpriteKey,
-        isJobSupported,
-        getSpriteSize,
-        getUISize,
-        updateServerConfig,
-        getDynamicWallSize,
-        getDynamicPlayerSize
-    };
-}
-
-// ES6 export (번들러용)
-export {
+// CommonJS export (서버와 클라이언트 모두 지원)
+module.exports = {
     AssetConfig,
     getPlayerSpriteKey,
     isJobSupported,

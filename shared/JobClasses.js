@@ -427,15 +427,13 @@ function createSkillTypeMap() {
     return skillMap;
 }
 
-// CommonJS 지원 (서버용)
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        JobClasses,
-        JobRequirements,
-        getJobInfo,
-        canChangeJob,
-        calculateStats,
-        getSkillInfo,
-        createSkillTypeMap
-    };
-}
+// CommonJS export (서버와 클라이언트 모두 지원)
+module.exports = {
+    JobClasses,
+    JobRequirements,
+    getJobInfo,
+    canChangeJob,
+    calculateStats,
+    getSkillInfo,
+    createSkillTypeMap
+};
