@@ -94,7 +94,7 @@ export default class WarriorJob extends BaseJob {
      * 휩쓸기 스킬 (E키)
      */
     useSweep() {
-        const skillKey = 'sweep';
+        const skillKey = 'skill2';
         
         // 쿨타임 체크
         if (!this.isSkillAvailable(skillKey)) {
@@ -216,7 +216,7 @@ export default class WarriorJob extends BaseJob {
      * 찌르기 스킬 (R키)
      */
     useThrust() {
-        const skillKey = 'thrust';
+        const skillKey = 'skill3';
         
         // 쿨타임 체크
         if (!this.isSkillAvailable(skillKey)) {
