@@ -152,7 +152,7 @@ class SkillManager {
         projectileMaxDistance = 300;
         break;
       case 'slime':
-        projectileMaxDistance = 250;
+        projectileMaxDistance = 200;
         break;
       default:
         projectileMaxDistance = maxDistance;
@@ -163,16 +163,18 @@ class SkillManager {
     const finalY = y + Math.sin(angle) * projectileMaxDistance;
 
     // 투사체 경로상의 충돌 체크 (더 정확한 방법)
-    const checkCollision = (targetX, targetY, targetRadius = 15) => {
+    const checkCollision = (targetX, targetY, targetSize) => {
       // 투사체 경로를 여러 점으로 나누어 체크
-      const steps = 20;
+      const steps = 50;
       for (let i = 0; i <= steps; i++) {
         const t = i / steps;
         const projectileX = x + (finalX - x) * t;
         const projectileY = y + (finalY - y) * t;
         
-        const distance = Math.sqrt((targetX - projectileX) ** 2 + (targetY - projectileY) ** 2);
-        if (distance <= targetRadius) {
+        // 사각형 충돌 감지
+        const halfSize = targetSize / 2;
+        if (projectileX >= targetX - halfSize && projectileX <= targetX + halfSize &&
+            projectileY >= targetY - halfSize && projectileY <= targetY + halfSize) {
           return true;
         }
       }
@@ -183,7 +185,10 @@ class SkillManager {
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
       
-      if (checkCollision(enemy.x, enemy.y)) {
+      // 적의 실제 콜라이더 크기 사용 (클라이언트와 동일)
+      const enemyColliderSize = enemy.getColliderSize();
+      
+      if (checkCollision(enemy.x, enemy.y, enemyColliderSize)) {
         const damage = baseDamage;
         enemy.takeDamage(damage);
         damageResult.affectedEnemies.push({
@@ -202,7 +207,10 @@ class SkillManager {
     players.forEach(targetPlayer => {
       if (targetPlayer.id === player.id || targetPlayer.team === player.team) return;
       
-      if (checkCollision(targetPlayer.x, targetPlayer.y)) {
+      // 플레이어의 실제 콜라이더 크기 사용 (클라이언트와 동일)
+      const playerColliderSize = targetPlayer.getColliderSize();
+      
+      if (checkCollision(targetPlayer.x, targetPlayer.y, playerColliderSize)) {
         const damage = baseDamage;
         targetPlayer.takeDamage(damage);
         damageResult.affectedPlayers.push({
@@ -377,8 +385,10 @@ class SkillManager {
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
       
+      // 적의 콜라이더 크기를 고려한 거리 계산
+      const enemyColliderSize = enemy.getColliderSize();
       const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
-      if (distance <= range) {
+      if (distance <= range + enemyColliderSize / 2) {
         const enemyAngle = Math.atan2(enemy.y - y, enemy.x - x);
         if (this.isAngleInSweepRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
           enemy.takeDamage(baseDamage);
@@ -397,8 +407,10 @@ class SkillManager {
     players.forEach(targetPlayer => {
       if (targetPlayer.id === player.id || targetPlayer.team === player.team) return;
       
+      // 플레이어의 콜라이더 크기를 고려한 거리 계산
+      const playerColliderSize = targetPlayer.getColliderSize();
       const distance = Math.sqrt((targetPlayer.x - x) ** 2 + (targetPlayer.y - y) ** 2);
-      if (distance <= range) {
+      if (distance <= range + playerColliderSize / 2) {
         if (this.isAngleInSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
           targetPlayer.takeDamage(baseDamage);
           damageResult.affectedPlayers.push({
@@ -788,8 +800,10 @@ class SkillManager {
     // 적들 대상
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
+      // 적의 콜라이더 크기를 고려한 거리 계산
+      const enemyColliderSize = enemy.getColliderSize();
       const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
-      if (distance <= range) {
+      if (distance <= range + enemyColliderSize / 2) {
         const actualDamage = damage;
         enemy.takeDamage(actualDamage);
         damageResult.affectedEnemies.push({
@@ -806,8 +820,10 @@ class SkillManager {
     // 다른 팀 플레이어들 대상
     players.forEach(targetPlayer => {
       if (targetPlayer.id === player.id || targetPlayer.team === player.team || targetPlayer.hp <= 0) return;
+      // 플레이어의 콜라이더 크기를 고려한 거리 계산
+      const playerColliderSize = targetPlayer.getColliderSize();
       const distance = Math.sqrt((targetPlayer.x - x) ** 2 + (targetPlayer.y - y) ** 2);
-      if (distance <= range) {
+      if (distance <= range + playerColliderSize / 2) {
         const actualDamage = damage;
         targetPlayer.takeDamage(actualDamage);
         damageResult.affectedPlayers.push({

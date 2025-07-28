@@ -1,6 +1,18 @@
 const gameConfig = require('../config/GameConfig');
 const { getSkillInfo } = require('../utils/JobClassesServer');
 
+// 서버용 AssetConfig 상수 (클라이언트와 동일한 값)
+const AssetConfig = {
+  SPRITE_SIZES: {
+    PLAYER: {
+      COLLIDER_SIZE: 32
+    },
+    ENEMY: {
+      RADIUS: 16
+    }
+  }
+};
+
 /**
  * 서버측 플레이어 클래스
  */
@@ -338,6 +350,23 @@ class ServerPlayer {
   setSize(newSize) {
     this.size = Math.max(16, Math.min(256, newSize));
   }
+
+  /**
+   * 콜라이더 크기 계산 (클라이언트와 동일한 방식)
+   */
+  getColliderSize() {
+    // 클라이언트와 동일한 방식으로 콜라이더 크기 계산
+    // AssetConfig.PLAYER.COLLIDER_SIZE를 기준으로 함
+    const baseColliderSize = AssetConfig.SPRITE_SIZES.PLAYER.COLLIDER_SIZE; // 32
+    return baseColliderSize + 10;
+  }
+
+  // /**
+  //  * 콜라이더 반지름 계산 (충돌 감지용)
+  //  */
+  // getColliderRadius() {
+  //   return this.getColliderSize() / 2 + 8;
+  // }
 }
 
 module.exports = ServerPlayer; 

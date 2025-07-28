@@ -168,12 +168,15 @@ export default class NinjaJob extends BaseJob {
 
     // 닌자용 투사체 생성
     createProjectile(targetX, targetY) {
-        // 투사체 생성 (보라색 빛나는 점)
-        const projectile = this.player.scene.add.circle(this.player.x, this.player.y, 4, 0x800080, 1);
+        // 투사체 생성 (수리검 스프라이트 사용)
+        const projectile = this.player.scene.add.sprite(this.player.x, this.player.y, 'ninja_basic_attack');
         this.player.scene.physics.add.existing(projectile);
         
+        // 투사체 크기 설정
+        projectile.setDisplaySize(18, 18);
+        
         // 투사체 콜라이더 설정
-        projectile.body.setCircle(4); // 원형 콜라이더 설정
+        projectile.body.setCircle(20); // 원형 콜라이더 설정
         projectile.body.setCollideWorldBounds(false); // 월드 경계 충돌 비활성화
         projectile.body.setBounce(0, 0); // 튕김 없음
         projectile.body.setDrag(0, 0); // 저항 없음
@@ -183,6 +186,9 @@ export default class NinjaJob extends BaseJob {
         const maxDistance = 300; // 최대 사정거리
         const finalX = this.player.x + Math.cos(angle) * maxDistance;
         const finalY = this.player.y + Math.sin(angle) * maxDistance;
+        
+        // 투사체 회전 (수리검이 날아가는 방향을 향하도록)
+        projectile.setRotation(angle);
         
         // 투사체 이동 (Tween 사용 + 물리 바디 위치 업데이트)
         const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, finalX, finalY);
@@ -207,14 +213,11 @@ export default class NinjaJob extends BaseJob {
             }
         });
         
-        // 빛나는 효과 추가
+        // 투사체 이펙트 (회전 효과)
         const effectTween = this.player.scene.tweens.add({
             targets: projectile,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            alpha: 0.5,
-            duration: 200,
-            yoyo: true,
+            angle: projectile.angle + 360,
+            duration: 1000,
             repeat: -1
         });
         

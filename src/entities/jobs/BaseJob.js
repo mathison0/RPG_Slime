@@ -1,4 +1,5 @@
-import { getJobInfo } from '../../../shared/JobClasses.js';
+// 브라우저 환경에서 JobClassesModule 사용
+const { getJobInfo } = window.JobClassesModule || {};
 
 /**
  * 기본 직업 클래스

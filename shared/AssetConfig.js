@@ -97,7 +97,10 @@ const AssetConfig = {
         'ping_arrow',
         'slime_skill',
         'ward',
-        'warrior_skill'
+        'warrior_skill',
+        'ninja_basic_attack',
+        'slime_basic_attack',
+        'archer_basic_attack'
     ]
 };
 

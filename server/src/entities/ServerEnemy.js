@@ -1,5 +1,17 @@
 const gameConfig = require('../config/GameConfig');
 
+// 서버용 AssetConfig 상수 (클라이언트와 동일한 값)
+const AssetConfig = {
+  SPRITE_SIZES: {
+    PLAYER: {
+      COLLIDER_SIZE: 32
+    },
+    ENEMY: {
+      RADIUS: 10  // 클라이언트의 body.setSize(20, 20)와 일치
+    }
+  }
+};
+
 /**
  * 서버측 적 클래스
  */
@@ -224,6 +236,23 @@ class ServerEnemy {
     }
     
     return state;
+  }
+
+  /**
+   * 콜라이더 크기 계산 (클라이언트와 동일한 방식)
+   */
+  getColliderSize() {
+    // 클라이언트와 동일한 방식으로 콜라이더 크기 계산
+    // AssetConfig.ENEMY.RADIUS를 기준으로 함
+    const baseColliderSize = AssetConfig.SPRITE_SIZES.ENEMY.RADIUS * 2; // 32
+    return baseColliderSize;
+  }
+
+  /**
+   * 콜라이더 반지름 계산 (충돌 감지용)
+   */
+  getColliderRadius() {
+    return this.getColliderSize() / 2; // 16
   }
 }
 
