@@ -51,6 +51,8 @@ export default class NetworkEventManager {
         this.networkManager.off('player-stunned');
         this.networkManager.off('projectile-created');
         this.networkManager.off('projectiles-update');
+        this.networkManager.off('attack-invalid');
+        this.networkManager.off('enemy-stunned');
         
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
@@ -157,19 +159,6 @@ export default class NetworkEventManager {
         // 투사체 제거
         this.networkManager.on('projectile-removed', (data) => {
             this.handleProjectileRemoved(data);
-        });
-
-        // 투사체 충돌 이벤트들
-        this.networkManager.on('projectile-hit-wall', (data) => {
-            this.handleProjectileHitWall(data);
-        });
-
-        this.networkManager.on('projectile-hit-player', (data) => {
-            this.handleProjectileHitPlayer(data);
-        });
-
-        this.networkManager.on('projectile-hit-enemy', (data) => {
-            this.handleProjectileHitEnemy(data);
         });
         
         // 기타 이벤트
@@ -967,33 +956,6 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 투사체 벽 충돌 처리
-     */
-    handleProjectileHitWall(data) {
-        if (this.scene.projectileManager) {
-            this.scene.projectileManager.handleProjectileHitWall(data);
-        }
-    }
-
-    /**
-     * 투사체 플레이어 충돌 처리
-     */
-    handleProjectileHitPlayer(data) {
-        if (this.scene.projectileManager) {
-            this.scene.projectileManager.handleProjectileHitPlayer(data);
-        }
-    }
-
-    /**
-     * 투사체 적 충돌 처리
-     */
-    handleProjectileHitEnemy(data) {
-        if (this.scene.projectileManager) {
-            this.scene.projectileManager.handleProjectileHitEnemy(data);
-        }
-    }
-
-    /**
      * 플레이어 기절 상태 처리
      */
     handlePlayerStunned(data) {
@@ -1782,6 +1744,8 @@ export default class NetworkEventManager {
             console.error('effectManager가 없습니다!');
             return;
         }
+
+        const color = data.message === '공격 무효!' ? '#ff0000' : '#00ff00';
         
         // 빨간색 "공격 무효!" 메시지를 해당 위치에 표시
         this.scene.effectManager.showMessage(
@@ -1789,11 +1753,11 @@ export default class NetworkEventManager {
             data.y - 30, 
             data.message, 
             { 
-                fill: '#ff0000',
+                fill: color,
                 fontSize: '18px',
                 fontStyle: 'bold'
             },
-            1500 // 1.5초 동안 표시
+            500 // 1.5초 동안 표시
         );
         
         console.log(`메시지 표시: "${data.message}" at (${data.x}, ${data.y})`);

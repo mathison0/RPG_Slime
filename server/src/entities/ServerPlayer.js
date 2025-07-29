@@ -209,25 +209,6 @@ class ServerPlayer {
   }
 
   /**
-   * 데미지 처리 (사망 판정은 서버 메인 루프에서만 처리)
-   */
-  takeDamage(damage) {
-    if (this.isDead) {
-      return 0; // 이미 죽은 상태면 데미지 처리 안함
-    }
-    
-    // 무적 상태 체크
-    if (this.isInvincible) {
-      return 0; // 무적 상태면 데미지 없음
-    }
-    
-    this.hp = Math.max(0, this.hp - damage);
-    
-    // 사망 판정은 메인 게임 루프에서만 처리하므로 여기서는 HP만 업데이트
-    return damage;
-  }
-
-  /**
    * 무적 상태 토글
    */
   toggleInvincible() {
@@ -392,15 +373,6 @@ class ServerPlayer {
     }
     
     skillManager.cleanupExpiredActions(this);
-  }
-
-
-
-  /**
-   * 콜라이더 크기 반환 (클라이언트와 동일한 로직)
-   */
-  getColliderSize() {
-    return this.size * gameConfig.ENEMY.COLLIDER.SIZE_RATIO;
   }
 
   /**

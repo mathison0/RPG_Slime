@@ -168,7 +168,7 @@ export default class BaseJob {
     }
 
     /**
-     * 점프 기능 (모든 직업 공통)
+     * 점프 기능 (모든 직업 공통) - 서버에 요청만 전송
      */
     useJump() {
         // 이미 점프 중이거나 다른 플레이어면 실행하지 않음
@@ -176,48 +176,12 @@ export default class BaseJob {
             return;
         }
         
-        const originalY = this.player.y;
-        const originalNameY = this.player.nameText ? this.player.nameText.y : null;
-        
-        this.player.setVelocity(0);
-        this.player.isJumping = true;
-        
-        // 플레이어와 이름표를 함께 애니메이션
-        const targets = [this.player];
-        if (this.player.nameText) {
-            targets.push(this.player.nameText);
-        }
-        
-        this.scene.tweens.add({
-            targets: targets,
-            y: originalY - 50,
-            duration: 200,
-            yoyo: true,
-            ease: 'Power2',
-            onComplete: () => {
-                // 점프 완료 후 정확한 위치로 복원
-                this.player.y = originalY;
-                if (this.player.nameText && originalNameY !== null) {
-                    this.player.nameText.y = originalNameY;
-                }
-                this.player.isJumping = false;
-                
-                // 점프 완료 후 서버에 위치 동기화
-                if (this.player.networkManager) {
-                    this.player.networkManager.updatePlayerPosition(
-                        this.player.x, 
-                        this.player.y, 
-                        this.player.direction, 
-                        false
-                    );
-                }
-            }
-        });
-
-        // 네트워크 동기화
+        // 네트워크 동기화 (서버에 점프 요청만 전송)
         if (this.player.networkManager && !this.player.isOtherPlayer) {
             this.player.networkManager.useSkill('jump');
         }
+
+        console.log('점프 사용 요청 전송!');
     }
 
     /**

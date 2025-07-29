@@ -8,7 +8,7 @@ class MechanicJob extends BaseJob {
     constructor(player) {
         super(player);
         this.jobInfo = getJobInfo('mechanic');
-        this.basicAttackCooldown = 600; // 기본 공격 쿨다운 (밀리초)
+        this.basicAttackCooldown = this.jobInfo.basicAttackCooldown;
         this.lastBasicAttackTime = 0;
     }
 
@@ -63,18 +63,30 @@ class MechanicJob extends BaseJob {
 
         // 체력 회복
         const healAmount = skillInfo.heal || 50;
-        const oldHp = this.player.hp;
-        this.player.hp = Math.min(this.player.maxHp, this.player.hp + healAmount);
-        const actualHeal = this.player.hp - oldHp;
+        
+        // gameStateManager를 반드시 사용
+        if (!options.gameStateManager) {
+            console.error('MechanicJob: gameStateManager가 필요합니다');
+            return { success: false, reason: 'gameStateManager required' };
+        }
 
-        console.log(`메카닉 기계 수리 발동! 회복량: ${actualHeal} (${oldHp} -> ${this.player.hp})`);
+        const healResult = options.gameStateManager.heal(this.player, this.player, healAmount);
+        if (!healResult.success) {
+            return { success: false, reason: healResult.reason };
+        }
+
+        const oldHp = healResult.newHp - healResult.actualHeal;
+        const actualHeal = healResult.actualHeal;
+        const newHp = healResult.newHp;
+
+        console.log(`메카닉 기계 수리 발동! 회복량: ${actualHeal} (${oldHp} -> ${newHp})`);
 
         return {
             success: true,
             skillType: 'repair',
             healAmount: actualHeal,
             oldHp: oldHp,
-            newHp: this.player.hp,
+            newHp: newHp,
             caster: {
                 id: this.player.id,
                 x: this.player.x,

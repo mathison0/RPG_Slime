@@ -8,7 +8,7 @@ class SupporterJob extends BaseJob {
     constructor(player) {
         super(player);
         this.jobInfo = getJobInfo('supporter');
-        this.basicAttackCooldown = 900; // 기본 공격 쿨다운 (밀리초)
+        this.basicAttackCooldown = this.jobInfo.basicAttackCooldown;
         this.lastBasicAttackTime = 0;
     }
 
@@ -209,16 +209,16 @@ class SupporterJob extends BaseJob {
                     );
                     
                     if (distance <= range) {
-                        const oldHp = targetPlayer.hp;
-                        targetPlayer.hp = Math.min(targetPlayer.maxHp, targetPlayer.hp + healAmount);
-                        const actualHeal = targetPlayer.hp - oldHp;
+                        const result = options.gameStateManager.heal(this.player, targetPlayer, healAmount);
                         
-                        affectedTargets.push({
-                            playerId: targetPlayer.id,
-                            healAmount: actualHeal,
-                            oldHp: oldHp,
-                            newHp: targetPlayer.hp
-                        });
+                        if (result.success) {
+                            affectedTargets.push({
+                                playerId: targetPlayer.id,
+                                healAmount: result.actualHeal,
+                                oldHp: result.newHp - result.actualHeal,
+                                newHp: result.newHp
+                            });
+                        }
                     }
                 }
             });

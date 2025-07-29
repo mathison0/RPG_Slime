@@ -197,6 +197,31 @@ class NetworkManager {
         this.socket.on('projectile-hit-enemy', (data) => {
             this.emit('projectile-hit-enemy', data);
         });
+
+        // 공격 무효 이벤트 (무적 상태, 레벨 차이 등)
+        this.socket.on('attack-invalid', (data) => {
+            this.emit('attack-invalid', data);
+        });
+
+        // 플레이어 무적 상태 변경 이벤트
+        this.socket.on('player-invincible-changed', (data) => {
+            this.emit('player-invincible-changed', data);
+        });
+
+        // 무적 상태 토글 에러 이벤트
+        this.socket.on('invincible-error', (data) => {
+            this.emit('invincible-error', data);
+        });
+
+        // 자살 치트 에러 이벤트
+        this.socket.on('suicide-error', (data) => {
+            this.emit('suicide-error', data);
+        });
+
+        // 몬스터 기절 상태 이벤트
+        this.socket.on('enemy-stunned', (data) => {
+            this.emit('enemy-stunned', data);
+        });
     }
 
     // 게임 입장

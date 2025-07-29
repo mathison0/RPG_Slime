@@ -44,16 +44,112 @@ export default class MageJob extends BaseJob {
             return;
         }
         
-        // 스킬 정보는 서버에서 처리됨
+        // 다른 플레이어면 실행하지 않음
+        if (this.player.isOtherPlayer) {
+            return;
+        }
         
-        // 쿨타임은 서버에서 관리됨
+        // 네트워크 매니저가 없으면 실행하지 않음
+        if (!this.player.networkManager) {
+            console.log('NetworkManager가 없어서 스킬을 사용할 수 없습니다.');
+            return;
+        }
+
+        // 네트워크 동기화 (서버에 와드 설치 요청만 전송)
+        if (this.player.networkManager && !this.player.isOtherPlayer) {
+            this.player.networkManager.useSkill('ward');
+        }
+
+        console.log('와드 설치 요청 전송!');
+    }
+
+    /**
+     * 얼음 장판 스킬
+     */
+    useIceField() {
+        const skillKey = 'skill2'; // 통일된 스킬 키 사용
         
+        // 쿨타임 체크
+        if (!this.isSkillAvailable(skillKey)) {
+            this.showCooldownMessage();
+            return;
+        }
+        
+        // 다른 플레이어면 실행하지 않음
+        if (this.player.isOtherPlayer) {
+            return;
+        }
+        
+        // 네트워크 매니저가 없으면 실행하지 않음
+        if (!this.player.networkManager) {
+            console.log('NetworkManager가 없어서 스킬을 사용할 수 없습니다.');
+            return;
+        }
+
+        // 네트워크 동기화 (서버에 얼음 장판 요청만 전송)
+        if (this.player.networkManager && !this.player.isOtherPlayer) {
+            this.player.networkManager.useSkill('ice_field');
+        }
+
+        console.log('얼음 장판 요청 전송!');
+    }
+
+    /**
+     * 마법 투사체 스킬
+     */
+    useMagicMissile(options = {}) {
+        const skillKey = 'skill3'; // 통일된 스킬 키 사용
+        
+        // 쿨타임 체크
+        if (!this.isSkillAvailable(skillKey)) {
+            this.showCooldownMessage();
+            return;
+        }
+        
+        // 다른 플레이어면 실행하지 않음
+        if (this.player.isOtherPlayer) {
+            return;
+        }
+        
+        // 네트워크 매니저가 없으면 실행하지 않음
+        if (!this.player.networkManager) {
+            console.log('NetworkManager가 없어서 스킬을 사용할 수 없습니다.');
+            return;
+        }
+        
+        // 마우스 커서의 월드 좌표 가져오기
+        const pointer = this.scene.input.activePointer;
+        const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
+
+        // 네트워크 동기화 (서버에 마법 투사체 요청만 전송)
+        if (this.player.networkManager && !this.player.isOtherPlayer) {
+            this.player.networkManager.useSkill('magic_missile', {
+                targetX: worldPoint.x,
+                targetY: worldPoint.y
+            });
+        }
+
+        console.log('마법 투사체 요청 전송!');
+    }
+
+    /**
+     * 마법사 기본 공격 이펙트 (서버에서 받은 이벤트 처리)
+     */
+    showBasicAttackEffect(targetX, targetY) {
+        // 서버에서 투사체를 관리하므로 클라이언트에서는 이펙트만 처리
+        console.log('마법사 기본 공격 이펙트 처리');
+    }
+
+    /**
+     * 와드 이펙트 (서버에서 스킬 승인 시 호출)
+     */
+    showWardEffect(data = null) {
         // 와드 생성
-        const ward = this.scene.add.sprite(this.player.x, this.player.y, 'ward');
+        const ward = this.player.scene.add.sprite(this.player.x, this.player.y, 'ward');
         ward.setScale(0.02);
         
         // 와드에 물리 바디 추가
-        this.scene.physics.add.existing(ward);
+        this.player.scene.physics.add.existing(ward);
         ward.body.setImmovable(true);
         ward.body.setSize(50, 50);
         
@@ -61,18 +157,24 @@ export default class MageJob extends BaseJob {
         ward.hp = 40;
         ward.maxHp = 40;
         
-        // 와드 정보 저장 (기본 범위값 사용)
-        this.scene.activeWard = { 
+        // 서버에서 받은 스킬 정보 사용
+        const skillInfo = data?.skillInfo || {};
+        const range = skillInfo.range || 120; // 서버에서 받은 범위
+        
+        console.log(`와드 스킬 정보 (서버에서 받음): range=${range}`);
+        
+        // 와드 정보 저장 (서버에서 받은 범위값 사용)
+        this.player.scene.activeWard = { 
             x: this.player.x, 
             y: this.player.y, 
-            radius: 120, // 기본 범위값
+            radius: range,
             sprite: ward,
             hp: ward.hp,
             maxHp: ward.maxHp
         };
         
         // 와드 이펙트
-        this.scene.tweens.add({
+        this.player.scene.tweens.add({
             targets: ward,
             alpha: 0.8,
             duration: 1000,
@@ -81,7 +183,7 @@ export default class MageJob extends BaseJob {
         });
         
         // 와드 범위 내 적 탐지
-        const wardDetection = this.scene.time.addEvent({
+        const wardDetection = this.player.scene.time.addEvent({
             delay: 1000,
             callback: () => {
                 if (!ward.active || ward.hp <= 0) {
@@ -90,10 +192,10 @@ export default class MageJob extends BaseJob {
                 }
                 
                 try {
-                    this.scene.enemies.getChildren().forEach(enemy => {
+                    this.player.scene.enemies.getChildren().forEach(enemy => {
                         if (enemy && !enemy.isDead) {
-                                                    const distance = Phaser.Math.Distance.Between(ward.x, ward.y, enemy.x, enemy.y);
-                        if (distance <= 120) { // 기본 범위값
+                            const distance = Phaser.Math.Distance.Between(ward.x, ward.y, enemy.x, enemy.y);
+                            if (distance <= range) {
                                 if (!enemy.wardDetected) {
                                     enemy.wardDetected = true;
                                     enemy.setTint(0xff0000);
@@ -129,7 +231,7 @@ export default class MageJob extends BaseJob {
             }
             
             try {
-                this.scene.enemies.getChildren().forEach(enemy => {
+                this.player.scene.enemies.getChildren().forEach(enemy => {
                     if (enemy && enemy.wardDetected) {
                         enemy.clearTint();
                         enemy.wardDetected = false;
@@ -141,44 +243,34 @@ export default class MageJob extends BaseJob {
                 console.error('와드 정리 중 오류:', error);
             }
             
-            this.scene.activeWard = null;
+            this.player.scene.activeWard = null;
         };
         
         ward.destroyWard = destroyWard;
         
-        this.scene.mapManager.setupCollisions();
-
-        // 네트워크 동기화
-        if (this.player.networkManager && !this.player.isOtherPlayer) {
-            this.player.networkManager.useSkill('ward');
-        }
+        this.player.scene.mapManager.setupCollisions();
 
         console.log('와드 설치 완료!');
     }
 
     /**
-     * 얼음 장판 스킬
+     * 얼음 장판 이펙트 (서버에서 스킬 승인 시 호출)
      */
-    useIceField() {
-        const skillKey = 'skill2'; // 통일된 스킬 키 사용
+    showIceFieldEffect(data = null) {
+        // 서버에서 받은 스킬 정보 사용
+        const skillInfo = data?.skillInfo || {};
+        const range = skillInfo.range || 100; // 서버에서 받은 범위
+        const duration = skillInfo.duration || 6000; // 서버에서 받은 지속시간
         
-        // 쿨타임 체크
-        if (!this.isSkillAvailable(skillKey)) {
-            this.showCooldownMessage();
-            return;
-        }
-        
-        // 스킬 정보는 서버에서 처리됨
-        
-        // 쿨타임은 서버에서 관리됨
+        console.log(`얼음 장판 스킬 정보 (서버에서 받음): range=${range}, duration=${duration}ms`);
         
         // 얼음 장판 생성
-        const iceField = this.scene.add.circle(this.player.x, this.player.y, 100, 0x87ceeb, 0.4);
-        this.scene.physics.add.existing(iceField);
+        const iceField = this.player.scene.add.circle(this.player.x, this.player.y, range, 0x87ceeb, 0.4);
+        this.player.scene.physics.add.existing(iceField);
         iceField.body.setImmovable(true);
         
         // 얼음 장판 이펙트
-        this.scene.tweens.add({
+        this.player.scene.tweens.add({
             targets: iceField,
             scaleX: 1.2,
             scaleY: 1.2,
@@ -187,87 +279,65 @@ export default class MageJob extends BaseJob {
             repeat: 2
         });
         
-        // 범위 내 적들에게 슬로우 효과 적용
-        this.scene.enemies.getChildren().forEach(enemy => {
-            if (!enemy.isDead) {
-                const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y);
-                if (distance <= skillInfo.range) {
-                    const originalSpeed = enemy.speed || 100;
-                    enemy.speed = originalSpeed * 0.5;
-                    
-                    // 3초 후 속도 복원
-                    this.scene.time.delayedCall(3000, () => {
-                        if (enemy && !enemy.isDead) {
-                            enemy.speed = originalSpeed;
-                        }
-                    });
-                    
-                    // 슬로우 시각적 효과
-                    enemy.setTint(0x87ceeb);
-                    this.scene.time.delayedCall(3000, () => {
-                        if (enemy && !enemy.isDead) {
-                            enemy.clearTint();
-                        }
-                    });
-                }
-            }
-        });
-        
-        // 6초 후 얼음 장판 제거
-        this.scene.time.delayedCall(6000, () => { // 기본 지속시간
+        // 지속시간 후 얼음 장판 제거
+        this.player.scene.time.delayedCall(duration, () => {
             iceField.destroy();
         });
 
-        // 네트워크 동기화
-        if (this.player.networkManager && !this.player.isOtherPlayer) {
-            this.player.networkManager.useSkill('ice_field');
-        }
-
-        console.log('얼음 장판 생성!');
+        console.log('얼음 장판 생성 완료!');
     }
 
     /**
-     * 마법 투사체 스킬
+     * 마법 투사체 이펙트 (서버에서 스킬 승인 시 호출)
      */
-    useMagicMissile(options = {}) {
-        const skillKey = 'skill3'; // 통일된 스킬 키 사용
+    showMagicMissileEffect(data = null) {
+        if (!data) return;
         
-        // 쿨타임 체크
-        if (!this.isSkillAvailable(skillKey)) {
-            this.showCooldownMessage();
-            return;
-        }
+        // 마우스 커서 위치 가져오기 (서버 데이터에서)
+        const targetX = data?.targetX || this.player.x;
+        const targetY = data?.targetY || this.player.y;
         
-        // 스킬 정보는 서버에서 처리됨
+        // 서버에서 받은 스킬 정보 사용
+        const skillInfo = data?.skillInfo || {};
+        const maxRange = skillInfo.range || 400; // 서버에서 받은 사거리
+        const velocity = skillInfo.velocity || 400; // 서버에서 받은 속도
         
-        // 쿨타임은 서버에서 관리됨
+        console.log(`마법 투사체 스킬 정보 (서버에서 받음): maxRange=${maxRange}, velocity=${velocity}`);
         
-        // 마우스 커서의 월드 좌표 가져오기
-        const pointer = this.scene.input.activePointer;
-        const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
+        let finalTargetX = targetX;
+        let finalTargetY = targetY;
         
         // 사거리 제한
-        const maxRange = 400; // 기본 범위값
-        const initialDistance = Phaser.Math.Distance.Between(this.player.x, this.player.y, worldPoint.x, worldPoint.y);
+        const initialDistance = Phaser.Math.Distance.Between(this.player.x, this.player.y, targetX, targetY);
         if (initialDistance > maxRange) {
-            const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, worldPoint.x, worldPoint.y);
-            worldPoint.x = this.player.x + Math.cos(angle) * maxRange;
-            worldPoint.y = this.player.y + Math.sin(angle) * maxRange;
+            const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, targetX, targetY);
+            finalTargetX = this.player.x + Math.cos(angle) * maxRange;
+            finalTargetY = this.player.y + Math.sin(angle) * maxRange;
         }
         
         // 마법 투사체 생성
-        const missile = this.scene.add.circle(this.player.x, this.player.y, 8, 0xff00ff, 1);
-        this.scene.physics.add.existing(missile);
+        const missile = this.player.scene.add.circle(this.player.x, this.player.y, 8, 0xff00ff, 1);
+        this.player.scene.physics.add.existing(missile);
         missile.team = this.player.team;
         
-        // 투사체 이동 (물리 바디 위치 업데이트 포함)
-        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, worldPoint.x, worldPoint.y);
-        const duration = (distance / 400) * 1000; // 400은 투사체 속도
-        
-        this.scene.tweens.add({
+        // 투사체 이펙트
+        this.player.scene.tweens.add({
             targets: missile,
-            x: worldPoint.x,
-            y: worldPoint.y,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            duration: 500,
+            yoyo: true,
+            repeat: -1
+        });
+        
+        // 투사체 이동 (물리 바디 위치 업데이트 포함)
+        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, finalTargetX, finalTargetY);
+        const duration = (distance / velocity) * 1000;
+        
+        this.player.scene.tweens.add({
+            targets: missile,
+            x: finalTargetX,
+            y: finalTargetY,
             duration: duration,
             ease: 'Linear',
             onUpdate: () => {
@@ -277,22 +347,13 @@ export default class MageJob extends BaseJob {
                 }
             },
             onComplete: () => {
+                this.createMagicExplosion(missile.x, missile.y);
                 missile.destroy();
             }
         });
         
-        // 투사체 이펙트
-        this.scene.tweens.add({
-            targets: missile,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            duration: 500,
-            yoyo: true,
-            repeat: -1
-        });
-        
         // 투사체와 적 충돌 체크
-        this.scene.physics.add.overlap(missile, this.scene.enemies, (missile, enemy) => {
+        this.player.scene.physics.add.overlap(missile, this.player.scene.enemies, (missile, enemy) => {
             if (this.player.networkManager && enemy.networkId) {
                 this.player.networkManager.hitEnemy(enemy.networkId);
             }
@@ -302,130 +363,12 @@ export default class MageJob extends BaseJob {
         });
         
         // 투사체와 벽 충돌 체크
-        this.scene.physics.add.collider(missile, this.scene.walls, (missile, wall) => {
+        this.player.scene.physics.add.collider(missile, this.player.scene.walls, (missile, wall) => {
             this.createMagicExplosion(missile.x, missile.y);
             missile.destroy();
         });
 
-        // 네트워크 동기화
-        if (this.player.networkManager && !this.player.isOtherPlayer) {
-            this.player.networkManager.useSkill('magic_missile', {
-                targetX: worldPoint.x,
-                targetY: worldPoint.y
-            });
-        }
-
-        console.log('마법 투사체 발사!');
-    }
-
-    /**
-     * 마법사 기본 공격 이펙트 (서버에서 받은 이벤트 처리)
-     */
-    showBasicAttackEffect(targetX, targetY) {
-        // 서버에서 투사체를 관리하므로 클라이언트에서는 이펙트만 처리
-        console.log('마법사 기본 공격 이펙트 처리');
-    }
-
-    /**
-     * 와드 이펙트
-     */
-    showWardEffect(data) {
-        if (!this.player.isOtherPlayer) return;
-        
-        const ward = this.player.scene.add.sprite(this.player.x, this.player.y, 'ward');
-        ward.setScale(0.02);
-        ward.isOtherPlayerWard = true;
-        ward.wardOwnerId = data.playerId;
-        
-        this.player.scene.tweens.add({
-            targets: ward,
-            alpha: 0.8,
-            duration: 1000,
-            yoyo: true,
-            repeat: -1
-        });
-    }
-
-    /**
-     * 얼음 장판 이펙트
-     */
-    showIceFieldEffect() {
-        if (!this.player.isOtherPlayer) return;
-        
-        const iceField = this.player.scene.add.circle(this.player.x, this.player.y, 100, 0x87ceeb, 0.4);
-        this.player.scene.tweens.add({
-            targets: iceField,
-            scaleX: 1.2,
-            scaleY: 1.2,
-            duration: 2000,
-            yoyo: true,
-            repeat: 2
-        });
-        this.player.scene.time.delayedCall(6000, () => {
-            iceField.destroy();
-        });
-    }
-
-    /**
-     * 마법 투사체 이펙트
-     */
-    showMagicMissileEffect(data) {
-        if (!this.player.isOtherPlayer || !data) return;
-        
-        let finalTargetX = data.targetX;
-        let finalTargetY = data.targetY;
-        const maxRange = data.skillInfo?.range || 400;
-        
-        const distance = Phaser.Math.Distance.Between(data.x, data.y, data.targetX, data.targetY);
-        
-        if (distance > maxRange) {
-            const angle = Phaser.Math.Angle.Between(data.x, data.y, data.targetX, data.targetY);
-            finalTargetX = data.x + Math.cos(angle) * maxRange;
-            finalTargetY = data.y + Math.sin(angle) * maxRange;
-        }
-        
-        const missile = this.player.scene.add.circle(data.x, data.y, 8, 0xff00ff, 0.3);
-        missile.team = data.team;
-        
-        this.player.scene.physics.add.existing(missile);
-        missile.body.setSize(8, 8);
-        
-        // 투사체 이펙트
-        this.player.scene.tweens.add({
-            targets: missile,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            duration: 500,
-            yoyo: true,
-            repeat: -1
-        });
-        
-        // 투사체 이동
-        const finalDistance = Phaser.Math.Distance.Between(data.x, data.y, finalTargetX, finalTargetY);
-        const velocity = 400;
-        const duration = (finalDistance / velocity) * 1000;
-        
-        this.player.scene.tweens.add({
-            targets: missile,
-            x: finalTargetX,
-            y: finalTargetY,
-            duration: duration,
-            ease: 'Linear',
-            onComplete: () => {
-                this.player.scene.effectManager.showExplosion(finalTargetX, finalTargetY);
-                missile.destroy();
-            }
-        });
-        
-        // 충돌 처리 설정
-        this.setupMissileCollisions(missile);
-        
-        // 안전장치: 3초 후 제거
-        this.player.scene.time.delayedCall(3000, () => {
-            if (missile.active) {
-                missile.destroy();
-            }
-        });
+        console.log('마법 투사체 발사 완료!');
     }
 
     /**

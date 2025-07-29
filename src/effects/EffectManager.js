@@ -15,11 +15,12 @@ export default class EffectManager {
      * @param {string} color - 텍스트 색상
      */
     showDamageText(x, y, damage, color = '#ff0000') {
-        const damageText = this.scene.add.text(x, y, `${damage}`, {
+        const randomOffsetX = (Math.random() - 0.5) * 40;
+        const damageText = this.scene.add.text(x + randomOffsetX, y, `${damage}`, {
             fontSize: '16px',
             fill: color,
             fontStyle: 'bold'
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(1500);
         
         // 데미지 텍스트 애니메이션
         this.scene.tweens.add({
@@ -42,11 +43,12 @@ export default class EffectManager {
      * @param {number} heal - 힐링 값
      */
     showHealText(x, y, heal) {
-        const healText = this.scene.add.text(x, y - 40, `+${heal}`, {
+        const randomOffsetX = (Math.random() - 0.5) * 40;
+        const healText = this.scene.add.text(x + randomOffsetX, y - 40, `+${heal}`, {
             fontSize: '16px',
             fill: '#00ff00',
             fontStyle: 'bold'
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(1500);
         
         // 힐링 텍스트 애니메이션
         this.scene.tweens.add({
@@ -79,7 +81,7 @@ export default class EffectManager {
         
         const finalStyle = { ...defaultStyle, ...style };
         
-        const messageText = this.scene.add.text(x, y, message, finalStyle).setOrigin(0.5);
+        const messageText = this.scene.add.text(x, y, message, finalStyle).setOrigin(0.5).setDepth(1500);
         
         // 메시지 페이드아웃
         this.scene.time.delayedCall(duration, () => {
@@ -104,15 +106,15 @@ export default class EffectManager {
      * @param {number} y - Y 좌표
      */
     showLevelUpEffect(x, y) {
-        // 레벨업 텍스트
+        // 레벨업 텍스트 (최상위)
         const levelUpText = this.scene.add.text(x, y - 50, 'LEVEL UP!', {
             fontSize: '24px',
             fill: '#ffff00',
             fontStyle: 'bold'
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(1500);
         
-        // 레벨업 이펙트 링
-        const ring = this.scene.add.circle(x, y, 20, 0xffff00, 0);
+        // 레벨업 이펙트 링 (플레이어 밑)
+        const ring = this.scene.add.circle(x, y, 20, 0xffff00, 0).setDepth(710);
         ring.setStrokeStyle(3, 0xffff00);
         
         // 링 확장 애니메이션
@@ -150,7 +152,7 @@ export default class EffectManager {
      * @param {number} duration - 지속시간 (ms)
      */
     showCircleEffect(x, y, radius, color = 0x00ff00, duration = 300) {
-        const circle = this.scene.add.circle(x, y, radius, color, 0.3);
+        const circle = this.scene.add.circle(x, y, radius, color, 0.3).setDepth(710);
         
         this.scene.time.delayedCall(duration, () => {
             this.scene.tweens.add({
@@ -174,7 +176,7 @@ export default class EffectManager {
      * @param {number} size - 크기
      */
     showExplosion(x, y, color = 0xff00ff, size = 20) {
-        const explosion = this.scene.add.circle(x, y, size, color, 0.8);
+        const explosion = this.scene.add.circle(x, y, size, color, 0.8).setDepth(710);
         
         this.scene.tweens.add({
             targets: explosion,
@@ -250,7 +252,7 @@ export default class EffectManager {
         
         const finalStyle = { ...defaultStyle, ...style };
         
-        const text = this.scene.add.text(target.x, target.y + offsetY, message, finalStyle).setOrigin(0.5);
+        const text = this.scene.add.text(target.x, target.y + offsetY, message, finalStyle).setOrigin(0.5).setDepth(1500);
         
         // 텍스트가 대상을 따라다니도록 업데이트
         const updatePosition = () => {

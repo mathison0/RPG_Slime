@@ -1,4 +1,5 @@
 const ServerUtils = require('../utils/ServerUtils');
+const { getJobInfo } = require('../../shared/JobClasses');
 
 /**
  * 투사체 매니저 - 서버에서 투사체들을 관리
@@ -287,66 +288,79 @@ class ProjectileManager {
      * 플레이어 피격 처리
      */
     handlePlayerHit(projectile, player) {
-        const damage = this.getProjectileDamage(projectile.jobClass);
+        const attacker = this.gameStateManager.getPlayer(projectile.playerId);
+        if (!attacker) {
+            console.error(`투사체 발사자를 찾을 수 없음: ${projectile.playerId}`);
+            return;
+        }
+
+        const damage = this.getProjectileDamage(projectile.jobClass, projectile.playerId);
         
-        // 플레이어에게 데미지 적용
-        player.hp = Math.max(0, player.hp - damage);
-        player.lastDamageSource = {
-            type: 'projectile',
-            id: projectile.playerId,
-            jobClass: projectile.jobClass
-        };
+        // gameStateManager를 통한 데미지 처리
+        const result = this.gameStateManager.takeDamage(attacker, player, damage);
 
-        // 클라이언트에게 충돌 이벤트 전송
-        this.gameStateManager.io.emit('projectile-hit-player', {
-            projectileId: projectile.id,
-            projectileJobClass: projectile.jobClass,
-            playerId: player.id,
-            damage: damage,
-            hitPosition: { x: projectile.x, y: projectile.y }
-        });
+        if (result.success) {
+            // 클라이언트에게 충돌 이벤트 전송
+            this.gameStateManager.io.emit('projectile-hit-player', {
+                projectileId: projectile.id,
+                projectileJobClass: projectile.jobClass,
+                playerId: player.id,
+                damage: result.actualDamage,
+                newHp: result.newHp,
+                hitPosition: { x: projectile.x, y: projectile.y }
+            });
 
-        console.log(`플레이어 피격: ${player.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${damage} 데미지`);
+            console.log(`플레이어 피격: ${player.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${result.actualDamage} 데미지`);
+        } else {
+            console.log(`플레이어 피격 실패: ${result.reason}`);
+        }
     }
 
     /**
      * 적 피격 처리
      */
     handleEnemyHit(projectile, enemy) {
-        const damage = this.getProjectileDamage(projectile.jobClass);
+        const attacker = this.gameStateManager.getPlayer(projectile.playerId);
+        if (!attacker) {
+            console.error(`투사체 발사자를 찾을 수 없음: ${projectile.playerId}`);
+            return;
+        }
+
+        const damage = this.getProjectileDamage(projectile.jobClass, projectile.playerId);
         
-        // 적에게 데미지 적용
-        enemy.hp = Math.max(0, enemy.hp - damage);
-        enemy.lastDamageSource = {
-            type: 'projectile',
-            id: projectile.playerId,
-            jobClass: projectile.jobClass
-        };
+        // gameStateManager를 통한 데미지 처리
+        const result = this.gameStateManager.takeDamage(attacker, enemy, damage);
 
-        // 클라이언트에게 충돌 이벤트 전송
-        this.gameStateManager.io.emit('projectile-hit-enemy', {
-            projectileId: projectile.id,
-            projectileJobClass: projectile.jobClass,
-            enemyId: enemy.id,
-            damage: damage,
-            hitPosition: { x: projectile.x, y: projectile.y }
-        });
+        if (result.success) {
+            // 클라이언트에게 충돌 이벤트 전송
+            this.gameStateManager.io.emit('projectile-hit-enemy', {
+                projectileId: projectile.id,
+                projectileJobClass: projectile.jobClass,
+                enemyId: enemy.id,
+                damage: result.actualDamage,
+                newHp: result.newHp,
+                hitPosition: { x: projectile.x, y: projectile.y }
+            });
 
-        console.log(`적 피격: ${enemy.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${damage} 데미지`);
+            console.log(`적 피격: ${enemy.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${result.actualDamage} 데미지`);
+        } else {
+            console.log(`적 피격 실패: ${result.reason}`);
+        }
     }
 
     /**
      * 투사체 데미지 계산
      */
-    getProjectileDamage(jobClass) {
-        const damageMap = {
-            'ninja': 25,
-            'mage': 30,
-            'archer': 20,
-            'slime': 15
-        };
+    getProjectileDamage(jobClass, playerId) {
+        const player = this.gameStateManager.getPlayer(playerId);
+        if (player && player.attack) {
+            // 플레이어의 실제 공격력 사용
+            return player.attack;
+        }
         
-        return damageMap[jobClass] || 20;
+        // fallback: JobClasses에서 기본 공격력 가져오기
+        const jobInfo = getJobInfo(jobClass);
+        return jobInfo.baseStats.attack;
     }
 
     /**

@@ -8,7 +8,7 @@ class SlimeJob extends BaseJob {
     constructor(player) {
         super(player);
         this.jobInfo = getJobInfo('slime');
-        this.basicAttackCooldown = 600; // 기본 공격 쿨다운 (밀리초)
+        this.basicAttackCooldown = this.jobInfo.basicAttackCooldown;
         this.lastBasicAttackTime = 0;
     }
 
@@ -78,20 +78,16 @@ class SlimeJob extends BaseJob {
                     
                     if (distance <= range) {
                         // 데미지 적용
-                        const actualDamage = Math.max(1, damage - (targetPlayer.defense || 0));
-                        targetPlayer.hp = Math.max(0, targetPlayer.hp - actualDamage);
+                        const actualDamage = Math.max(1, damage);
+                        const result = options.gameStateManager.takeDamage(this.player, targetPlayer, actualDamage);
                         
-                        affectedTargets.push({
-                            playerId: targetPlayer.id,
-                            damage: actualDamage,
-                            newHp: targetPlayer.hp,
-                            isDead: targetPlayer.hp <= 0
-                        });
-                        
-                        // 사망 처리
-                        if (targetPlayer.hp <= 0) {
-                            targetPlayer.isDead = true;
-                            targetPlayer.lastDamageSource = this.player.id;
+                        if (result.success) {
+                            affectedTargets.push({
+                                playerId: targetPlayer.id,
+                                damage: result.actualDamage,
+                                newHp: result.newHp,
+                                isDead: result.newHp <= 0
+                            });
                         }
                     }
                 }
@@ -174,42 +170,6 @@ class SlimeJob extends BaseJob {
                 y: this.player.y
             }
         };
-    }
-
-    /**
-     * 투사체 히트 처리 (서버에서 처리)
-     * @param {Object} projectileData - 투사체 데이터
-     * @param {Object} target - 타겟 정보
-     * @param {Object} options - 추가 옵션
-     * @returns {Object} - 히트 결과
-     */
-    handleProjectileHit(projectileData, target, options = {}) {
-        if (target.team === this.player.team || target.isDead) {
-            return { success: false, reason: 'invalid target' };
-        }
-
-        const damage = projectileData.damage;
-        const actualDamage = Math.max(1, damage - (target.defense || 0));
-        
-        target.hp = Math.max(0, target.hp - actualDamage);
-        
-        const result = {
-            success: true,
-            targetId: target.id,
-            damage: actualDamage,
-            newHp: target.hp,
-            isDead: target.hp <= 0
-        };
-
-        // 사망 처리
-        if (target.hp <= 0) {
-            target.isDead = true;
-            target.lastDamageSource = this.player.id;
-        }
-
-        console.log(`슬라임 투사체 히트! 타겟: ${target.id}, 데미지: ${actualDamage}`);
-
-        return result;
     }
 }
 

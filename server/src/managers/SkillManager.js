@@ -308,82 +308,6 @@ class SkillManager {
   }
 
   /**
-   * 근접 부채꼴 공격 데미지 적용 (공통 메서드)
-   */
-  applyMeleeSweepDamage(player, baseDamage, x, y, targetX, targetY, range, angleOffset) {
-    const damageResult = {
-      affectedEnemies: [],
-      affectedPlayers: [],
-      totalDamage: 0
-    };
-
-    const enemies = this.gameStateManager.enemies;
-    const players = this.gameStateManager.players;
-
-    // 부채꼴 각도 계산
-    const angleToTarget = Math.atan2(targetY - y, targetX - x);
-    const startAngle = angleToTarget - angleOffset;
-    const endAngle = angleToTarget + angleOffset;
-
-    // 적과의 충돌 체크
-    enemies.forEach(enemy => {
-      if (enemy.isDead) return;
-      
-      // 적의 콜라이더 크기를 고려한 거리 계산
-      const enemyColliderSize = enemy.getColliderSize();
-      const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
-      if (distance <= range + enemyColliderSize / 2) {
-        const enemyAngle = Math.atan2(enemy.y - y, enemy.x - x);
-        if (this.isAngleInSweepRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
-          // 플레이어와 몬스터의 레벨 체크
-          const playerLevel = MonsterConfig.getMapLevelFromPosition(player.x, player.y, gameConfig);
-          const monsterLevel = enemy.mapLevel;
-          
-
-          
-          const result = this.gameStateManager.takeDamage(player, enemy, baseDamage);
-          
-          if (result.success) {
-            damageResult.affectedEnemies.push({
-              id: enemy.id,
-              damage: baseDamage,
-              actualDamage: result.actualDamage,
-              newHp: result.newHp
-            });
-            damageResult.totalDamage += result.actualDamage;
-          }
-        }
-      }
-    });
-
-    // 다른 플레이어와의 충돌 체크 (적팀인 경우)
-    players.forEach(targetPlayer => {
-      if (targetPlayer.id === player.id || targetPlayer.team === player.team) return;
-      
-      // 플레이어의 콜라이더 크기를 고려한 거리 계산
-      const playerColliderSize = targetPlayer.getColliderSize();
-      const distance = Math.sqrt((targetPlayer.x - x) ** 2 + (targetPlayer.y - y) ** 2);
-      if (distance <= range + playerColliderSize / 2) {
-        if (this.isAngleInSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
-          const result = this.gameStateManager.takeDamage(player, targetPlayer, baseDamage);
-          
-          if (result.success) {
-              damageResult.affectedPlayers.push({
-                id: targetPlayer.id,
-                damage: baseDamage,
-                actualDamage: result.actualDamage,
-                newHp: result.newHp
-              });
-              damageResult.totalDamage += result.actualDamage;
-            }
-          }
-        }
-    });
-
-    return damageResult;
-  }
-
-  /**
    * 기본 공격 처리
    */
   handleBasicAttack(player, targetX, targetY) {
@@ -402,7 +326,7 @@ class SkillManager {
     // 기본 공격 쿨다운 체크 (JobClasses.js에서 가져옴)
     const { getJobInfo } = require('../../shared/JobClasses.js');
     const jobInfo = getJobInfo(player.jobClass);
-    const cooldown = jobInfo.basicAttackCooldown || 600;
+    const cooldown = jobInfo.basicAttackCooldown;
     const lastUsed = player.skillCooldowns['basic_attack'] || 0;
     
     if (now - lastUsed < cooldown) {
@@ -802,10 +726,9 @@ class SkillManager {
     // 적들 대상
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
-      // 적의 콜라이더 크기를 고려한 거리 계산
-      const enemyColliderSize = enemy.getColliderSize();
+      // 중심점에서 적까지의 거리 계산
       const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
-      if (distance <= range + enemyColliderSize / 2) {
+      if (distance <= range) {
         const result = this.gameStateManager.takeDamage(player, enemy, damage);
         
         if (result.success) {
@@ -824,10 +747,9 @@ class SkillManager {
     // 다른 팀 플레이어들 대상
     players.forEach(targetPlayer => {
       if (targetPlayer.id === player.id || targetPlayer.team === player.team || targetPlayer.hp <= 0) return;
-      // 플레이어의 콜라이더 크기를 고려한 거리 계산
-      const playerColliderSize = targetPlayer.getColliderSize();
+      // 중심점에서 플레이어까지의 거리 계산
       const distance = Math.sqrt((targetPlayer.x - x) ** 2 + (targetPlayer.y - y) ** 2);
-      if (distance <= range + playerColliderSize / 2) {
+      if (distance <= range) {
         const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
         if (result.success) {
@@ -837,7 +759,7 @@ class SkillManager {
             actualDamage: result.actualDamage,
             x: targetPlayer.x,
             y: targetPlayer.y,
-          team: targetPlayer.team
+            team: targetPlayer.team
           });
           damageResult.totalDamage += result.actualDamage;
         }

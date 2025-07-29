@@ -8,7 +8,7 @@ class AssassinJob extends BaseJob {
     constructor(player) {
         super(player);
         this.jobInfo = getJobInfo('assassin');
-        this.basicAttackCooldown = 300; // 기본 공격 쿨다운 (밀리초)
+        this.basicAttackCooldown = this.jobInfo.basicAttackCooldown;
         this.lastBasicAttackTime = 0;
     }
 

@@ -354,23 +354,6 @@ class ServerEnemy {
   }
 
   /**
-   * 데미지 처리
-   * @param {number} damage - 받을 데미지
-   * @param {Object} attacker - 공격자 정보 (선택사항)
-   */
-  takeDamage(damage, attacker = null) {
-    this.hp = Math.max(0, this.hp - damage);
-    
-    // 피격 시 공격자를 타겟으로 설정 (살아있고 적대적인 경우만)
-    if (attacker && !attacker.isDead && attacker.hp > 0) {
-      this.target = attacker;
-      console.log(`몬스터 ${this.id}가 ${attacker.id}에게 피격당해 타겟으로 설정`);
-    }
-    
-    return this.hp <= 0; // 사망 여부 반환
-  }
-
-  /**
    * 몬스터 상태 정보 반환 (클라이언트로 전송용)
    */
   getState() {

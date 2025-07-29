@@ -8,7 +8,7 @@ class ArcherJob extends BaseJob {
     constructor(player) {
         super(player);
         this.jobInfo = getJobInfo('archer');
-        this.basicAttackCooldown = 500; // 기본 공격 쿨다운 (밀리초)
+        this.basicAttackCooldown = this.jobInfo.basicAttackCooldown;
         this.lastBasicAttackTime = 0;
     }
 

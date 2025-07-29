@@ -339,15 +339,21 @@ class GameStateManager {
     }
 
     // 무적 상태 체크 (플레이어만)
-    if (target.isInvincible) {
+    if (target.isInvincible === true) {
       // 무적 상태일 때 attack-invalid 이벤트 브로드캐스트
       console.log(`무적 상태로 공격 무효: ${attacker.id} → ${target.id}`);
       if (this.io) {
-        this.io.to(attacker.id).emit('attack-invalid', {
+        // 공격자가 플레이어인 경우: 공격자에게 메시지 전송
+        // 공격자가 몬스터인 경우: 피격자(플레이어)에게 메시지 전송
+        const recipientId = attacker.team !== undefined ? attacker.id : target.id;
+        
+        this.io.to(recipientId).emit('attack-invalid', {
           x: target.x,
           y: target.y,
           message: '무적!'
         });
+        
+        console.log(`무적 메시지 전송: ${recipientId}에게 (공격자: ${attacker.id}, 피격자: ${target.id})`);
       }
       return { success: false, actualDamage: 0, reason: 'invincible' };
     }
@@ -432,6 +438,57 @@ class GameStateManager {
     return { 
       success: true, 
       actualDamage: actualDamage,
+      newHp: target.hp
+    };
+  }
+
+  /**
+   * 통합 힐 처리 함수
+   * @param {Object} healer - 힐러 (플레이어)
+   * @param {Object} target - 힐을 받을 대상 (플레이어)
+   * @param {number} healAmount - 힐 량
+   * @returns {Object} - 처리 결과 { success: boolean, actualHeal: number, reason?: string }
+   */
+  heal(healer, target, healAmount) {
+    console.log(`heal 호출: ${healer.id} → ${target.id}, 힐량: ${healAmount}`);
+    
+    // 기본 유효성 검사
+    if (!healer || !target || healAmount <= 0) {
+      console.log(`heal 실패: 유효하지 않은 파라미터`);
+      return { success: false, actualHeal: 0, reason: 'invalid parameters' };
+    }
+
+    // 타겟이 죽었는지 체크
+    if (target.isDead || target.hp <= 0) {
+      return { success: false, actualHeal: 0, reason: 'target dead' };
+    }
+
+    // 이미 체력이 가득찬지 체크
+    if (target.hp >= target.maxHp) {
+      return { success: false, actualHeal: 0, reason: 'already full health' };
+    }
+
+    // 실제 힐 적용
+    const oldHp = target.hp;
+    target.hp = Math.min(target.maxHp, target.hp + healAmount);
+    const actualHeal = target.hp - oldHp;
+
+    // 이벤트 브로드캐스트
+    if (this.io && actualHeal > 0) {
+      this.io.emit('player-healed', {
+        playerId: target.id,
+        healerId: healer.id,
+        healAmount: actualHeal,
+        newHp: target.hp,
+        maxHp: target.maxHp
+      });
+    }
+
+    console.log(`힐 처리: ${healer.id} → ${target.id}, 힐량: ${actualHeal}, 새 HP: ${target.hp}`);
+    
+    return { 
+      success: true, 
+      actualHeal: actualHeal,
       newHp: target.hp
     };
   }

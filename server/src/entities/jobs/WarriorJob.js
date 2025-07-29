@@ -8,7 +8,7 @@ class WarriorJob extends BaseJob {
     constructor(player) {
         super(player);
         this.jobInfo = getJobInfo('warrior');
-        this.basicAttackCooldown = 800; // 기본 공격 쿨다운 (밀리초)
+        this.basicAttackCooldown = this.jobInfo.basicAttackCooldown;
         this.lastBasicAttackTime = 0;
     }
 
@@ -151,21 +151,17 @@ class WarriorJob extends BaseJob {
                     
                     if (distance <= range) {
                         // 부채꼴 범위 내 체크 (간단화: 일단 원형으로 처리)
-                        const actualDamage = Math.max(1, damage - (targetPlayer.defense || 0));
-                        targetPlayer.hp = Math.max(0, targetPlayer.hp - actualDamage);
+                        const actualDamage = Math.max(1, damage);
+                        const result = options.gameStateManager.takeDamage(this.player, targetPlayer, actualDamage);
                         
-                        affectedTargets.push({
-                            playerId: targetPlayer.id,
-                            damage: actualDamage,
-                            newHp: targetPlayer.hp,
-                            isDead: targetPlayer.hp <= 0,
-                            effect: 'stun' // 기절 효과
-                        });
-                        
-                        // 사망 처리
-                        if (targetPlayer.hp <= 0) {
-                            targetPlayer.isDead = true;
-                            targetPlayer.lastDamageSource = this.player.id;
+                        if (result.success) {
+                            affectedTargets.push({
+                                playerId: targetPlayer.id,
+                                damage: result.actualDamage,
+                                newHp: result.newHp,
+                                isDead: result.newHp <= 0,
+                                effect: 'stun' // 기절 효과
+                            });
                         }
                     }
                 }
@@ -237,20 +233,16 @@ class WarriorJob extends BaseJob {
                     );
                     
                     if (distance <= range) {
-                        const actualDamage = Math.max(1, damage - (targetPlayer.defense || 0));
-                        targetPlayer.hp = Math.max(0, targetPlayer.hp - actualDamage);
+                        const actualDamage = Math.max(1, damage);
+                        const result = options.gameStateManager.takeDamage(this.player, targetPlayer, actualDamage);
                         
-                        affectedTargets.push({
-                            playerId: targetPlayer.id,
-                            damage: actualDamage,
-                            newHp: targetPlayer.hp,
-                            isDead: targetPlayer.hp <= 0
-                        });
-                        
-                        // 사망 처리
-                        if (targetPlayer.hp <= 0) {
-                            targetPlayer.isDead = true;
-                            targetPlayer.lastDamageSource = this.player.id;
+                        if (result.success) {
+                            affectedTargets.push({
+                                playerId: targetPlayer.id,
+                                damage: result.actualDamage,
+                                newHp: result.newHp,
+                                isDead: result.newHp <= 0
+                            });
                         }
                     }
                 }
