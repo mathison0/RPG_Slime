@@ -148,35 +148,14 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
             this.body.velocity.y = this.vy;
         }
         
-        // 색상 적용 제거 (이미지 스프라이트 사용)
-        // if (enemyData.color) {
-        //     this.applyServerColor(enemyData.color);
-        // }
-        
         // 크기 적용
         if (enemyData.size) {
             this.applyServerSize(enemyData.size);
         }
         
-        // 공격 상태 처리
-        if (enemyData.isAttacking) {
-            this.playAttackAnimation();
-        }
-        
         // 체력바 업데이트
         this.updateHealthBar();
     }
-    
-    /**
-     * 서버에서 받은 색상 적용 (이미지 스프라이트 사용으로 인해 비활성화)
-     */
-    // applyServerColor(colorData) {
-    //     const hexColor = parseInt(
-    //         `${colorData.r.toString(16).padStart(2, '0')}${colorData.g.toString(16).padStart(2, '0')}${colorData.b.toString(16).padStart(2, '0')}`, 
-    //         16
-    //     );
-    //     this.setTint(hexColor);
-    // }
     
     /**
      * 서버에서 받은 크기 적용
@@ -186,59 +165,6 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         if (this.body) {
             this.body.setSize(size * 0.8, size * 0.8);
         }
-    }
-    
-    /**
-     * 공격 애니메이션 재생
-     */
-    playAttackAnimation() {
-        if (Date.now() - this.lastAttackTime < 500) return; // 중복 방지
-        
-        this.lastAttackTime = Date.now();
-        this.isAttacking = true;
-        
-        // 크기 살짝 확대 (색상 변경 제거)
-        const originalScale = this.scaleX;
-        this.setScale(originalScale * 1.2);
-        
-        // 200ms 후 원래대로 복구
-        this.scene.time.delayedCall(200, () => {
-            if (this.active) {
-                this.setScale(originalScale);
-                this.isAttacking = false;
-            }
-        });
-        
-        // 공격 범위 표시 (선택적)
-        this.showAttackRange();
-    }
-    
-    /**
-     * 공격 범위 시각화
-     */
-    showAttackRange() {
-        const attackRange = this.scene.add.circle(this.x, this.y, 35, 0xff0000, 0.3);
-        attackRange.setDepth(this.depth - 1);
-        
-        this.scene.time.delayedCall(300, () => {
-            if (attackRange.active) {
-                attackRange.destroy();
-            }
-        });
-    }
-    
-    /**
-     * 피격 효과 (서버에서 데미지 처리 후 호출)
-     */
-    showDamageEffect() {
-        // 피격 효과 제거 (이미지 스프라이트 사용)
-        // this.setTintFill(0xffffff);
-        
-        // this.scene.time.delayedCall(100, () => {
-        //     if (this.active) {
-        //         this.clearTint();
-        //     }
-        // });
     }
     
     /**
