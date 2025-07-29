@@ -159,7 +159,7 @@ export default class SkillCooldownUI {
         if (remaining > 0) {
             const progress = remaining / total;
             const startAngle = -Math.PI / 2; // 12시 방향부터 시작
-            const endAngle = startAngle + (2 * Math.PI * progress);
+            const endAngle = startAngle - (2 * Math.PI * progress); // 시계방향으로 변경
             
             // 쿨타임 원형 그래프
             ui.cooldown.fillStyle(0xff0000, 0.6);
