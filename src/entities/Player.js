@@ -696,17 +696,29 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
         
-        const statsElement = document.getElementById('stats');
-        if (statsElement) {
-            // 클라이언트에서 관리되는 로컬 정보들을 UI에 표시
+        // 새로운 UI 구조에 맞게 각 요소 업데이트
+        const levelElement = document.getElementById('level');
+        const hpElement = document.getElementById('hp');
+        const jobElement = document.getElementById('job');
+        const expElement = document.getElementById('exp');
+        
+        if (levelElement) {
+            levelElement.textContent = `레벨: ${this.level}`;
+        }
+        
+        if (hpElement) {
+            hpElement.textContent = `HP: ${this.hp}/${this.maxHp}`;
+        }
+        
+        if (jobElement) {
             const jobName = this.jobInfo?.name || this.jobClass;
-            const attack = this.attack || 0;
-            const speed = this.speed || 0;
-            
-            statsElement.innerHTML = `
-                <div>레벨: ${this.level} | HP: ${this.hp}/${this.maxHp} | 직업: ${jobName}</div>
-                <div>공격력: ${attack} | 속도: ${speed}</div>
-            `;
+            jobElement.textContent = `직업: ${jobName}`;
+        }
+        
+        if (expElement) {
+            const currentExp = this.exp || 0;
+            const expToNext = this.expToNext || 100;
+            expElement.textContent = `경험치: ${currentExp}/${expToNext}`;
         }
 
         // 스킬 쿨타임 UI 업데이트 (본인 플레이어만)

@@ -211,6 +211,8 @@ class ServerPlayer {
       y: this.y,
       team: this.team,
       level: this.level,
+      exp: this.exp,
+      expToNext: this.expToNext,
       hp: this.hp,
       maxHp: this.maxHp,
       jobClass: this.jobClass,
@@ -365,32 +367,6 @@ class ServerPlayer {
     }
     
     skillManager.endJump(this);
-  }
-
-  /**
-   * 기절 상태 시작
-   */
-  startStun(duration) {
-    this.isStunned = true;
-    this.stunStartTime = Date.now();
-    this.stunDuration = duration;
-    
-    // 기절 지속시간 후 자동 해제
-    setTimeout(() => {
-      if (this.isStunned) {
-        this.endStun();
-      }
-    }, duration);
-    
-    
-    // 기절 상태 변경을 모든 클라이언트에게 즉시 알림
-    if (global.io) {
-      global.io.emit('player-stunned', {
-        playerId: this.id,
-        isStunned: true,
-        duration: duration
-      });
-    }
   }
 
   /**

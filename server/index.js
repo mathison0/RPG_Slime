@@ -299,6 +299,9 @@ class GameServer {
           hp: player.hp,
           maxHp: player.maxHp,
           level: player.level,
+          // 경험치 정보 추가
+          exp: player.exp,
+          expToNext: player.expToNext,
           jobClass: player.jobClass,
           team: player.team,
           size: player.size,

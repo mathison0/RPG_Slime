@@ -886,6 +886,8 @@ export default class NetworkEventManager {
             this.scene.player.hp = myPlayerState.hp;
             this.scene.player.maxHp = myPlayerState.maxHp;
             this.scene.player.level = myPlayerState.level;
+            this.scene.player.exp = myPlayerState.exp;
+            this.scene.player.expToNext = myPlayerState.expToNext;
             this.scene.player.jobClass = myPlayerState.jobClass;
             
             // 스탯 정보 업데이트 (서버에서 계산된 값 사용)

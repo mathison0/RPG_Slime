@@ -25,14 +25,27 @@
             color: white;
             font-size: 16px;
             z-index: 1000;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            border: 2px solid #333;
+        }
+        
+        #player-info div {
+            margin: 3px 0;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
     <div id="game-container">
         <div class="ui-overlay" id="game-ui" style="display: none;">
-            <div id="stats">레벨: 1 | HP: 100/100 | 직업: 슬라임</div>
-            <div id="controls">WASD: 이동 | SPACE: 스킬 | Q: 전직</div>
+            <div id="player-info">
+                <div id="level">레벨: 1</div>
+                <div id="hp">HP: 100/100</div>
+                <div id="job">직업: 슬라임</div>
+                <div id="exp">경험치: 0/100</div>
+            </div>
         </div>
     </div>
     <script type="module" src="/src/main.js"></script>

@@ -429,30 +429,12 @@ class SocketEventManager {
         const result = this.gameStateManager.takeDamage(player, enemy, player.attack);
         
         if (result.success) {
-          // 몬스터 사망 체크
+          // 몬스터가 죽었으면 새로운 적 스폰
           if (enemy.hp <= 0) {
-            // 적 제거 및 경험치 지급
-            this.gameStateManager.removeEnemy(data.enemyId);
-            const leveledUp = player.gainExp(25); // 적 처치 시 25 경험치
-            
-            this.io.emit('enemy-destroyed', { enemyId: data.enemyId });
-            
-            if (leveledUp) {
-              this.io.emit('player-level-up', {
-                playerId: socket.id,
-                level: player.level,
-                stats: {
-                  hp: player.hp,
-                  maxHp: player.maxHp,
-                  attack: player.attack
-                }
-              });
-            }
-            
             // 새로운 적 스폰
             this.enemyManager.spawnEnemy();
           }
-          // 데미지 이벤트는 통합 함수에서 이미 처리됨
+          // 데미지 이벤트와 경험치 지급은 통합 함수에서 이미 처리됨
         }
       }
     });
