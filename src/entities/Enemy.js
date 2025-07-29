@@ -8,7 +8,9 @@ import HealthBar from '../ui/HealthBar.js';
  */
 export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y, type = 'basic') {
-        super(scene, x, y, 'enemy');
+        // 몬스터 타입에 따른 스프라이트 키 결정
+        const spriteKey = Enemy.getSpriteKeyForType(type);
+        super(scene, x, y, spriteKey);
         
         this.scene = scene;
         this.scene.add.existing(this);
@@ -54,6 +56,22 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         // 서버 제어 적 물리 설정
         this.body.pushable = false; // 밀리지 않음
         this.body.immovable = true; // 충돌 시 움직이지 않음
+    }
+    
+    /**
+     * 몬스터 타입에 따른 스프라이트 키 반환
+     */
+    static getSpriteKeyForType(type) {
+        switch (type) {
+            case 'basic':
+                return 'enemy_basic';
+            case 'charge':
+                return 'enemy_charge';
+            case 'elite':
+                return 'enemy_elite';
+            default:
+                return 'enemy_basic'; // 기본값
+        }
     }
     
     /**
@@ -115,6 +133,13 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.vx = enemyData.vx || 0;
         this.vy = enemyData.vy || 0;
         
+        // 몬스터 타입 업데이트 (새로운 타입이면 스프라이트 변경)
+        if (enemyData.type && enemyData.type !== this.type) {
+            this.type = enemyData.type;
+            const newSpriteKey = Enemy.getSpriteKeyForType(this.type);
+            this.setTexture(newSpriteKey);
+        }
+        
         // 물리 바디 위치 동기화
         if (this.body) {
             this.body.x = enemyData.x - this.width/2;
@@ -123,10 +148,10 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
             this.body.velocity.y = this.vy;
         }
         
-        // 색상 적용
-        if (enemyData.color) {
-            this.applyServerColor(enemyData.color);
-        }
+        // 색상 적용 제거 (이미지 스프라이트 사용)
+        // if (enemyData.color) {
+        //     this.applyServerColor(enemyData.color);
+        // }
         
         // 크기 적용
         if (enemyData.size) {
@@ -143,15 +168,15 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 서버에서 받은 색상 적용
+     * 서버에서 받은 색상 적용 (이미지 스프라이트 사용으로 인해 비활성화)
      */
-    applyServerColor(colorData) {
-        const hexColor = parseInt(
-            `${colorData.r.toString(16).padStart(2, '0')}${colorData.g.toString(16).padStart(2, '0')}${colorData.b.toString(16).padStart(2, '0')}`, 
-            16
-        );
-        this.setTint(hexColor);
-    }
+    // applyServerColor(colorData) {
+    //     const hexColor = parseInt(
+    //         `${colorData.r.toString(16).padStart(2, '0')}${colorData.g.toString(16).padStart(2, '0')}${colorData.b.toString(16).padStart(2, '0')}`, 
+    //         16
+    //     );
+    //     this.setTint(hexColor);
+    // }
     
     /**
      * 서버에서 받은 크기 적용
@@ -172,17 +197,13 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.lastAttackTime = Date.now();
         this.isAttacking = true;
         
-        // 빨간색으로 번쩍임
-        this.setTintFill(0xff0000);
-        
-        // 크기 살짝 확대
+        // 크기 살짝 확대 (색상 변경 제거)
         const originalScale = this.scaleX;
         this.setScale(originalScale * 1.2);
         
         // 200ms 후 원래대로 복구
         this.scene.time.delayedCall(200, () => {
             if (this.active) {
-                this.clearTint();
                 this.setScale(originalScale);
                 this.isAttacking = false;
             }
@@ -210,15 +231,14 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
      * 피격 효과 (서버에서 데미지 처리 후 호출)
      */
     showDamageEffect() {
-        // 흰색으로 번쩍임
-        this.setTintFill(0xffffff);
+        // 피격 효과 제거 (이미지 스프라이트 사용)
+        // this.setTintFill(0xffffff);
         
-        this.scene.time.delayedCall(100, () => {
-            if (this.active) {
-                this.clearTint();
-                // 서버에서 받은 색상 유지 (다음 업데이트에서 적용됨)
-            }
-        });
+        // this.scene.time.delayedCall(100, () => {
+        //     if (this.active) {
+        //         this.clearTint();
+        //     }
+        // });
     }
     
     /**
