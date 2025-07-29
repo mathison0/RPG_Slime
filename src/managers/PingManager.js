@@ -193,7 +193,7 @@ export default class PingManager {
         const arrow = this.scene.add.image(arrowX, arrowY, 'ping_arrow');
         arrow.setScrollFactor(0);
         arrow.setDepth(1001);
-        arrow.setScale(0.07);
+        arrow.setScale(0.5);
         arrow.setRotation(angle);
         
         // 화살표 객체를 Map에 저장
@@ -262,7 +262,7 @@ export default class PingManager {
             minimapArrow.setDepth(1003);
             minimapArrow.pingWorldX = pingX;
             minimapArrow.pingWorldY = pingY;
-            minimapArrow.setScale(0.02);
+            minimapArrow.setScale(0.2);
             minimapArrow.setRotation(angle);
             
             // 화살표 애니메이션 (3초)
