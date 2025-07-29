@@ -463,6 +463,12 @@ export default class NetworkEventManager {
         
         const isOwnPlayer = data.playerId === this.networkManager.playerId;
         
+        // 디버깅: 다른 플레이어를 찾지 못하는 경우 로그 출력
+        if (!player && !isOwnPlayer) {
+            console.warn(`다른 플레이어 스킬 사용 처리 실패: playerId=${data.playerId}, skillType=${data.skillType}`);
+            console.log('현재 otherPlayers:', this.scene.otherPlayers?.getChildren().map(p => ({ id: p.networkId, jobClass: p.jobClass })));
+        }
+        
         if (player) {
             // 타임스탬프 기반 이펙트 동기화 (모든 스킬 타입 통일 처리)
             const currentTime = Date.now();

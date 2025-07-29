@@ -147,11 +147,21 @@ export default class MageJob extends BaseJob {
         // 와드 생성
         const ward = this.player.scene.add.sprite(this.player.x, this.player.y, 'ward');
         
-        // 서버에서 받은 크기 정보 사용 (기본값: 0.05)
-        const wardScale = data?.wardScale || 0.05;
+        // 서버에서 받은 크기 정보 사용 (기본값: 0.2)
+        const wardScale = data?.wardScale || 0.2;
         const wardBodySize = data?.wardBodySize || 125;
         
         ward.setScale(wardScale);
+        
+        // 다른 플레이어의 와드인지 확인
+        const isOtherPlayer = this.player.isOtherPlayer;
+        if (isOtherPlayer) {
+            ward.isOtherPlayerWard = true;
+            ward.wardOwnerId = this.player.networkId;
+        }
+        
+        // 모든 와드는 같은 depth로 설정
+        ward.setDepth(1001);
         
         // 와드에 물리 바디 추가
         this.player.scene.physics.add.existing(ward);
