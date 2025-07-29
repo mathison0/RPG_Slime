@@ -230,7 +230,7 @@ export default class WarriorJob extends BaseJob {
         const roarText = this.player.scene.add.text(
             this.player.x, 
             this.player.y - 80, 
-            '울부짖기!', 
+            '크아앙!', 
             {
                 fontSize: '18px',
                 fill: '#ff0000',
@@ -314,7 +314,17 @@ export default class WarriorJob extends BaseJob {
         sweepGraphics.stroke();
         
         // 지연 시간 동안 이펙트 유지 후 색상 변경 및 페이드 아웃
-        this.player.scene.time.delayedCall(delay, () => {
+        const delayedTimer = this.player.scene.time.delayedCall(delay, () => {
+            // 플레이어가 죽었는지 확인
+            if (this.player.isDead) {
+                console.log('휩쓸기 이펙트 취소: 플레이어가 사망함');
+                if (sweepGraphics && sweepGraphics.active) {
+                    sweepGraphics.destroy();
+                }
+                this.player.delayedSkillTimers.delete(delayedTimer);
+                return;
+            }
+            
             // 지연 시간 후 색상을 진하게 변경 (데미지 적용 시점)
             sweepGraphics.clear();
             sweepGraphics.fillStyle(0xff0000, 0.8); // 진한 색상으로 변경
@@ -344,7 +354,17 @@ export default class WarriorJob extends BaseJob {
                     }
                 }
             });
+            
+            this.player.delayedSkillTimers.delete(delayedTimer);
         });
+        
+        // 타이머 추적
+        if (this.player.delayedSkillTimers) {
+            this.player.delayedSkillTimers.add(delayedTimer);
+        }
+        
+        // 현재 휩쓸기 그래픽 저장 (정리용)
+        this.currentSweepGraphics = sweepGraphics;
         
         // 휩쓸기 효과 메시지
         const sweepText = this.player.scene.add.text(
@@ -439,7 +459,17 @@ export default class WarriorJob extends BaseJob {
         thrustGraphics.stroke();
         
         // 지연 시간 동안 이펙트 유지 후 색상 변경 및 페이드 아웃
-        this.player.scene.time.delayedCall(delay, () => {
+        const thrustDelayedTimer = this.player.scene.time.delayedCall(delay, () => {
+            // 플레이어가 죽었는지 확인
+            if (this.player.isDead) {
+                console.log('찔러기 이펙트 취소: 플레이어가 사망함');
+                if (thrustGraphics && thrustGraphics.active) {
+                    thrustGraphics.destroy();
+                }
+                this.player.delayedSkillTimers.delete(thrustDelayedTimer);
+                return;
+            }
+            
             // 지연 시간 후 색상을 진하게 변경 (데미지 적용 시점)
             thrustGraphics.clear();
             thrustGraphics.fillStyle(0xff0000, 0.8); // 진한 색상으로 변경
@@ -471,7 +501,17 @@ export default class WarriorJob extends BaseJob {
                     }
                 }
             });
+            
+            this.player.delayedSkillTimers.delete(thrustDelayedTimer);
         });
+        
+        // 타이머 추적
+        if (this.player.delayedSkillTimers) {
+            this.player.delayedSkillTimers.add(thrustDelayedTimer);
+        }
+        
+        // 현재 찔러기 그래픽 저장 (정리용)
+        this.currentThrustGraphics = thrustGraphics;
         
         // 찌르기 효과 메시지
         const thrustText = this.player.scene.add.text(
@@ -601,5 +641,30 @@ export default class WarriorJob extends BaseJob {
         } else {
             return angle >= startAngle && angle <= endAngle;
         }
+    }
+
+    /**
+     * 스킬 이펙트 정리 (사망 시 호출)
+     */
+    clearSkillEffects() {
+        super.clearSkillEffects();
+        
+        // 휩쓸기 그래픽 정리
+        if (this.currentSweepGraphics && this.currentSweepGraphics.active) {
+            this.currentSweepGraphics.destroy();
+            this.currentSweepGraphics = null;
+        }
+        
+        // 찢기 그래픽 정리
+        if (this.currentThrustGraphics && this.currentThrustGraphics.active) {
+            this.currentThrustGraphics.destroy();
+            this.currentThrustGraphics = null;
+        }
+        
+        // 전사 스킬 상태 초기화
+        this.isSweeping = false;
+        this.isThrusting = false;
+        
+        console.log('WarriorJob: 스킬 이펙트 정리 완료');
     }
 } 

@@ -20,6 +20,11 @@ class SkillManager {
       return { success: false, error: 'Cannot use skills while dead' };
     }
 
+    // 기절 상태에서는 스킬 사용 불가
+    if (player.isStunned) {
+      return { success: false, error: 'Cannot use skills while stunned' };
+    }
+
     // 기본 공격 처리
     if (skillType === 'basic_attack') {
       return this.handleBasicAttack(player, targetX, targetY);
@@ -37,9 +42,15 @@ class SkillManager {
       return { success: false, error: 'Skill on cooldown' };
     }
 
-    // 스킬별 특수 조건 체크
+    // 점프 중인 경우 은신 스킬을 제외하고 스킬 사용 불가
     if (player.isJumping && skillType !== 'stealth') {
       return { success: false, error: 'Cannot use skill while jumping' };
+    }
+
+    // 시전시간이 있는 스킬 사용 중인지 체크 (delay 속성이 있는 스킬들)
+    const castingSkills = this.getCastingSkills(player);
+    if (castingSkills.length > 0) {
+      return { success: false, error: 'Cannot use skill while casting another skill' };
     }
 
     // 스킬 사용 처리
@@ -47,15 +58,19 @@ class SkillManager {
     
     // 액션 상태 업데이트
     const duration = skillInfo.duration || 0;
-    if (duration > 0) {
+    const delay = skillInfo.delay || 0;
+    
+    if (duration > 0 || delay > 0) {
       player.currentActions.skills.set(skillType, {
         startTime: now,
         duration: duration,
-        endTime: now + duration,
+        delay: delay, // 시전시간 정보 추가
+        endTime: now + Math.max(duration, delay),
         skillInfo: {
           range: this.calculateSkillRange(player, skillType, skillInfo.range),
           damage: this.calculateSkillDamage(player, skillType, skillInfo.damage),
           duration: duration,
+          delay: delay,
           heal: skillInfo.heal || 0
         }
       });
@@ -67,6 +82,7 @@ class SkillManager {
       range: this.calculateSkillRange(player, skillType, skillInfo.range),
       damage: this.calculateSkillDamage(player, skillType, skillInfo.damage),
       duration: duration,
+      delay: delay, // 시전시간 정보 추가
       heal: skillInfo.heal || 0,
       cooldown: skillInfo.cooldown || 0,
       
@@ -145,6 +161,61 @@ class SkillManager {
         player.currentActions.skills.delete(skillType);
       }
     }
+  }
+
+  /**
+   * 현재 시전 중인 스킬들 반환 (delay 속성이 있는 스킬들만)
+   */
+  getCastingSkills(player) {
+    const now = Date.now();
+    const castingSkills = [];
+    
+    // 만료된 액션들 먼저 정리
+    this.cleanupExpiredActions(player);
+    
+    for (const [skillType, skillAction] of player.currentActions.skills) {
+      // delay 속성이 있고 아직 시전시간이 끝나지 않은 스킬들
+      if (skillAction.delay > 0 && now < skillAction.startTime + skillAction.delay) {
+        castingSkills.push({
+          skillType,
+          remainingCastTime: (skillAction.startTime + skillAction.delay) - now
+        });
+      }
+    }
+    
+    return castingSkills;
+  }
+
+  /**
+   * 플레이어의 모든 스킬 시전을 취소
+   */
+  cancelAllCasting(player) {
+    const cancelledSkills = [];
+    
+    // 현재 시전 중인 스킬들을 기록
+    for (const [skillType, skillAction] of player.currentActions.skills) {
+      if (skillAction.delay > 0) {
+        cancelledSkills.push(skillType);
+      }
+    }
+    
+    // 모든 스킬 액션 정리
+    player.currentActions.skills.clear();
+    
+    // 지연된 액션들 모두 취소
+    const cancelledDelayedActions = [];
+    for (const [actionId, timeoutId] of player.delayedActions) {
+      clearTimeout(timeoutId);
+      cancelledDelayedActions.push(actionId);
+    }
+    player.delayedActions.clear();
+    
+    console.log(`플레이어 ${player.id}의 스킬 시전 취소: ${cancelledSkills.join(', ')}`);
+    if (cancelledDelayedActions.length > 0) {
+      console.log(`플레이어 ${player.id}의 지연된 액션 취소: ${cancelledDelayedActions.join(', ')}`);
+    }
+    
+    return cancelledSkills;
   }
 
   /**
@@ -419,10 +490,21 @@ class SkillManager {
         console.log(`휩쓸기 스킬 사용! 플레이어: ${player.id}, 지연시간: ${sweepDelay}ms`);
         
         // 지연 시간 후 데미지 적용
-        setTimeout(() => {
+        const sweepTimeoutId = setTimeout(() => {
+          // 플레이어가 죽었는지 확인
+          if (player.isDead) {
+            console.log(`휩쓸기 스킬 취소: 플레이어 ${player.id}가 사망함`);
+            player.delayedActions.delete('sweep');
+            return;
+          }
+          
           console.log(`휩쓸기 지연 데미지 적용! 플레이어: ${player.id}`);
           this.applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult);
+          player.delayedActions.delete('sweep');
         }, sweepDelay);
+        
+        // 지연된 액션으로 등록
+        player.delayedActions.set('sweep', sweepTimeoutId);
         break;
 
       case 'thrust':
@@ -430,10 +512,21 @@ class SkillManager {
         const delay = skillInfo.delay || 1500; // 기본값 1.5초
         
         // 지연 시간 후 데미지 적용
-        setTimeout(() => {
+        const thrustTimeoutId = setTimeout(() => {
+          // 플레이어가 죽었는지 확인
+          if (player.isDead) {
+            console.log(`찌르기 스킬 취소: 플레이어 ${player.id}가 사망함`);
+            player.delayedActions.delete('thrust');
+            return;
+          }
+          
           console.log(`찌르기 지연 데미지 적용! 플레이어: ${player.id}`);
           this.applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult);
+          player.delayedActions.delete('thrust');
         }, delay);
+        
+        // 지연된 액션으로 등록
+        player.delayedActions.set('thrust', thrustTimeoutId);
         break;
     }
 
@@ -475,11 +568,22 @@ class SkillManager {
         player.stealthDuration = skillInfo.duration || 5000;
         
         // 은신 지속시간 후 자동 해제
-        setTimeout(() => {
+        const stealthTimeoutId = setTimeout(() => {
+          // 플레이어가 죽었는지 확인
+          if (player.isDead) {
+            console.log(`은신 스킬 취소: 플레이어 ${player.id}가 사망함`);
+            player.delayedActions.delete('stealth');
+            return;
+          }
+          
           if (player.isStealth) {
             player.isStealth = false;
           }
+          player.delayedActions.delete('stealth');
         }, player.stealthDuration);
+        
+        // 지연된 액션으로 등록
+        player.delayedActions.set('stealth', stealthTimeoutId);
         break;
       case 'backstab':
         this.applyBackstabDamage(player, x, y, targetX, targetY, skillInfo.damage, damageResult);

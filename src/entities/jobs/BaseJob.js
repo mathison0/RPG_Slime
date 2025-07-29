@@ -282,6 +282,14 @@ export default class BaseJob {
     }
 
     /**
+     * 스킬 이펙트 정리 (사망 시 호출)
+     */
+    clearSkillEffects() {
+        // 기본 구현 - 각 직업에서 필요시 오버라이드
+        console.log(`${this.constructor.name}: 스킬 이펙트 정리`);
+    }
+
+    /**
      * 정리 작업
      */
     destroy() {

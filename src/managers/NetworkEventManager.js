@@ -284,7 +284,11 @@ export default class NetworkEventManager {
         this.scene.player = new Player(this.scene, data.playerData.x, data.playerData.y, data.playerData.team);
         this.scene.player.setNetworkId(data.playerId);
         this.scene.player.setNetworkManager(this.networkManager);
-        this.scene.player.setDepth(950);
+        
+        const mainPlayerDepth = 950;
+        const nameTagDepth = mainPlayerDepth + 10; // VisionManager와 같은 로직 적용
+        
+        this.scene.player.setDepth(mainPlayerDepth);
         
         // 서버의 사망 상태 동기화
         this.scene.player.isDead = data.playerData.isDead || false;
@@ -303,8 +307,13 @@ export default class NetworkEventManager {
             console.log('게임 입장 시 무적 상태로 설정됨');
         }
         
-        // 플레이어 이름표 생성
-        this.scene.player.createNameText(this.scene.playerNickname, data.playerData.team, 960);
+        // 플레이어 이름표 생성 (depth를 동적으로 계산)
+        this.scene.player.createNameText(this.scene.playerNickname, data.playerData.team, nameTagDepth);
+        
+        // 체력바 depth도 이름표와 같게 설정
+        if (this.scene.player.healthBar && this.scene.player.healthBar.container) {
+            this.scene.player.healthBar.container.setDepth(nameTagDepth);
+        }
         
         // 물리 충돌 설정
         this.scene.mapManager.setupCollisions();
@@ -455,32 +464,6 @@ export default class NetworkEventManager {
         const isOwnPlayer = data.playerId === this.networkManager.playerId;
         
         if (player) {
-            // 본인 플레이어의 스킬 사용 성공 시 쿨타임 설정 (울부짖기는 이미 설정됨)
-            if (isOwnPlayer && player.job && data.skillType !== 'roar') {
-                this.setSkillCooldown(player, data.skillType);
-            }
-            
-            // 기본 공격 쿨다운 설정
-            if (isOwnPlayer && data.skillType === 'basic_attack' && player.job) {
-                const cooldowns = {
-                    'slime': 600,
-                    'ninja': 500,
-                    'archer': 500,
-                    'mage': 800,
-                    'assassin': 300,
-                    'warrior': 800,
-                    'supporter': 700,
-                    'mechanic': 750
-                };
-                const cooldown = cooldowns[player.jobClass] || 600;
-                player.job.setSkillCooldown('basic_attack', cooldown);
-            }
-            
-            // 데미지 결과 처리
-            if (data.damageResult) {
-                this.handleSkillDamageResult(data.damageResult);
-            }
-            
             // 타임스탬프 기반 이펙트 동기화 (모든 스킬 타입 통일 처리)
             const currentTime = Date.now();
             const skillDelay = currentTime - data.timestamp;
@@ -491,16 +474,29 @@ export default class NetworkEventManager {
             }
             
             // 지연시간만큼 조정해서 이펙트 재생
-            const adjustedDelay = Math.max(0, -skillDelay);
+            const adjustedDelay = skillDelay;
             
             if (adjustedDelay > 0) {
                 // 지연해서 재생
-                this.scene.time.delayedCall(adjustedDelay, () => {
+                const delayedTimer = this.scene.time.delayedCall(adjustedDelay, () => {
+                    // 플레이어가 죽었는지 확인
+                    if (player.isDead) {
+                        console.log(`스킬 이펙트 취소: 플레이어가 사망함 (${data.skillType})`);
+                        return;
+                    }
                     this.showSkillEffect(player, data.skillType, data);
+                    player.delayedSkillTimers.delete(delayedTimer);
                 });
+                
+                // 타이머를 추적하여 사망 시 취소할 수 있도록 함
+                if (player.delayedSkillTimers) {
+                    player.delayedSkillTimers.add(delayedTimer);
+                }
             } else {
-                // 즉시 재생
-                this.showSkillEffect(player, data.skillType, data);
+                // 즉시 재생 (플레이어 상태 확인 후)
+                if (!player.isDead) {
+                    this.showSkillEffect(player, data.skillType, data);
+                }
             }
         }
     }
@@ -787,6 +783,9 @@ export default class NetworkEventManager {
             // 은신 상태
             this.scene.player.isStealth = myPlayerState.isStealth;
             
+            // 스킬 시전 중 상태
+            this.scene.player.isCasting = myPlayerState.isCasting;
+            
             // size 정보 업데이트
             if (myPlayerState.size !== undefined && myPlayerState.size !== this.scene.player.size) {
                 this.scene.player.size = myPlayerState.size;
@@ -826,6 +825,9 @@ export default class NetworkEventManager {
                     otherPlayer.maxHp = playerState.maxHp;
                     otherPlayer.level = playerState.level;
                     otherPlayer.jobClass = playerState.jobClass;
+                    
+                    // 스킬 시전 중 상태
+                    otherPlayer.isCasting = playerState.isCasting;
                     
                     // size 정보 업데이트 추가
                     if (playerState.size !== undefined && playerState.size !== otherPlayer.size) {
@@ -1202,6 +1204,16 @@ export default class NetworkEventManager {
                 otherPlayer.isDead = true;
                 otherPlayer.setVisible(false);
                 
+                // 스킬 관련 상태 초기화
+                otherPlayer.isCasting = false;
+                otherPlayer.isStunned = false;
+                otherPlayer.isStealth = false;
+                
+                // 지연된 스킬 이펙트들 정리
+                if (otherPlayer.clearDelayedSkillEffects) {
+                    otherPlayer.clearDelayedSkillEffects();
+                }
+                
                 // 색상 초기화 (데미지로 인한 빨간색 제거)
                 otherPlayer.clearTint();
                 
@@ -1224,6 +1236,13 @@ export default class NetworkEventManager {
                 this.scene.player.isDead = false;
                 this.scene.player.setVisible(true);
                 this.scene.player.setActive(true);
+                
+                // 스킬 관련 상태 초기화
+                this.scene.player.isCasting = false;
+                this.scene.player.isUsingSlimeSkill = false;
+                this.scene.player.isUsingWarriorSkill = false;
+                this.scene.player.isStunned = false;
+                this.scene.player.isStealth = false;
                 
                 // 색상 초기화 (데미지로 인한 빨간색 제거)
                 this.scene.player.clearTint();
@@ -1275,6 +1294,16 @@ export default class NetworkEventManager {
                 otherPlayer.hp = data.hp;
                 otherPlayer.maxHp = data.maxHp;
                 otherPlayer.setVisible(true);
+                
+                // 스킬 관련 상태 초기화
+                otherPlayer.isCasting = false;
+                otherPlayer.isStunned = false;
+                otherPlayer.isStealth = false;
+                
+                // 지연된 스킬 이펙트들 정리
+                if (otherPlayer.clearDelayedSkillEffects) {
+                    otherPlayer.clearDelayedSkillEffects();
+                }
                 
                 // 색상 초기화 (데미지로 인한 빨간색 제거)
                 otherPlayer.clearTint();
@@ -1370,10 +1399,19 @@ export default class NetworkEventManager {
         otherPlayer.updateJobSprite();
         
         this.scene.otherPlayers.add(otherPlayer);
-        otherPlayer.setDepth(650);
+        
+        const otherPlayerDepth = 650;
+        const nameTagDepth = otherPlayerDepth + 10; // VisionManager와 같은 로직 적용
+        
+        otherPlayer.setDepth(otherPlayerDepth);
         
         const displayName = playerData.nickname || `Player ${playerData.id.slice(0, 6)}`;
-        otherPlayer.createNameText(displayName, playerData.team, 960);
+        otherPlayer.createNameText(displayName, playerData.team, nameTagDepth);
+        
+        // 체력바 depth도 이름표와 같게 설정
+        if (otherPlayer.healthBar && otherPlayer.healthBar.container) {
+            otherPlayer.healthBar.container.setDepth(nameTagDepth);
+        }
         
         return otherPlayer;
     }

@@ -118,7 +118,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
             lowHealthColor: 0xff0000,
             lowHealthThreshold: 0.3,
             yOffsetFromTop: -8, // 엔티티 위쪽 가장자리에서 8px 위에
-            depth: 105
+            depth: 660 // 적은 동적 변경 없이 고정값 사용
         };
         
         this.healthBar = new HealthBar(this.scene, this, healthBarConfig);
