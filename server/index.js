@@ -10,6 +10,7 @@ const GameStateManager = require('./src/managers/GameStateManager');
 const SocketEventManager = require('./src/managers/SocketEventManager');
 const EnemyManager = require('./src/managers/EnemyManager');
 const SkillManager = require('./src/managers/SkillManager');
+const ProjectileManager = require('./src/managers/ProjectileManager');
 const ServerUtils = require('./src/utils/ServerUtils');
 const { generateMap } = require('./generateMap');
 
@@ -33,8 +34,9 @@ class GameServer {
     this.gameStateManager = new GameStateManager(this.io);
     this.skillManager = new SkillManager(this.gameStateManager);
     this.gameStateManager.skillManager = this.skillManager; // skillManager 참조 추가
+    this.projectileManager = new ProjectileManager(this.gameStateManager);
     this.enemyManager = new EnemyManager(this.io, this.gameStateManager);
-    this.socketEventManager = new SocketEventManager(this.io, this.gameStateManager, this.enemyManager, this.skillManager);
+    this.socketEventManager = new SocketEventManager(this.io, this.gameStateManager, this.enemyManager, this.skillManager, this.projectileManager);
     
     // 게임 루프 타이머
     this.gameLoopInterval = null;
@@ -190,6 +192,9 @@ class GameServer {
       // 몬스터 AI 업데이트
       this.enemyManager.updateMonsters(deltaTime);
       
+      // 투사체 업데이트
+      this.projectileManager.updateProjectiles(deltaTime);
+      
       // 스폰 배리어 데미지 체크
       const damagedPlayers = this.gameStateManager.checkSpawnBarrierDamage();
       if (damagedPlayers.length > 0) {
@@ -203,6 +208,9 @@ class GameServer {
       this.updatePlayerStates();
       
       this.syncPlayerStatus();
+      
+      // 투사체 정보 브로드캐스트
+      this.syncProjectiles();
       
     } catch (error) {
       ServerUtils.errorLog('게임 루프 오류', { error: error.message, stack: error.stack });
@@ -255,6 +263,19 @@ class GameServer {
         console.log(`플레이어 사망 처리: ${player.id} (원인: ${deathCause})`);
       }
     });
+  }
+
+  /**
+   * 투사체 정보 동기화
+   */
+  syncProjectiles() {
+    const allProjectiles = this.projectileManager.getAllProjectiles();
+    if (allProjectiles.length > 0) {
+      this.io.emit('projectiles-update', {
+        projectiles: allProjectiles,
+        timestamp: Date.now()
+      });
+    }
   }
 
   /**

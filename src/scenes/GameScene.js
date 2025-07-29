@@ -7,6 +7,7 @@ import MinimapManager from '../managers/MinimapManager.js';
 import PingManager from '../managers/PingManager.js';
 import CheatManager from '../managers/CheatManager.js';
 import EffectManager from '../effects/EffectManager.js';
+import ProjectileManager from '../managers/ProjectileManager.js';
 
 export default class GameScene extends Phaser.Scene {
     constructor() {
@@ -54,6 +55,7 @@ export default class GameScene extends Phaser.Scene {
         this.pingManager = null;
         this.cheatManager = null;
         this.effectManager = null;
+        this.projectileManager = null;
     }
     
     init(data) {
@@ -78,6 +80,9 @@ export default class GameScene extends Phaser.Scene {
         
         // 매니저들 초기화
         this.initializeManagers();
+        
+        // 투사체 매니저 초기화
+        this.projectileManager = new ProjectileManager(this);
         
         // 네트워크 이벤트 설정
         this.networkEventManager.setupNetworkListeners();

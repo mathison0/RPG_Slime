@@ -399,19 +399,10 @@ class SkillManager {
       return { success: false, error: 'Cannot use basic attack while stunned' };
     }
     
-    // 기본 공격 쿨다운 체크 (직업별로 다름)
-    const cooldowns = {
-      'slime': 600,
-      'ninja': 500,
-      'archer': 500,
-      'mage': 800,
-      'assassin': 300,
-      'warrior': 800,
-      'supporter': 700,
-      'mechanic': 750
-    };
-    
-    const cooldown = cooldowns[player.jobClass] || 600;
+    // 기본 공격 쿨다운 체크 (JobClasses.js에서 가져옴)
+    const { getJobInfo } = require('../../shared/JobClasses.js');
+    const jobInfo = getJobInfo(player.jobClass);
+    const cooldown = jobInfo.basicAttackCooldown || 600;
     const lastUsed = player.skillCooldowns['basic_attack'] || 0;
     
     if (now - lastUsed < cooldown) {
