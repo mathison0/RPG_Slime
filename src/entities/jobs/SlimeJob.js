@@ -1,4 +1,6 @@
 import BaseJob from './BaseJob.js';
+import { getGlobalTimerManager } from '../../managers/AbsoluteTimerManager.js';
+import EffectManager from '../../effects/EffectManager.js';
 // JobClasses는 서버에서 관리하므로 import 제거
 
 /**
@@ -7,15 +9,16 @@ import BaseJob from './BaseJob.js';
 export default class SlimeJob extends BaseJob {
     constructor(player) {
         super(player);
-        // 직업 정보는 서버에서 받아옴
-        this.lastBasicAttackTime = 0;
-        // 쿨타임은 서버에서 관리됨
+        this.effectManager = new EffectManager(player.scene);
     }
 
     useSkill(skillNumber, options = {}) {
+        if (this.player.isOtherPlayer) {
+            return;
+        }
         switch (skillNumber) {
             case 1:
-                this.useSpreadSkill();
+                this.player.networkManager.useSkill('spread');
                 break;
             default:
                 console.log('SlimeJob: 알 수 없는 스킬 번호:', skillNumber);
@@ -23,59 +26,11 @@ export default class SlimeJob extends BaseJob {
     }
 
     /**
-     * 슬라임 퍼지기 스킬
-     */
-    useSpreadSkill() {
-        const skillKey = 'skill1'; // 통일된 스킬 키 사용
-        
-        // 쿨타임 체크
-        if (!this.isSkillAvailable(skillKey)) {
-            this.showCooldownMessage();
-            return;
-        }
-        
-        // 다른 플레이어면 실행하지 않음
-        if (this.player.isOtherPlayer) {
-            return;
-        }
-
-        // 점프 중이면 실행하지 않음
-        if (this.player.isJumping) {
-            return;
-        }
-
-        // 네트워크 매니저가 없으면 실행하지 않음
-        if (!this.player.networkManager) {
-            console.log('NetworkManager가 없어서 스킬을 사용할 수 없습니다.');
-            return;
-        }
-        
-        // 스킬 정보는 서버에서 처리됨
-        
-        // 쿨타임은 서버에서 관리됨
-
-        // 서버에 스킬 사용 요청
-        this.player.networkManager.useSkill('spread');
-        
-        console.log('슬라임 퍼지기 서버 요청 전송');
-    }
-
-    /**
-     * 슬라임 기본 공격 이펙트 (서버에서 받은 이벤트 처리)
-     */
-    showBasicAttackEffect(targetX, targetY) {
-        // 서버에서 투사체를 관리하므로 클라이언트에서는 이펙트만 처리
-        console.log('슬라임 기본 공격 이펙트 처리');
-    }
-
-    /**
      * 슬라임 퍼지기 이펙트
      */
     showSpreadEffect(data = null) {
-        // 본인도 이펙트를 볼 수 있도록 수정
-        const isOwnPlayer = this.player === this.player.scene.player;
         const startTime = Date.now();
-        console.log(`[${startTime}] 슬라임 퍼지기 이펙트 시작 (본인: ${isOwnPlayer})`);
+        console.log(`[${startTime}] 슬라임 퍼지기 이펙트 시작`);
         
         // 기존 슬라임 스킬 이펙트가 있다면 제거
         if (this.player.slimeSkillEffect) {
@@ -85,63 +40,47 @@ export default class SlimeJob extends BaseJob {
         
         // 기존 슬라임 스킬 타이머가 있다면 제거
         if (this.player.slimeSkillTimer) {
-            this.player.scene.time.removeEvent(this.player.slimeSkillTimer);
+            if (this.player.slimeSkillTimer.remove) {
+                this.player.slimeSkillTimer.remove();
+            }
             this.player.slimeSkillTimer = null;
         }
-        
-        // 슬라임 스킬 상태 설정
-        this.player.isUsingSlimeSkill = true;
         
         // 슬라임 스킬 스프라이트로 변경
         this.player.setTexture('slime_skill');
         
-        // 퍼지기 스킬 메시지 표시
-        const skillText = this.player.scene.add.text(
+        // EffectManager를 사용한 퍼지기 스킬 메시지 표시
+        this.effectManager.showSkillMessage(
             this.player.x, 
-            this.player.y - 60, 
+            this.player.y, 
             '퍼지기!', 
             {
                 fontSize: '16px',
-                fill: '#00ff00',
-                stroke: '#000000',
-                strokeThickness: 2
+                fill: '#00ff00'
             }
-        ).setOrigin(0.5);
-        
-        // 메시지 애니메이션 (위로 올라가면서 사라짐)
-        this.player.scene.tweens.add({
-            targets: skillText,
-            y: skillText.y - 30,
-            alpha: 0,
-            duration: 1500,
-            ease: 'Power2',
-            onComplete: () => {
-                if (skillText.active) {
-                    skillText.destroy();
-                }
-            }
-        });
+        );
         
         // 서버에서 받은 스킬 정보 사용
-        const skillInfo = data?.skillInfo || {};
-        const range = skillInfo.range || 50; // 서버에서 받은 범위
-        const effectDuration = skillInfo.duration || 1000; // 서버에서 받은 지속시간
+        const skillInfo = data.skillInfo;
+        const range = skillInfo.range; // 서버에서 받은 범위
+        const endTime = data.endTime; // 서버에서 받은 절대 종료 시간
         
-        console.log(`[${startTime}] 슬라임 퍼지기 스킬 정보 (서버에서 받음): range=${range}, duration=${effectDuration}ms`);
+        console.log(`[${startTime}] 슬라임 퍼지기 스킬 정보 (서버에서 받음): range=${range}, endTime=${endTime}`);
         
         // 초록색 범위 효과 생성
         const effect = this.player.scene.add.circle(this.player.x, this.player.y, range, 0x00ff00, 0.3);
         this.player.slimeSkillEffect = effect; // 플레이어에 이펙트 참조 저장
         
-        // 스프라이트 복원 타이머 설정 (지속시간과 정확히 동일하게)
-        this.player.slimeSkillTimer = this.player.scene.time.delayedCall(effectDuration, () => {
-            const endTime = Date.now();
-            const actualDuration = endTime - startTime;
+        // 절대 시간 기준으로 스프라이트 복원 타이머 설정
+        const timerManager = getGlobalTimerManager();
+        const eventId = timerManager.addEvent(endTime, () => {
+            const actualEndTime = Date.now();
+            const actualDuration = actualEndTime - startTime;
             
             // 범위 효과 제거
             if (effect.active) {
                 effect.destroy();
-                console.log(`[${endTime}] 슬라임 퍼지기 범위 효과 제거 (실제 지속시간: ${actualDuration}ms)`);
+                console.log(`[${actualEndTime}] 슬라임 퍼지기 범위 효과 제거 (실제 지속시간: ${actualDuration}ms)`);
             }
             
             // 플레이어 참조 정리
@@ -149,32 +88,21 @@ export default class SlimeJob extends BaseJob {
                 this.player.slimeSkillEffect = null;
             }
             
-            // 슬라임 스킬 상태 해제
-            this.player.isUsingSlimeSkill = false;
-            
             // 스프라이트 복원
             if (this.player.active) {
                 this.player.updateJobSprite();
-                console.log(`[${endTime}] 슬라임 퍼지기 스프라이트 복원 완료 (실제 지속시간: ${actualDuration}ms)`);
+                console.log(`[${actualEndTime}] 슬라임 퍼지기 스프라이트 복원 완료 (실제 지속시간: ${actualDuration}ms)`);
             }
             
             // 타이머 참조 정리
             this.player.slimeSkillTimer = null;
         });
+        
+        // 호환성을 위한 타이머 객체
+        this.player.slimeSkillTimer = {
+            remove: () => timerManager.removeEvent(eventId)
+        };
     }
-
-    /**
-     * 쿨타임 정보 반환 (서버에서 받은 정보 사용)
-     */
-    getSkillCooldowns() {
-        // 서버에서 받은 쿨타임 정보를 사용
-        if (this.player.serverSkillCooldowns) {
-            return this.player.serverSkillCooldowns;
-        }
-        return {};
-    }
-
-    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
 
     createProjectile(targetX, targetY) {
         // 투사체 생성 (슬라임 투사체 스프라이트 사용)

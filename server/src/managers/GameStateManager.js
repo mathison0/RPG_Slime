@@ -428,7 +428,8 @@ class GameStateManager {
         this.io.emit('enemy-damaged', {
           enemyId: target.id,
           hp: target.hp,
-          maxHp: target.maxHp
+          maxHp: target.maxHp,
+          damage: actualDamage
         });
       }
     }

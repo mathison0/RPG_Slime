@@ -31,19 +31,7 @@ export default class MageJob extends BaseJob {
      */
     useWard() {
         const skillKey = 'skill1'; // 통일된 스킬 키 사용
-        
-        // 쿨타임 체크
-        if (!this.isSkillAvailable(skillKey)) {
-            this.showCooldownMessage();
-            return;
-        }
-        
-        // 이미 와드가 설치되어 있으면 중복 설치 방지
-        if (this.scene.activeWard) {
-            this.showCooldownMessage();
-            return;
-        }
-        
+
         // 다른 플레이어면 실행하지 않음
         if (this.player.isOtherPlayer) {
             return;
@@ -69,12 +57,6 @@ export default class MageJob extends BaseJob {
     useIceField() {
         const skillKey = 'skill2'; // 통일된 스킬 키 사용
         
-        // 쿨타임 체크
-        if (!this.isSkillAvailable(skillKey)) {
-            this.showCooldownMessage();
-            return;
-        }
-        
         // 다른 플레이어면 실행하지 않음
         if (this.player.isOtherPlayer) {
             return;
@@ -99,12 +81,6 @@ export default class MageJob extends BaseJob {
      */
     useMagicMissile(options = {}) {
         const skillKey = 'skill3'; // 통일된 스킬 키 사용
-        
-        // 쿨타임 체크
-        if (!this.isSkillAvailable(skillKey)) {
-            this.showCooldownMessage();
-            return;
-        }
         
         // 다른 플레이어면 실행하지 않음
         if (this.player.isOtherPlayer) {

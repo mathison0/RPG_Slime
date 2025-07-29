@@ -1,4 +1,5 @@
 import BaseJob from './BaseJob.js';
+import EffectManager from '../../effects/EffectManager.js';
 // JobClasses는 서버에서 관리하므로 import 제거
 
 /**
@@ -17,6 +18,18 @@ export default class AssassinJob extends BaseJob {
         // 기본 공격 관련
         this.lastBasicAttackTime = 0;
         this.basicAttackCooldown = 300; // 기본 공격 쿨다운 (밀리초) - 어쌔신은 빠른 연속 공격
+        
+        this.isStealth = false;
+        this.stealthSprite = null;
+        this.stealthTint = null;
+        this.stealthEndTimer = null;
+        
+        // 기본 투사체 설정
+        this.projectileSpeed = 250;
+        this.projectileLifetime = 1000; // 1초
+        this.projectileMaxDistance = 250;
+        
+        this.effectManager = new EffectManager(player.scene);
     }
 
     useSkill(skillNumber, options = {}) {
@@ -34,12 +47,6 @@ export default class AssassinJob extends BaseJob {
      */
     useStealth() {
         const skillKey = 'skill1'; // 통일된 스킬 키 사용
-        
-        // 쿨타임 체크
-        if (!this.isSkillAvailable(skillKey)) {
-            this.showCooldownMessage();
-            return;
-        }
         
         // 다른 플레이어면 실행하지 않음
         if (this.player.isOtherPlayer) {
@@ -176,6 +183,7 @@ export default class AssassinJob extends BaseJob {
      * 은신 이펙트
      */
     showStealthEffect(data = null) {
+        this.isStealth = true;
         this.player.setAlpha(0.3);
         this.player.setTint(0x888888);
         
@@ -185,22 +193,16 @@ export default class AssassinJob extends BaseJob {
         
         console.log(`은신 스킬 정보 (서버에서 받음): duration=${duration}ms`);
         
-        // 은신 효과 메시지
-        const stealthText = this.player.scene.add.text(
+        // EffectManager를 사용한 은신 효과 메시지
+        this.effectManager.showStatusMessage(
             this.player.x, 
-            this.player.y - 60, 
+            this.player.y, 
             '은신!', 
             {
                 fontSize: '16px',
                 fill: '#800080'
             }
-        ).setOrigin(0.5);
-        
-        this.player.scene.time.delayedCall(1000, () => {
-            if (stealthText.active) {
-                stealthText.destroy();
-            }
-        });
+        );
         
         this.player.scene.time.delayedCall(duration, () => {
             if (this.player.active) {

@@ -288,9 +288,8 @@ class GameServer {
     const players = this.gameStateManager.getAllPlayers();
     if (players.length > 0) {
       const playerStates = players.map(player => {
-        // 스킬 시전 중인지 확인 (시전시간이 있는 스킬들만)
-        const castingSkills = this.skillManager.getCastingSkills(player);
-        const isCasting = castingSkills.length > 0;
+        // 스킬 캐스팅 중인지 확인 (시전중 + 발동중 + 후딜레이중)
+        const isCasting = this.skillManager.isCasting(player);
         
         // 기본 상태 정보
         const state = {

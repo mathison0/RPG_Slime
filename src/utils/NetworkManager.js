@@ -268,12 +268,10 @@ class NetworkManager {
     // 스킬 사용
     useSkill(skillType, targetX = null, targetY = null) {
         if (this.isConnected) {
-            console.log(`스킬 사용 전송: ${skillType}, 위치: (${targetX}, ${targetY})`);
             this.socket.emit('player-skill', {
                 skillType: skillType,
                 targetX: targetX,
-                targetY: targetY,
-                timestamp: Date.now()
+                targetY: targetY
             });
         }
     }

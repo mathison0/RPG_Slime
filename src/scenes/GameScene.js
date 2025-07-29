@@ -684,10 +684,9 @@ export default class GameScene extends Phaser.Scene {
         
         // 스킬 관련 상태 초기화
         this.player.isCasting = false;
-        this.player.isUsingSlimeSkill = false;
-        this.player.isUsingWarriorSkill = false;
         this.player.isStunned = false;
         this.player.isStealth = false;
+        this.player.isJumping = false;
         
         // 지연된 스킬 이펙트들 정리
         this.player.clearDelayedSkillEffects();

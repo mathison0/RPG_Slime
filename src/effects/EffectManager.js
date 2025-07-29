@@ -17,7 +17,7 @@ export default class EffectManager {
     showDamageText(x, y, damage, color = '#ff0000') {
         const randomOffsetX = (Math.random() - 0.5) * 40;
         const damageText = this.scene.add.text(x + randomOffsetX, y, `${damage}`, {
-            fontSize: '16px',
+            fontSize: '20px',
             fill: color,
             fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(1500);
@@ -45,7 +45,7 @@ export default class EffectManager {
     showHealText(x, y, heal) {
         const randomOffsetX = (Math.random() - 0.5) * 40;
         const healText = this.scene.add.text(x + randomOffsetX, y - 40, `+${heal}`, {
-            fontSize: '16px',
+            fontSize: '20px',
             fill: '#00ff00',
             fontStyle: 'bold'
         }).setOrigin(0.5).setDepth(1500);
@@ -98,6 +98,102 @@ export default class EffectManager {
         });
         
         return messageText;
+    }
+
+    /**
+     * 스킬 사용 메시지 표시 (애니메이션 포함)
+     * @param {number} x - X 좌표
+     * @param {number} y - Y 좌표
+     * @param {string} message - 스킬 메시지
+     * @param {Object} style - 스타일 옵션
+     */
+    showSkillMessage(x, y, message, style = {}) {
+        const defaultStyle = {
+            fontSize: '18px',
+            fill: '#ff0000',
+            fontStyle: 'bold',
+            stroke: '#000000',
+            strokeThickness: 2
+        };
+        
+        const finalStyle = { ...defaultStyle, ...style };
+        
+        const skillText = this.scene.add.text(x, y - 40, message, finalStyle)
+            .setOrigin(0.5)
+            .setDepth(1500);
+        
+        // 메시지 애니메이션 (위로 올라가면서 사라짐)
+        this.scene.tweens.add({
+            targets: skillText,
+            y: skillText.y - 30,
+            alpha: 0,
+            duration: 1500,
+            ease: 'Power2',
+            onComplete: () => {
+                if (skillText.active) {
+                    skillText.destroy();
+                }
+            }
+        });
+        
+        return skillText;
+    }
+
+    /**
+     * 스킬 시전 중 메시지 표시
+     * @param {number} x - X 좌표
+     * @param {number} y - Y 좌표
+     * @param {string} message - 시전 메시지
+     */
+    showSkillCastingMessage(x, y, message) {
+        const castingText = this.scene.add.text(x, y - 40, message, {
+            fontSize: '14px',
+            fill: '#ffff00',
+            fontStyle: 'bold',
+            stroke: '#000000',
+            strokeThickness: 2
+        }).setOrigin(0.5).setDepth(1500);
+        
+        return castingText;
+    }
+
+    /**
+     * 상태 효과 메시지 표시 (스턴, 은신 등)
+     * @param {number} x - X 좌표
+     * @param {number} y - Y 좌표
+     * @param {string} message - 상태 메시지
+     * @param {Object} style - 스타일 옵션
+     */
+    showStatusMessage(x, y, message, style = {}) {
+        const defaultStyle = {
+            fontSize: '16px',
+            fill: '#00ff00',
+            fontStyle: 'bold',
+            stroke: '#000000',
+            strokeThickness: 2
+        };
+        
+        const finalStyle = { ...defaultStyle, ...style };
+        
+        const statusText = this.scene.add.text(x, y - 40, message, finalStyle)
+            .setOrigin(0.5)
+            .setDepth(1500);
+        
+        // 상태 메시지 애니메이션
+        this.scene.tweens.add({
+            targets: statusText,
+            y: statusText.y - 30,
+            alpha: 0,
+            duration: 1500,
+            ease: 'Power2',
+            onComplete: () => {
+                if (statusText.active) {
+                    statusText.destroy();
+                }
+            }
+        });
+        
+        return statusText;
     }
 
     /**
