@@ -97,6 +97,8 @@ export default class NetworkEventManager {
         this.networkManager.on('ward-destroyed', (data) => {
             this.handleWardDestroyed(data);
         });
+        
+
 
         // 플레이어 레벨업
         this.networkManager.on('player-level-up', (data) => {
@@ -249,8 +251,7 @@ export default class NetworkEventManager {
      * 게임 입장 처리
      */
     handleGameJoined(data) {
-        console.log('game-joined 이벤트 수신:', data.playerId);
-        
+    
         if (this.scene.player && this.scene.player.networkId === data.playerId) {
             console.log('같은 플레이어 ID로 이미 플레이어가 존재함, 중복 처리 무시');
             return;
@@ -1033,6 +1034,8 @@ export default class NetworkEventManager {
             }
         });
     }
+
+
 
     /**
      * 플레이어 무적 상태 변경 처리
