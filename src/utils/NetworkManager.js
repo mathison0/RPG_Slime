@@ -115,6 +115,18 @@ class NetworkManager {
             this.emit('enemy-damaged', data);
         });
 
+        this.socket.on('enemies-update', (data) => {
+            this.emit('enemies-update', data);
+        });
+
+        this.socket.on('player-death', (data) => {
+            this.emit('player-death', data);
+        });
+
+        this.socket.on('monster-attack', (data) => {
+            this.emit('monster-attack', data);
+        });
+
         // 플레이어 데미지 이벤트
         this.socket.on('player-damaged', (data) => {
             this.emit('player-damaged', data);
@@ -155,6 +167,60 @@ class NetworkManager {
 
         this.socket.on('ward-destroyed', (data) => {
             this.emit('ward-destroyed', data);
+        });
+
+        this.socket.on('player-stunned', (data) => {
+            this.emit('player-stunned', data);
+        });
+
+        // 투사체 관련 이벤트
+        this.socket.on('projectile-created', (data) => {
+            this.emit('projectile-created', data);
+        });
+
+        this.socket.on('projectiles-update', (data) => {
+            this.emit('projectiles-update', data);
+        });
+
+        this.socket.on('projectile-removed', (data) => {
+            this.emit('projectile-removed', data);
+        });
+
+        this.socket.on('projectile-hit-wall', (data) => {
+            this.emit('projectile-hit-wall', data);
+        });
+
+        this.socket.on('projectile-hit-player', (data) => {
+            this.emit('projectile-hit-player', data);
+        });
+
+        this.socket.on('projectile-hit-enemy', (data) => {
+            this.emit('projectile-hit-enemy', data);
+        });
+
+        // 공격 무효 이벤트 (무적 상태, 레벨 차이 등)
+        this.socket.on('attack-invalid', (data) => {
+            this.emit('attack-invalid', data);
+        });
+
+        // 플레이어 무적 상태 변경 이벤트
+        this.socket.on('player-invincible-changed', (data) => {
+            this.emit('player-invincible-changed', data);
+        });
+
+        // 무적 상태 토글 에러 이벤트
+        this.socket.on('invincible-error', (data) => {
+            this.emit('invincible-error', data);
+        });
+
+        // 자살 치트 에러 이벤트
+        this.socket.on('suicide-error', (data) => {
+            this.emit('suicide-error', data);
+        });
+
+        // 몬스터 기절 상태 이벤트
+        this.socket.on('enemy-stunned', (data) => {
+            this.emit('enemy-stunned', data);
         });
     }
 
@@ -205,8 +271,7 @@ class NetworkManager {
             this.socket.emit('player-skill', {
                 skillType: skillType,
                 targetX: targetX,
-                targetY: targetY,
-                timestamp: Date.now()
+                targetY: targetY
             });
         }
     }
@@ -248,6 +313,15 @@ class NetworkManager {
         }
     }
 
+    // 플레이어 리스폰 요청
+    requestRespawn() {
+        if (this.isConnected) {
+            this.socket.emit('player-respawn-request', {
+                timestamp: Date.now()
+            });
+        }
+    }
+
     // 이벤트 리스너 등록
     on(eventName, callback) {
         if (!this.callbacks.has(eventName)) {
@@ -273,14 +347,6 @@ class NetworkManager {
             this.callbacks.get(eventName).forEach(callback => {
                 callback(data);
             });
-        }
-    }
-    
-    // 치트: 리스폰 요청 (자살)
-    requestRespawn() {
-        if (this.socket && this.isConnected) {
-            console.log('리스폰 요청 (자살)');
-            this.socket.emit('cheat-respawn');
         }
     }
 

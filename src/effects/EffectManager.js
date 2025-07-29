@@ -8,18 +8,19 @@ export default class EffectManager {
     }
 
     /**
-     * 데미지 텍스트 표시
+     * 데미지 텍스트 표시 (비활성화됨)
      * @param {number} x - X 좌표
      * @param {number} y - Y 좌표
      * @param {number} damage - 데미지 값
      * @param {string} color - 텍스트 색상
      */
     showDamageText(x, y, damage, color = '#ff0000') {
-        const damageText = this.scene.add.text(x, y - 30, `-${damage}`, {
-            fontSize: '16px',
+        const randomOffsetX = (Math.random() - 0.5) * 40;
+        const damageText = this.scene.add.text(x + randomOffsetX, y, `${damage}`, {
+            fontSize: '20px',
             fill: color,
             fontStyle: 'bold'
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(1500);
         
         // 데미지 텍스트 애니메이션
         this.scene.tweens.add({
@@ -42,11 +43,12 @@ export default class EffectManager {
      * @param {number} heal - 힐링 값
      */
     showHealText(x, y, heal) {
-        const healText = this.scene.add.text(x, y - 40, `+${heal}`, {
-            fontSize: '16px',
+        const randomOffsetX = (Math.random() - 0.5) * 40;
+        const healText = this.scene.add.text(x + randomOffsetX, y - 40, `+${heal}`, {
+            fontSize: '20px',
             fill: '#00ff00',
             fontStyle: 'bold'
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(1500);
         
         // 힐링 텍스트 애니메이션
         this.scene.tweens.add({
@@ -79,7 +81,7 @@ export default class EffectManager {
         
         const finalStyle = { ...defaultStyle, ...style };
         
-        const messageText = this.scene.add.text(x, y, message, finalStyle).setOrigin(0.5);
+        const messageText = this.scene.add.text(x, y, message, finalStyle).setOrigin(0.5).setDepth(1500);
         
         // 메시지 페이드아웃
         this.scene.time.delayedCall(duration, () => {
@@ -99,20 +101,116 @@ export default class EffectManager {
     }
 
     /**
+     * 스킬 사용 메시지 표시 (애니메이션 포함)
+     * @param {number} x - X 좌표
+     * @param {number} y - Y 좌표
+     * @param {string} message - 스킬 메시지
+     * @param {Object} style - 스타일 옵션
+     */
+    showSkillMessage(x, y, message, style = {}) {
+        const defaultStyle = {
+            fontSize: '18px',
+            fill: '#ff0000',
+            fontStyle: 'bold',
+            stroke: '#000000',
+            strokeThickness: 2
+        };
+        
+        const finalStyle = { ...defaultStyle, ...style };
+        
+        const skillText = this.scene.add.text(x, y - 40, message, finalStyle)
+            .setOrigin(0.5)
+            .setDepth(1500);
+        
+        // 메시지 애니메이션 (위로 올라가면서 사라짐)
+        this.scene.tweens.add({
+            targets: skillText,
+            y: skillText.y - 30,
+            alpha: 0,
+            duration: 1500,
+            ease: 'Power2',
+            onComplete: () => {
+                if (skillText.active) {
+                    skillText.destroy();
+                }
+            }
+        });
+        
+        return skillText;
+    }
+
+    /**
+     * 스킬 시전 중 메시지 표시
+     * @param {number} x - X 좌표
+     * @param {number} y - Y 좌표
+     * @param {string} message - 시전 메시지
+     */
+    showSkillCastingMessage(x, y, message) {
+        const castingText = this.scene.add.text(x, y - 40, message, {
+            fontSize: '14px',
+            fill: '#ffff00',
+            fontStyle: 'bold',
+            stroke: '#000000',
+            strokeThickness: 2
+        }).setOrigin(0.5).setDepth(1500);
+        
+        return castingText;
+    }
+
+    /**
+     * 상태 효과 메시지 표시 (스턴, 은신 등)
+     * @param {number} x - X 좌표
+     * @param {number} y - Y 좌표
+     * @param {string} message - 상태 메시지
+     * @param {Object} style - 스타일 옵션
+     */
+    showStatusMessage(x, y, message, style = {}) {
+        const defaultStyle = {
+            fontSize: '16px',
+            fill: '#00ff00',
+            fontStyle: 'bold',
+            stroke: '#000000',
+            strokeThickness: 2
+        };
+        
+        const finalStyle = { ...defaultStyle, ...style };
+        
+        const statusText = this.scene.add.text(x, y - 40, message, finalStyle)
+            .setOrigin(0.5)
+            .setDepth(1500);
+        
+        // 상태 메시지 애니메이션
+        this.scene.tweens.add({
+            targets: statusText,
+            y: statusText.y - 30,
+            alpha: 0,
+            duration: 1500,
+            ease: 'Power2',
+            onComplete: () => {
+                if (statusText.active) {
+                    statusText.destroy();
+                }
+            }
+        });
+        
+        return statusText;
+    }
+
+    /**
      * 레벨업 이펙트
      * @param {number} x - X 좌표
      * @param {number} y - Y 좌표
      */
     showLevelUpEffect(x, y) {
-        // 레벨업 텍스트
+        // 레벨업 텍스트 (최상위)
         const levelUpText = this.scene.add.text(x, y - 50, 'LEVEL UP!', {
             fontSize: '24px',
             fill: '#ffff00',
             fontStyle: 'bold'
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(1500);
         
-        // 레벨업 이펙트 링
-        const ring = this.scene.add.circle(x, y, 20, 0xffff00, 0);
+        // 레벨업 이펙트 링 (플레이어 밑)
+        const ring = this.scene.add.circle(x, y, 20, 0xffff00, 0).setDepth(710);
         ring.setStrokeStyle(3, 0xffff00);
         
         // 링 확장 애니메이션
@@ -150,7 +248,7 @@ export default class EffectManager {
      * @param {number} duration - 지속시간 (ms)
      */
     showCircleEffect(x, y, radius, color = 0x00ff00, duration = 300) {
-        const circle = this.scene.add.circle(x, y, radius, color, 0.3);
+        const circle = this.scene.add.circle(x, y, radius, color, 0.3).setDepth(710);
         
         this.scene.time.delayedCall(duration, () => {
             this.scene.tweens.add({
@@ -174,7 +272,7 @@ export default class EffectManager {
      * @param {number} size - 크기
      */
     showExplosion(x, y, color = 0xff00ff, size = 20) {
-        const explosion = this.scene.add.circle(x, y, size, color, 0.8);
+        const explosion = this.scene.add.circle(x, y, size, color, 0.8).setDepth(710);
         
         this.scene.tweens.add({
             targets: explosion,
@@ -250,7 +348,7 @@ export default class EffectManager {
         
         const finalStyle = { ...defaultStyle, ...style };
         
-        const text = this.scene.add.text(target.x, target.y + offsetY, message, finalStyle).setOrigin(0.5);
+        const text = this.scene.add.text(target.x, target.y + offsetY, message, finalStyle).setOrigin(0.5).setDepth(1500);
         
         // 텍스트가 대상을 따라다니도록 업데이트
         const updatePosition = () => {

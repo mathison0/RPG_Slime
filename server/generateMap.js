@@ -8,8 +8,6 @@ function generateMap(gameConfig) {
   const WALL_REMOVAL_CHANCE = 0.25;
   const PLAZA_REMOVAL_CHANCE = 0.01;
 
-  console.log('서버에서 랜덤 맵 생성 중');
-
   // 타일 기반 계산
   const MAP_WIDTH = MAP_WIDTH_TILES * TILE_SIZE;
   const MAP_HEIGHT = MAP_HEIGHT_TILES * TILE_SIZE;

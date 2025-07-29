@@ -1,5 +1,5 @@
 import BaseJob from './BaseJob.js';
-import { getJobInfo } from '../../shared/JobClasses.js';
+// JobClasses는 서버에서 관리하므로 import 제거
 
 /**
  * 메카닉 직업 클래스
@@ -7,7 +7,7 @@ import { getJobInfo } from '../../shared/JobClasses.js';
 export default class MechanicJob extends BaseJob {
     constructor(player) {
         super(player);
-        this.jobInfo = getJobInfo('mechanic');
+        // 직업 정보는 서버에서 받아옴
         this.lastBasicAttackTime = 0;
         this.basicAttackCooldown = 750; // 기본 공격 쿨다운 (밀리초)
     }
@@ -28,12 +28,6 @@ export default class MechanicJob extends BaseJob {
     useRepair() {
         const skillKey = 'skill1'; // 통일된 스킬 키 사용
         
-        // 쿨타임 체크
-        if (!this.isSkillAvailable(skillKey)) {
-            this.showCooldownMessage();
-            return;
-        }
-        
         // 다른 플레이어면 실행하지 않음
         if (this.player.isOtherPlayer) {
             return;
@@ -45,10 +39,9 @@ export default class MechanicJob extends BaseJob {
             return;
         }
         
-        const skillInfo = this.jobInfo.skills[0]; // 수리 스킬
+        // 스킬 정보는 서버에서 처리됨
         
-        // 쿨타임 설정
-        this.setSkillCooldown(skillKey, skillInfo.cooldown);
+        // 쿨타임은 서버에서 관리됨
 
         // 서버에 스킬 사용 요청
         this.player.networkManager.useSkill('repair');
@@ -61,42 +54,12 @@ export default class MechanicJob extends BaseJob {
      */
     getSkillCooldowns() {
         return {
-            1: {
-                remaining: this.getRemainingCooldown('repair'),
-                max: this.jobInfo.skills[0].cooldown
-            }
+            // 서버에서 받은 쿨타임 정보를 사용
+            ...(this.player.serverSkillCooldowns || {})
         };
     }
 
-    // 기본 공격 (마우스 좌클릭) - 부채꼴 근접 공격
-    useBasicAttack(targetX, targetY) {
-        const currentTime = this.player.scene.time.now;
-        if (currentTime - this.lastBasicAttackTime < this.basicAttackCooldown) {
-            return false; // 쿨다운 중
-        }
-
-        this.lastBasicAttackTime = currentTime;
-        
-        // 부채꼴 공격 범위 설정
-        const attackRange = 50;
-        const angleOffset = Math.PI / 6; // 30도 (π/6)
-        
-        // 마우스 커서 위치 기준으로 부채꼴 공격
-        const centerX = this.player.x;
-        const centerY = this.player.y;
-        
-        // 플레이어에서 마우스 커서까지의 각도 계산
-        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, targetX, targetY);
-        
-        // 부채꼴의 시작과 끝 각도 계산
-        const startAngle = angleToMouse - angleOffset;
-        const endAngle = angleToMouse + angleOffset;
-        
-        this.createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, attackRange);
-        this.performMeleeAttack(centerX, centerY, startAngle, endAngle, attackRange);
-        
-        return true;
-    }
+    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
 
     createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, radius) {
         // 부채꼴 근접 공격 이펙트 (카키색 부채꼴)
@@ -141,5 +104,46 @@ export default class MechanicJob extends BaseJob {
         } else {
             return angle >= startAngle && angle <= endAngle;
         }
+    }
+
+    /**
+     * 메카닉 기본 공격 애니메이션 (근접 부채꼴)
+     */
+    showBasicAttackEffect(targetX, targetY) {
+        // 부채꼴 공격 범위 설정
+        const attackRange = 50;
+        const angleOffset = Math.PI / 6; // 30도 (π/6)
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const centerX = this.player.x;
+        const centerY = this.player.y;
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, targetX, targetY);
+        
+        // 부채꼴의 시작과 끝 각도 계산
+        const startAngle = angleToMouse - angleOffset;
+        const endAngle = angleToMouse + angleOffset;
+        
+        // 부채꼴 근접 공격 이펙트 (카키색 부채꼴)
+        const graphics = this.player.scene.add.graphics();
+        graphics.fillStyle(0x556B2F, 0.7);
+        graphics.lineStyle(2, 0x556B2F, 1);
+        
+        // 부채꼴 그리기
+        graphics.beginPath();
+        graphics.moveTo(centerX, centerY);
+        graphics.arc(centerX, centerY, attackRange, startAngle, endAngle);
+        graphics.closePath();
+        graphics.fill();
+        graphics.stroke();
+        
+        // 이펙트 애니메이션
+        this.player.scene.tweens.add({
+            targets: graphics,
+            alpha: 0,
+            duration: 380,
+            onComplete: () => {
+                graphics.destroy();
+            }
+        });
     }
 } 

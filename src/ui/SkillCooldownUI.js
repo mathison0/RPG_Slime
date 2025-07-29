@@ -5,7 +5,9 @@ export default class SkillCooldownUI {
     constructor(scene, player) {
         this.scene = scene;
         this.player = player;
-        this.ui = null;
+        this.skillUIs = {}; // 여러 스킬 UI를 저장할 객체
+        this.lastJobClass = null; // 직업 변경 감지용
+        this.isUpdating = false; // 중복 업데이트 방지
         
         this.createUI();
     }
@@ -14,284 +16,243 @@ export default class SkillCooldownUI {
      * 스킬 쿨타임 UI 생성
      */
     createUI() {
-        // 기존 UI 제거
+        // 중복 호출 방지
+        if (this.isUpdating) {
+            return;
+        }
+        this.isUpdating = true;
+        
+        // 기존 UI 완전 제거
         this.destroyUI();
+        
+        // 플레이어의 직업에 따라 필요한 스킬만 생성
+        const jobClass = this.player?.jobClass || 'slime';
+        const jobSkillCounts = {
+            'slime': 1,
+            'mage': 3,
+            'warrior': 3,
+            'assassin': 1,
+            'ninja': 1,
+            'mechanic': 1,
+            'archer': 2,
+            'supporter': 3
+        };
+        
+        const skillCount = jobSkillCounts[jobClass] || 1;
         
         const radius = 25;
         const spacing = 70;
+        const startX = 80;
+        const baseY = this.scene.scale.height - 120;
         
-        // 첫 번째 스킬 UI (1번키)
-        const uiX1 = 80;
-        const uiY1 = this.scene.scale.height - 120;
+        // 필요한 스킬만 생성
+        const skillConfigs = [
+            { key: 'skill1', keyText: 'Q', x: startX, y: baseY },
+            { key: 'skill2', keyText: 'E', x: startX + spacing, y: baseY },
+            { key: 'skill3', keyText: 'R', x: startX + spacing * 2, y: baseY }
+        ];
         
-        const background1 = this.scene.add.graphics();
-        background1.fillStyle(0x333333, 0.8);
-        background1.fillCircle(uiX1, uiY1, radius);
-        background1.setScrollFactor(0);
-        background1.setDepth(1000);
+        // 직업에 맞는 스킬 개수만큼만 UI 생성
+        for (let i = 0; i < skillCount; i++) {
+            const config = skillConfigs[i];
+            
+            const background = this.scene.add.graphics();
+            background.fillStyle(0x0066ff, 0.8); // 파란색 배경 (사용 가능 상태)
+            background.fillCircle(config.x, config.y, radius);
+            background.setScrollFactor(0);
+            background.setDepth(1000);
+            
+            const cooldown = this.scene.add.graphics();
+            cooldown.setScrollFactor(0);
+            cooldown.setDepth(1001);
+            
+            const keyText = this.scene.add.text(config.x, config.y, config.keyText, {
+                fontSize: '18px',
+                fill: '#ffffff',
+                fontStyle: 'bold'
+            }).setOrigin(0.5);
+            keyText.setScrollFactor(0);
+            keyText.setDepth(1002);
+            
+            // 스킬 UI 저장
+            this.skillUIs[config.key] = {
+                background: background,
+                cooldown: cooldown,
+                keyText: keyText,
+                x: config.x,
+                y: config.y,
+                radius: radius,
+                isVisible: true // 생성된 것은 모두 보임
+            };
+        }
         
-        const cooldown1 = this.scene.add.graphics();
-        cooldown1.setScrollFactor(0);
-        cooldown1.setDepth(1001);
+        this.lastJobClass = jobClass;
+        this.isUpdating = false;
+    }
+
+    /**
+     * 플레이어의 직업에 따라 표시할 스킬 UI 결정
+     */
+    updateVisibleSkills() {
+        // 중복 호출 방지
+        if (this.isUpdating) {
+            return;
+        }
         
-        const number1 = this.scene.add.text(uiX1, uiY1, 'Q', {
-            fontSize: '18px',
-            fill: '#ffffff',
-            fontStyle: 'bold'
-        }).setOrigin(0.5);
-        number1.setScrollFactor(0);
-        number1.setDepth(1002);
+        const jobClass = this.player?.jobClass || 'slime';
         
-        // UI 객체 저장
-        this.ui = {
-            background: background1,
-            cooldown: cooldown1,
-            number: number1,
-            x: uiX1,
-            y: uiY1,
-            radius: radius
-        };
-        
-        // 마법사나 전사인 경우 추가 스킬 UI 생성
-        if (this.player.jobClass === 'mage' || this.player.jobClass === 'warrior') {
-            this.createExtraUI(uiX1, uiY1, spacing, radius);
+        // 직업이 변경되었을 때만 UI 재생성
+        if (jobClass !== this.lastJobClass) {
+            this.createUI();
         }
     }
 
     /**
-     * 추가 스킬 UI 생성 (마법사, 전사 등)
+     * 특정 스킬 UI 표시 (더 이상 사용하지 않음)
      */
-    createExtraUI(baseX, baseY, spacing, radius) {
-        // 두 번째 스킬 UI (2번키)
-        const uiX2 = baseX + spacing;
-        const uiY2 = baseY;
-        
-        const background2 = this.scene.add.graphics();
-        background2.fillStyle(0x333333, 0.8);
-        background2.fillCircle(uiX2, uiY2, radius);
-        background2.setScrollFactor(0);
-        background2.setDepth(1000);
-        
-        const cooldown2 = this.scene.add.graphics();
-        cooldown2.setScrollFactor(0);
-        cooldown2.setDepth(1001);
-        
-        const number2 = this.scene.add.text(uiX2, uiY2, 'E', {
-            fontSize: '18px',
-            fill: '#ffffff',
-            fontStyle: 'bold'
-        }).setOrigin(0.5);
-        number2.setScrollFactor(0);
-        number2.setDepth(1002);
-        
-        // 세 번째 스킬 UI (3번키)
-        const uiX3 = baseX + spacing * 2;
-        const uiY3 = baseY;
-        
-        const background3 = this.scene.add.graphics();
-        background3.fillStyle(0x333333, 0.8);
-        background3.fillCircle(uiX3, uiY3, radius);
-        background3.setScrollFactor(0);
-        background3.setDepth(1000);
-        
-        const cooldown3 = this.scene.add.graphics();
-        cooldown3.setScrollFactor(0);
-        cooldown3.setDepth(1001);
-        
-        const number3 = this.scene.add.text(uiX3, uiY3, 'R', {
-            fontSize: '18px',
-            fill: '#ffffff',
-            fontStyle: 'bold'
-        }).setOrigin(0.5);
-        number3.setScrollFactor(0);
-        number3.setDepth(1002);
-        
-        // 추가 UI 저장
-        this.ui.background2 = background2;
-        this.ui.cooldown2 = cooldown2;
-        this.ui.number2 = number2;
-        this.ui.x2 = uiX2;
-        this.ui.y2 = uiY2;
-        
-        this.ui.background3 = background3;
-        this.ui.cooldown3 = cooldown3;
-        this.ui.number3 = number3;
-        this.ui.x3 = uiX3;
-        this.ui.y3 = uiY3;
+    showSkillUI(skillKey) {
+        // 이 메서드는 더 이상 사용하지 않음 - createUI에서 필요한 것만 생성
     }
 
     /**
-     * 스킬 쿨타임 UI 업데이트
+     * 특정 스킬 UI 숨김 (더 이상 사용하지 않음)
+     */
+    hideSkillUI(skillKey) {
+        // 이 메서드는 더 이상 사용하지 않음 - destroyUI에서 모두 제거
+    }
+
+    /**
+     * 서버에서 받은 스킬 쿨타임 정보로 업데이트
+     * @param {Object} serverSkillCooldowns - 서버에서 받은 스킬 쿨타임 정보
+     */
+    updateFromServer(serverSkillCooldowns) {
+        if (!serverSkillCooldowns) return;
+
+        // 각 스킬의 쿨타임 정보를 개별적으로 처리
+        Object.keys(this.skillUIs).forEach(skillKey => {
+            const ui = this.skillUIs[skillKey];
+            if (!ui) return;
+            
+            const cooldownInfo = serverSkillCooldowns[skillKey];
+            if (cooldownInfo && cooldownInfo.remaining > 0) {
+                // 쿨타임이 남은 스킬의 UI 업데이트
+                this.drawCooldown(skillKey, cooldownInfo.remaining, cooldownInfo.total);
+            } else {
+                // 쿨타임이 끝난 스킬의 UI 초기화
+                ui.cooldown.clear();
+                // 쿨타임이 끝나면 배경을 파란색으로 복원
+                ui.background.clear();
+                ui.background.fillStyle(0x0066ff, 0.8);
+                ui.background.fillCircle(ui.x, ui.y, ui.radius);
+            }
+        });
+    }
+
+    /**
+     * 특정 스킬의 쿨타임 원형 그래프 그리기
+     * @param {string} skillKey - 스킬 키 (skill1, skill2, skill3)
+     * @param {number} remaining - 남은 시간 (ms)
+     * @param {number} total - 전체 시간 (ms)
+     */
+    drawCooldown(skillKey, remaining, total) {
+        const ui = this.skillUIs[skillKey];
+        if (!ui) return;
+
+        ui.cooldown.clear();
+        
+        if (remaining > 0) {
+            const progress = remaining / total;
+            const startAngle = -Math.PI / 2; // 12시 방향부터 시작
+            const endAngle = startAngle - (2 * Math.PI * progress); // 시계방향으로 변경
+            
+            // 쿨타임 원형 그래프 (회색 + 파란색 혼합)
+            ui.cooldown.fillStyle(0x8888aa, 0.6);
+            ui.cooldown.slice(ui.x, ui.y, ui.radius, startAngle, endAngle);
+            ui.cooldown.fillPath();
+            
+            // 경계선 (파란색)
+            ui.cooldown.lineStyle(2, 0x0066ff, 0.8);
+            ui.cooldown.strokeCircle(ui.x, ui.y, ui.radius);
+            
+            // 배경을 회색으로 변경 (쿨타임 중)
+            ui.background.clear();
+            ui.background.fillStyle(0x666666, 0.8);
+            ui.background.fillCircle(ui.x, ui.y, ui.radius);
+        } else {
+            // 쿨타임이 끝나면 배경을 파란색으로 복원
+            ui.background.clear();
+            ui.background.fillStyle(0x0066ff, 0.8);
+            ui.background.fillCircle(ui.x, ui.y, ui.radius);
+        }
+    }
+
+    /**
+     * 업데이트 (기존 방식과 호환성 유지)
      */
     update() {
-        if (!this.ui || !this.player.job) return;
+        // 직업이 변경되었는지 확인하고 필요시 UI 재생성
+        this.updateVisibleSkills();
         
-        const cooldowns = this.player.job.getSkillCooldowns();
+        if (!this.player) return;
         
-        // 첫 번째 스킬 업데이트 (Q키)
-        if (cooldowns.Q) {
-            this.updateSingleSkillCooldown(
-                this.ui.cooldown,
-                this.ui.number,
-                this.ui.x,
-                this.ui.y,
-                this.ui.radius,
-                cooldowns.Q.remaining,
-                cooldowns.Q.max
-            );
+        // 서버에서 받은 쿨타임 정보가 있으면 그것을 우선 사용
+        if (this.player.serverSkillCooldowns) {
+            this.updateFromServer(this.player.serverSkillCooldowns);
+            return;
         }
+
+        // 기존 방식 (fallback) - 각 스킬에 대해 개별 처리
+        if (!this.player.job) return;
         
-        // 마법사 추가 스킬들 업데이트 (E, R키)
-        if (this.player.jobClass === 'mage') {
-            if (cooldowns.E && this.ui.cooldown2) {
-                this.updateSingleSkillCooldown(
-                    this.ui.cooldown2,
-                    this.ui.number2,
-                    this.ui.x2,
-                    this.ui.y2,
-                    this.ui.radius,
-                    cooldowns.E.remaining,
-                    cooldowns.E.max
-                );
-            }
+        const cooldowns = this.player.job.getSkillCooldowns ? this.player.job.getSkillCooldowns() : {};
+        
+        // 각 스킬의 쿨타임 정보를 개별적으로 처리
+        Object.keys(this.skillUIs).forEach(skillKey => {
+            const ui = this.skillUIs[skillKey];
+            if (!ui) return;
             
-            if (cooldowns.R && this.ui.cooldown3) {
-                this.updateSingleSkillCooldown(
-                    this.ui.cooldown3,
-                    this.ui.number3,
-                    this.ui.x3,
-                    this.ui.y3,
-                    this.ui.radius,
-                    cooldowns.R.remaining,
-                    cooldowns.R.max
-                );
-            }
-        }
-        
-        // 전사 스킬들 업데이트 (E, R키)
-        if (this.player.jobClass === 'warrior') {
-            if (cooldowns.E && this.ui.cooldown2) {
-                this.updateSingleSkillCooldown(
-                    this.ui.cooldown2,
-                    this.ui.number2,
-                    this.ui.x2,
-                    this.ui.y2,
-                    this.ui.radius,
-                    cooldowns.E.remaining,
-                    cooldowns.E.max
-                );
-            }
+            const skillNumber = parseInt(skillKey.replace('skill', ''));
+            const cooldownInfo = cooldowns[skillNumber];
             
-            if (cooldowns.R && this.ui.cooldown3) {
-                this.updateSingleSkillCooldown(
-                    this.ui.cooldown3,
-                    this.ui.number3,
-                    this.ui.x3,
-                    this.ui.y3,
-                    this.ui.radius,
-                    cooldowns.R.remaining,
-                    cooldowns.R.max
-                );
+            if (cooldownInfo && cooldownInfo.remaining > 0) {
+                this.drawCooldown(skillKey, cooldownInfo.remaining, cooldownInfo.max);
+            } else {
+                ui.cooldown.clear();
+                // 쿨타임이 끝나면 배경을 파란색으로 복원
+                ui.background.clear();
+                ui.background.fillStyle(0x0066ff, 0.8);
+                ui.background.fillCircle(ui.x, ui.y, ui.radius);
             }
-        }
+        });
     }
 
     /**
-     * 단일 스킬 쿨타임 UI 업데이트
-     */
-    updateSingleSkillCooldown(cooldownGraphics, numberText, x, y, radius, remainingTime, maxCooldown) {
-        cooldownGraphics.clear();
-        
-        if (remainingTime > 0) {
-            // 쿨타임 중일 때 - 진행률에 따라 원이 채워짐
-            const progress = 1 - (remainingTime / maxCooldown);
-            
-            // 배경 원 (어두운 색)
-            cooldownGraphics.fillStyle(0x333333, 0.8);
-            cooldownGraphics.fillCircle(x, y, radius);
-            
-            // 진행률 원 (파란색, 시계방향으로 채워짐)
-            if (progress > 0) {
-                cooldownGraphics.fillStyle(0x0066ff, 0.8);
-                
-                const startAngle = -Math.PI / 2; // 12시 방향부터 시작
-                const endAngle = startAngle + (progress * 2 * Math.PI);
-                
-                cooldownGraphics.beginPath();
-                cooldownGraphics.moveTo(x, y);
-                cooldownGraphics.arc(x, y, radius, startAngle, endAngle);
-                cooldownGraphics.closePath();
-                cooldownGraphics.fillPath();
-            }
-            
-            // 쿨타임 중일 때는 번호 색상을 어둡게
-            numberText.setStyle({ fill: '#888888' });
-            
-            // 남은 시간 표시 (1초 이상일 때만)
-            if (remainingTime >= 1000) {
-                const seconds = Math.ceil(remainingTime / 1000);
-                const timeText = this.scene.add.text(x, y + radius + 15, seconds.toString(), {
-                    fontSize: '12px',
-                    fill: '#ffffff',
-                    fontStyle: 'bold'
-                }).setOrigin(0.5);
-                timeText.setScrollFactor(0);
-                timeText.setDepth(1003);
-                
-                // 1초 후 텍스트 제거
-                this.scene.time.delayedCall(1000, () => {
-                    if (timeText.active) {
-                        timeText.destroy();
-                    }
-                });
-            }
-        } else {
-            // 쿨타임이 끝났을 때 - 사용 가능 상태
-            cooldownGraphics.fillStyle(0x333333, 0.8);
-            cooldownGraphics.fillCircle(x, y, radius);
-            
-            // 테두리로 사용 가능 표시
-            cooldownGraphics.lineStyle(2, 0x00ff00, 0.8);
-            cooldownGraphics.strokeCircle(x, y, radius);
-            
-            // 사용 가능할 때는 번호 색상을 밝게
-            numberText.setStyle({ fill: '#ffffff' });
-        }
-    }
-
-    /**
-     * UI 제거
+     * UI 파괴
      */
     destroyUI() {
-        if (!this.ui) return;
-        
-        // 기본 UI 요소들 제거
-        if (this.ui.background) this.ui.background.destroy();
-        if (this.ui.cooldown) this.ui.cooldown.destroy();
-        if (this.ui.number) this.ui.number.destroy();
-        
-        // 마법사 추가 UI 요소들 제거
-        if (this.ui.background2) this.ui.background2.destroy();
-        if (this.ui.cooldown2) this.ui.cooldown2.destroy();
-        if (this.ui.number2) this.ui.number2.destroy();
-        if (this.ui.background3) this.ui.background3.destroy();
-        if (this.ui.cooldown3) this.ui.cooldown3.destroy();
-        if (this.ui.number3) this.ui.number3.destroy();
-        
-        this.ui = null;
+        Object.keys(this.skillUIs).forEach(skillKey => {
+            const ui = this.skillUIs[skillKey];
+            if (ui) {
+                if (ui.background) {
+                    ui.background.destroy();
+                }
+                if (ui.cooldown) {
+                    ui.cooldown.destroy();
+                }
+                if (ui.keyText) {
+                    ui.keyText.destroy();
+                }
+            }
+        });
+        this.skillUIs = {};
     }
 
     /**
-     * 직업 변경 시 UI 재생성
-     */
-    refreshForJobChange() {
-        this.createUI();
-    }
-
-    /**
-     * 정리 작업
+     * 정리
      */
     destroy() {
         this.destroyUI();
+        this.lastJobClass = null;
+        this.isUpdating = false;
     }
 } 

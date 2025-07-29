@@ -17,16 +17,15 @@ class ServerPlayer {
     this.hp = this.maxHp;
     this.speed = gameConfig.PLAYER.DEFAULT_SPEED;
     this.attack = gameConfig.PLAYER.DEFAULT_ATTACK;
-    this.defense = gameConfig.PLAYER.DEFAULT_DEFENSE;
     this.jobClass = 'slime';
     this.direction = 'front';
     this.isJumping = false;
     this.size = gameConfig.PLAYER.DEFAULT_SIZE;
-    console.log(`ServerPlayer 생성: size=${this.size} (level=${this.level}, jobClass=${this.jobClass})`);
     this.visionRange = gameConfig.PLAYER.VISION_RANGE;
     this.lastUpdate = Date.now();
     this.nickname = 'Player';
     this.isDead = false; // 사망 상태
+    this.lastDamageSource = null; // 마지막 데미지 소스 추적
     
     // 스킬 관련
     this.skillCooldowns = {}; // 스킬별 마지막 사용 시간
@@ -38,10 +37,44 @@ class ServerPlayer {
       skills: new Map() // skillType -> { startTime, duration, endTime, skillInfo }
     };
     
+    // 지연된 액션들 (setTimeout ID 저장)
+    this.delayedActions = new Map(); // actionId -> timeoutId
+    
     // 어쌔신 은신 상태
     this.isStealth = false;
     this.stealthStartTime = 0;
     this.stealthDuration = 0;
+    
+    // 기절 상태
+    this.isStunned = false;
+    this.stunStartTime = 0;
+    this.stunDuration = 0;
+    
+    // 무적 상태 (치트)
+    this.isInvincible = false;
+  }
+
+  /**
+   * 직업 클래스에 따른 초기 스탯 설정
+   */
+  initializeStatsFromJobClass() {
+    const stats = calculateStats(this.jobClass, this.level);
+    
+    this.maxHp = stats.hp;
+    this.hp = this.maxHp; // 초기에는 풀피로 시작
+    this.attack = stats.attack;
+    this.speed = stats.speed;
+    this.visionRange = stats.visionRange;
+    
+    // 크기 계산 (GameConfig에서 가져옴)
+    const baseSize = gameConfig.PLAYER.SIZE.BASE_SIZE;
+    const growthRate = gameConfig.PLAYER.SIZE.GROWTH_RATE;
+    const maxSize = gameConfig.PLAYER.SIZE.MAX_SIZE;
+    
+    const targetSize = baseSize + (this.level - 1) * growthRate;
+    this.size = Math.min(targetSize, maxSize);
+    
+    console.log(`플레이어 ${this.id} 스탯 초기화! 직업: ${this.jobClass}, 레벨: ${this.level}, HP: ${this.maxHp}, 공격력: ${this.attack}, 크기: ${this.size}`);
   }
 
   /**
@@ -53,6 +86,79 @@ class ServerPlayer {
     this.direction = data.direction;
     this.isJumping = data.isJumping;
     this.lastUpdate = Date.now();
+  }
+
+  /**
+   * 서버 스킬 타입을 클라이언트 스킬 키로 역매핑
+   */
+  getSkillKeyFromType(skillType) {
+    const skillMappings = {
+      slime: {
+        spread: 'skill1'
+      },
+      assassin: {
+        stealth: 'skill1'
+      },
+      ninja: {
+        stealth: 'skill1'
+      },
+      warrior: {
+        roar: 'skill1',
+        sweep: 'skill2',
+        thrust: 'skill3'
+      },
+      mage: {
+        ward: 'skill1',
+        ice_field: 'skill2',
+        magic_missile: 'skill3'
+      },
+      mechanic: {
+        repair: 'skill1'
+      },
+      archer: {
+        roll: 'skill1',
+        focus: 'skill2'
+      },
+      supporter: {
+        ward: 'skill1',
+        buff_field: 'skill2',
+        heal_field: 'skill3'
+      }
+    };
+    
+    const jobSkills = skillMappings[this.jobClass];
+    if (!jobSkills) return null;
+    
+    return jobSkills[skillType] || null;
+  }
+
+  /**
+   * 클라이언트용 스킬 쿨타임 정보 생성
+   */
+  getClientSkillCooldowns() {
+    const now = Date.now();
+    const clientCooldowns = {};
+    
+    // 서버의 스킬 쿨타임을 클라이언트 스킬 키로 변환
+    for (const [serverSkillType, lastUsed] of Object.entries(this.skillCooldowns)) {
+      const clientSkillKey = this.getSkillKeyFromType(serverSkillType);
+      if (clientSkillKey) {
+        // 스킬 정보 가져오기
+        const skillInfo = getSkillInfo(this.jobClass, serverSkillType);
+        if (skillInfo && skillInfo.cooldown) {
+          const elapsed = now - lastUsed;
+          const remaining = Math.max(0, skillInfo.cooldown - elapsed);
+          
+          clientCooldowns[clientSkillKey] = {
+            remaining: remaining,
+            total: skillInfo.cooldown,
+            lastUsed: lastUsed
+          };
+        }
+      }
+    }
+    
+    return clientCooldowns;
   }
 
   /**
@@ -110,13 +216,15 @@ class ServerPlayer {
       jobClass: this.jobClass,
       direction: this.direction,
       isJumping: this.isJumping,
+      isStunned: this.isStunned, // 기절 상태 추가
       size: this.size,
       attack: this.attack,
-      defense: this.defense,
       speed: this.speed,
       nickname: this.nickname,
       isDead: this.isDead, // 사망 상태 추가
-      activeActions: activeActions  // 액션 상태 정보 추가
+      isInvincible: this.isInvincible, // 무적 상태 추가
+      activeActions: activeActions,  // 액션 상태 정보 추가
+      skillCooldowns: this.getClientSkillCooldowns() // 클라이언트용 스킬 쿨타임 정보 추가
     };
   }
 
@@ -141,7 +249,6 @@ class ServerPlayer {
     this.maxHp = newStats.hp;
     this.hp = this.maxHp; // 풀피로 회복
     this.attack = newStats.attack;
-    this.defense = newStats.defense;
     this.speed = newStats.speed;
     this.visionRange = newStats.visionRange;
     
@@ -160,7 +267,6 @@ class ServerPlayer {
       hp: this.hp,
       maxHp: this.maxHp,
       attack: this.attack,
-      defense: this.defense,
       speed: this.speed,
       visionRange: this.visionRange,
       size: this.size  // size 정보 추가
@@ -180,30 +286,37 @@ class ServerPlayer {
   }
 
   /**
-   * 데미지 처리
+   * 무적 상태 토글
    */
-  takeDamage(damage) {
-    if (this.isDead) {
-      return false; // 이미 죽은 상태면 데미지 처리 안함
-    }
-    
-    const actualDamage = Math.max(1, damage - this.defense);
-    this.hp = Math.max(0, this.hp - actualDamage);
-    
-    if (this.hp <= 0) {
-      this.isDead = true;
-      return true; // 사망
-    }
-    
-    return false; // 생존
+  toggleInvincible() {
+    this.isInvincible = !this.isInvincible;
+    console.log(`플레이어 ${this.id} 무적 상태: ${this.isInvincible}`);
+    return this.isInvincible;
   }
 
   /**
    * 플레이어 리스폰 (사망 상태 해제)
    */
   respawn() {
+    console.log('플레이어 리스폰');
     this.isDead = false;
     this.hp = this.maxHp;
+    // 데미지 소스 추적 정보 리셋
+    this.lastDamageSource = null;
+    
+    // 스킬 관련 상태 초기화
+    this.currentActions.skills.clear();
+    this.isStunned = false;
+    this.isStealth = false;
+    
+    // 스킬 쿨타임 초기화
+    this.skillCooldowns = {};
+    
+    // 지연된 액션들 정리
+    for (const [actionId, timeoutId] of this.delayedActions) {
+      clearTimeout(timeoutId);
+    }
+    this.delayedActions.clear();
   }
 
   /**
@@ -224,171 +337,133 @@ class ServerPlayer {
   /**
    * 스킬 사용 시도
    */
-  useSkill(skillType, targetX = null, targetY = null) {
-    const skillInfo = getSkillInfo(this.jobClass, skillType);
-    if (!skillInfo) {
-      return { success: false, error: 'Invalid skill type' };
-    }
-
-    // 쿨타임 체크
-    const now = Date.now();
-    const lastUsed = this.skillCooldowns[skillType] || 0;
-    if (now - lastUsed < skillInfo.cooldown) {
-      return { success: false, error: 'Skill on cooldown' };
-    }
-
-    // 스킬별 특수 조건 체크
-    if (this.isJumping && skillType !== 'stealth') {
-      return { success: false, error: 'Cannot use skill while jumping' };
-    }
-
-    // 스킬 사용 처리
-    this.skillCooldowns[skillType] = now;
-    
-    // 액션 상태 업데이트
-    const duration = skillInfo.duration || 0;
-    if (duration > 0) {
-      this.currentActions.skills.set(skillType, {
-        startTime: now,
-        duration: duration,
-        endTime: now + duration,
-        skillInfo: {
-          range: this.calculateSkillRange(skillType, skillInfo.range),
-          damage: this.calculateSkillDamage(skillType, skillInfo.damage),
-          duration: duration,
-          heal: skillInfo.heal || 0
-        }
-      });
+  useSkill(skillType, targetX = null, targetY = null, skillManager = null) {
+    if (!skillManager) {
+      return { success: false, error: 'SkillManager not provided' };
     }
     
-    return {
-      success: true,
-      skillType,
-      timestamp: now,
-      playerId: this.id,
-      x: this.x,
-      y: this.y,
-      targetX,
-      targetY,
-      skillInfo: {
-        range: this.calculateSkillRange(skillType, skillInfo.range),
-        damage: this.calculateSkillDamage(skillType, skillInfo.damage),
-        duration: duration,
-        heal: skillInfo.heal || 0
-      }
-    };
+    return skillManager.useSkill(this, skillType, targetX, targetY);
   }
 
   /**
    * 점프 시작 처리
    */
-  startJump(duration = gameConfig.PLAYER.SKILLS.JUMP_DURATION) {
-    if (this.isJumping) {
+  startJump(duration, skillManager = null) {
+    if (!skillManager) {
       return false;
     }
     
-    const now = Date.now();
-    this.isJumping = true;
-    this.currentActions.jump = {
-      startTime: now,
-      duration: duration,
-      endTime: now + duration
-    };
-    
-    return true;
+    return skillManager.startJump(this, duration);
   }
 
   /**
    * 점프 종료 처리
    */
-  endJump() {
-    this.isJumping = false;
-    this.currentActions.jump = null;
+  endJump(skillManager = null) {
+    if (!skillManager) {
+      return;
+    }
+    
+    skillManager.endJump(this);
+  }
+
+  /**
+   * 기절 상태 시작
+   */
+  startStun(duration) {
+    this.isStunned = true;
+    this.stunStartTime = Date.now();
+    this.stunDuration = duration;
+    
+    // 기절 지속시간 후 자동 해제
+    setTimeout(() => {
+      if (this.isStunned) {
+        this.endStun();
+      }
+    }, duration);
+    
+    
+    // 기절 상태 변경을 모든 클라이언트에게 즉시 알림
+    if (global.io) {
+      global.io.emit('player-stunned', {
+        playerId: this.id,
+        isStunned: true,
+        duration: duration
+      });
+    }
+  }
+
+  /**
+   * 기절 상태 종료
+   */
+  endStun() {
+    this.isStunned = false;
+    this.stunStartTime = 0;
+    this.stunDuration = 0;
+    
+    // 기절 상태 해제를 모든 클라이언트에게 즉시 알림
+    if (global.io) {
+      global.io.emit('player-stunned', {
+        playerId: this.id,
+        isStunned: false,
+        duration: 0
+      });
+    }
+  }
+
+  /**
+   * 기절 상태 시작
+   */
+  startStun(duration) {
+    this.isStunned = true;
+    this.stunStartTime = Date.now();
+    this.stunDuration = duration;
+    
+    // 기절 지속시간 후 자동 해제
+    setTimeout(() => {
+      if (this.isStunned) {
+        this.endStun();
+      }
+    }, duration);
+    
+    
+    // 기절 상태 변경을 모든 클라이언트에게 즉시 알림
+    if (global.io) {
+      global.io.emit('player-stunned', {
+        playerId: this.id,
+        isStunned: true,
+        duration: duration
+      });
+    }
+  }
+
+  /**
+   * 기절 상태 종료
+   */
+  endStun() {
+    this.isStunned = false;
+    this.stunStartTime = 0;
+    this.stunDuration = 0;
+    
+    // 기절 상태 해제를 모든 클라이언트에게 즉시 알림
+    if (global.io) {
+      global.io.emit('player-stunned', {
+        playerId: this.id,
+        isStunned: false,
+        duration: 0
+      });
+    }
   }
 
   /**
    * 액션 상태 정리 (만료된 액션들 제거)
    */
-  cleanupExpiredActions() {
-    const now = Date.now();
-    
-    // 점프 상태 확인
-    if (this.currentActions.jump && now >= this.currentActions.jump.endTime) {
-      this.endJump();
+  cleanupExpiredActions(skillManager = null) {
+    if (!skillManager) {
+      return;
     }
     
-    // 스킬 상태 확인
-    for (const [skillType, skillAction] of this.currentActions.skills) {
-      if (now >= skillAction.endTime) {
-        this.currentActions.skills.delete(skillType);
-      }
-    }
-  }
-
-  /**
-   * 스킬 범위 계산 (슬라임은 크기에 비례)
-   */
-  calculateSkillRange(skillType, baseRange) {
-    if (this.jobClass === 'slime' && skillType === 'spread') {
-      // 슬라임 퍼지기는 크기에 비례 (기본 크기는 Config에서 가져옴)
-      return Math.round(baseRange * (this.size / gameConfig.PLAYER.SKILLS.BASE_RANGE_REFERENCE));
-    }
-    return baseRange;
-  }
-
-  /**
-   * 스킬 데미지 계산
-   */
-  calculateSkillDamage(skillType, baseDamage) {
-    if (typeof baseDamage === 'string') {
-      // 문자열 수식 처리 (예: 'attack', 'attack * 1.5')
-      if (baseDamage === 'attack') {
-        baseDamage = this.attack;
-      } else if (baseDamage.includes('attack')) {
-        // 간단한 수식 계산 (attack * 1.5 등)
-        baseDamage = this.parseFormula(baseDamage, this.attack);
-      }
-    }
-    
-    // 기본 공격력과 레벨을 반영한 데미지 계산
-    const levelBonus = (this.level - 1) * 5;
-    return Math.round((baseDamage + levelBonus) * 0.8);
-  }
-
-  /**
-   * 안전한 수식 파싱 (eval 대신 사용)
-   * 'attack * 1.5', 'attack + 10' 등의 간단한 수식을 파싱
-   */
-  parseFormula(formula, attackValue) {
-    // 공백 제거
-    const cleanFormula = formula.replace(/\s/g, '');
-    
-    // attack 값으로 치환
-    const withValue = cleanFormula.replace(/attack/g, attackValue);
-    
-    // 간단한 수식 파싱 (*, +, -, / 지원)
-    const match = withValue.match(/^(\d+(?:\.\d+)?)\s*([+\-*/])\s*(\d+(?:\.\d+)?)$/);
-    if (match) {
-      const [, left, operator, right] = match;
-      const leftNum = parseFloat(left);
-      const rightNum = parseFloat(right);
-      
-      switch (operator) {
-        case '*': return Math.round(leftNum * rightNum);
-        case '/': return Math.round(leftNum / rightNum);
-        case '+': return Math.round(leftNum + rightNum);
-        case '-': return Math.round(leftNum - rightNum);
-        default: return attackValue;
-      }
-    }
-    
-    // 단순 숫자인 경우
-    const numMatch = withValue.match(/^(\d+(?:\.\d+)?)$/);
-    if (numMatch) {
-      return Math.round(parseFloat(numMatch[1]));
-    }
-    
-    return attackValue;
+    skillManager.cleanupExpiredActions(this);
   }
 
   /**
@@ -396,30 +471,6 @@ class ServerPlayer {
    */
   setSize(newSize) {
     this.size = Math.max(16, Math.min(256, newSize));
-    console.log(`플레이어 ${this.id} 크기 변경: ${this.size}`);
-  }
-
-  /**
-   * JobClasses를 사용한 초기 스탯 설정
-   */
-  initializeStatsFromJobClass() {
-    const stats = calculateStats(this.jobClass, this.level);
-    this.maxHp = stats.hp;
-    this.hp = this.maxHp;
-    this.attack = stats.attack;
-    this.defense = stats.defense;
-    this.speed = stats.speed;
-    this.visionRange = stats.visionRange;
-    
-    // 크기 계산 (GameConfig에서 가져옴)
-    const baseSize = gameConfig.PLAYER.SIZE.BASE_SIZE;
-    const growthRate = gameConfig.PLAYER.SIZE.GROWTH_RATE;
-    const maxSize = gameConfig.PLAYER.SIZE.MAX_SIZE;
-    
-    const targetSize = baseSize + (this.level - 1) * growthRate;
-    this.size = Math.min(targetSize, maxSize);
-    
-    console.log(`ServerPlayer 스탯 초기화: level=${this.level}, hp=${this.hp}/${this.maxHp}, attack=${this.attack}, size=${this.size}`);
   }
 }
 

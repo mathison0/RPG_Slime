@@ -11,10 +11,8 @@ export default class MapManager {
         
         // 충돌체들
         this.playerWallCollider = null;
-        this.enemyWallCollider = null;
         this.otherPlayerWallCollider = null;
         this.playerEnemyCollider = null;
-        this.enemyWardCollider = null;
         
         // 벽 선분 정보 (시야 계산용)
         this.wallLines = [];
@@ -51,20 +49,50 @@ export default class MapManager {
      * 기존 맵 요소들 제거
      */
     destroyExistingMap() {
-        if (this.scene.walls) {
-            this.scene.walls.clear(true, true);
-        }
-        
-        if (this.scene.spawnBarriers) {
-            this.scene.spawnBarriers.clear(true, true);
-        }
-        
-        // 기존 스폰 구역 표시 제거
-        this.scene.children.list.forEach(child => {
-            if (child.type === 'Rectangle' && child.depth === -1) {
-                child.destroy();
+        try {
+            // 벽 그룹 안전하게 제거
+            if (this.scene.walls && this.scene.walls.active) {
+                // 개별 요소들 먼저 제거
+                const wallChildren = [...this.scene.walls.getChildren()];
+                wallChildren.forEach(wall => {
+                    if (wall && wall.active) {
+                        wall.destroy();
+                    }
+                });
+                // 그룹 자체 제거
+                this.scene.walls.clear(true, true);
             }
-        });
+            
+            // 스폰 배리어 그룹 안전하게 제거
+            if (this.scene.spawnBarriers && this.scene.spawnBarriers.active) {
+                // 개별 요소들 먼저 제거
+                const barrierChildren = [...this.scene.spawnBarriers.getChildren()];
+                barrierChildren.forEach(barrier => {
+                    if (barrier && barrier.active) {
+                        barrier.destroy();
+                    }
+                });
+                // 그룹 자체 제거
+                this.scene.spawnBarriers.clear(true, true);
+            }
+            
+            // 기존 스폰 구역 표시 제거
+            if (this.scene.children && this.scene.children.list) {
+                const childrenToDestroy = this.scene.children.list.filter(child => 
+                    child && child.active && child.type === 'Rectangle' && child.depth === -1
+                );
+                childrenToDestroy.forEach(child => {
+                    try {
+                        child.destroy();
+                    } catch (e) {
+                        console.warn('스폰 구역 제거 중 오류:', e);
+                    }
+                });
+            }
+        } catch (error) {
+            console.warn('기존 맵 제거 중 오류 발생:', error);
+            // 오류가 발생해도 계속 진행
+        }
     }
 
     /**
@@ -153,6 +181,78 @@ export default class MapManager {
             0xffff00, 
             0.15
         ).setDepth(-1);
+
+        // 레벨별 경계선 그리기
+        this.createLevelBoundaries();
+    }
+
+    /**
+     * 레벨별 경계선 생성 (빨간색)
+     */
+    createLevelBoundaries() {
+        const graphics = this.scene.add.graphics();
+        graphics.lineStyle(3, 0xff0000, 1); // 빨간색, 굵기 3
+        graphics.setDepth(0); // 다른 요소들 위에 표시
+
+        // 서버 설정과 동일한 값들 사용
+        const SPAWN_BARRIER_EXTRA_TILES = 4;
+        const tileSize = this.scene.TILE_SIZE;
+        
+        // 레벨 1과 레벨 2 경계선 (스폰 배리어 구역 경계)
+        const leftBarrierEnd = (this.scene.SPAWN_WIDTH / tileSize + SPAWN_BARRIER_EXTRA_TILES) * tileSize;
+        const rightBarrierStart = this.scene.MAP_WIDTH - (this.scene.SPAWN_WIDTH / tileSize + SPAWN_BARRIER_EXTRA_TILES) * tileSize;
+        
+        // 왼쪽 경계선 (레드팀 스폰 배리어와 레벨2 사이)
+        graphics.beginPath();
+        graphics.moveTo(leftBarrierEnd, 0);
+        graphics.lineTo(leftBarrierEnd, this.scene.MAP_HEIGHT);
+        graphics.strokePath();
+        
+        // 오른쪽 경계선 (블루팀 스폰 배리어와 레벨2 사이)
+        graphics.beginPath();
+        graphics.moveTo(rightBarrierStart, 0);
+        graphics.lineTo(rightBarrierStart, this.scene.MAP_HEIGHT);
+        graphics.strokePath();
+
+        // 레벨 3과 4 경계선 (광장 구역)
+        const plazaCenterX = this.scene.MAP_WIDTH / 2;
+        const plazaCenterY = this.scene.MAP_HEIGHT / 2;
+        const plazaHalfSize = this.scene.PLAZA_SIZE / 2;
+        
+        // 레벨 2와 레벨 3 경계선 (광장 외부 타일)
+        // TODO: 서버 GameConfig의 PLAZA_LEVEL3_EXTRA_TILES와 동기화 필요
+        const PLAZA_LEVEL3_EXTRA_TILES = 6; // GameConfig와 동일한 값 사용
+        const level3Boundary = PLAZA_LEVEL3_EXTRA_TILES * tileSize;
+        
+        // 광장 외부 타일 경계 (레벨 2와 레벨 3 사이)
+        const outerLeft = plazaCenterX - plazaHalfSize - level3Boundary;
+        const outerRight = plazaCenterX + plazaHalfSize + level3Boundary;
+        const outerTop = plazaCenterY - plazaHalfSize - level3Boundary;
+        const outerBottom = plazaCenterY + plazaHalfSize + level3Boundary;
+        
+        // 외부 경계선
+        graphics.beginPath();
+        graphics.moveTo(outerLeft, outerTop);
+        graphics.lineTo(outerRight, outerTop);
+        graphics.lineTo(outerRight, outerBottom);
+        graphics.lineTo(outerLeft, outerBottom);
+        graphics.lineTo(outerLeft, outerTop);
+        graphics.strokePath();
+        
+        // 레벨 3과 레벨 4 경계선 (광장 내부)
+        const innerLeft = plazaCenterX - plazaHalfSize;
+        const innerRight = plazaCenterX + plazaHalfSize;
+        const innerTop = plazaCenterY - plazaHalfSize;
+        const innerBottom = plazaCenterY + plazaHalfSize;
+        
+        // 내부 경계선 (광장)
+        graphics.beginPath();
+        graphics.moveTo(innerLeft, innerTop);
+        graphics.lineTo(innerRight, innerTop);
+        graphics.lineTo(innerRight, innerBottom);
+        graphics.lineTo(innerLeft, innerBottom);
+        graphics.lineTo(innerLeft, innerTop);
+        graphics.strokePath();
     }
 
     /**
@@ -286,11 +386,6 @@ export default class MapManager {
             this.scene.player
         );
         
-        this.enemyWallCollider = this.scene.physics.add.collider(
-            this.scene.enemies, 
-            this.scene.walls
-        );
-        
         this.otherPlayerWallCollider = this.scene.physics.add.collider(
             this.scene.otherPlayers, 
             this.scene.walls
@@ -304,19 +399,6 @@ export default class MapManager {
             this.scene
         );
         
-
-      
-        // 와드 충돌 설정
-        if (this.scene.activeWard?.sprite) {
-            this.enemyWardCollider = this.scene.physics.add.collider(
-                this.scene.enemies, 
-                this.scene.activeWard.sprite, 
-                this.handleEnemyWardCollision, 
-                null, 
-                this.scene
-            );
-        }
-        
         console.log('물리 충돌 설정 완료');
     }
 
@@ -326,10 +408,8 @@ export default class MapManager {
     destroyColliders() {
         const colliders = [
             'playerWallCollider',
-            'enemyWallCollider', 
             'otherPlayerWallCollider',
-            'playerEnemyCollider',
-            'enemyWardCollider'
+            'playerEnemyCollider'
         ];
         
         colliders.forEach(colliderName => {
@@ -358,56 +438,6 @@ export default class MapManager {
                 Math.sin(angle) * knockbackForce
             );
         }
-    }
-    
-    /**
-     * 적-와드 충돌 처리
-     */
-    handleEnemyWardCollision(enemy, ward) {
-        if (this.scene.activeWard && this.scene.activeWard.hp > 0) {
-            const damage = 20;
-            this.scene.activeWard.hp -= damage;
-            
-            // 와드 데미지 이펙트
-            ward.setTint(0xff0000);
-            this.scene.time.delayedCall(200, () => {
-                ward.clearTint();
-            });
-            
-            console.log(`와드가 공격받음! 남은 체력: ${this.scene.activeWard.hp}/${this.scene.activeWard.maxHp}`);
-            
-            // 와드 파괴
-            if (this.scene.activeWard.hp <= 0) {
-                this.destroyWard(ward);
-            }
-        }
-    }
-
-    /**
-     * 와드 파괴 처리
-     */
-    destroyWard(ward) {
-        console.log('와드가 파괴되었습니다!');
-        
-        // 파괴 이펙트
-        this.scene.effectManager.showExplosion(ward.x, ward.y, 0xff0000, 50);
-        
-        // 와드 파괴 함수 호출
-        if (ward.destroyWard) {
-            ward.destroyWard();
-        }
-        
-        // 네트워크에 와드 파괴 알림
-        if (this.scene.networkManager) {
-            this.scene.networkManager.emit('ward-destroyed', {
-                playerId: this.scene.networkManager.playerId,
-                x: ward.x,
-                y: ward.y
-            });
-        }
-        
-        // 충돌 설정 업데이트
-        this.setupCollisions();
     }
 
     /**
@@ -694,23 +724,6 @@ export default class MapManager {
             playerBounds.height / 2, 
             this.scene.MAP_HEIGHT - playerBounds.height / 2
         );
-    }
-
-    /**
-     * 스폰 구역 이동 제한
-     */
-    restrictMovement() {
-        // 적들만 스폰 구역에서 밀어내기
-        if (this.scene.enemies?.children) {
-            this.scene.enemies.getChildren().forEach(enemy => {
-                if (this.scene.redSpawnRect.contains(enemy.x, enemy.y)) {
-                    enemy.x = this.scene.redSpawnRect.right + this.scene.TILE_SIZE;
-                } 
-                else if (this.scene.blueSpawnRect.contains(enemy.x, enemy.y)) {
-                    enemy.x = this.scene.blueSpawnRect.x - this.scene.TILE_SIZE;
-                }
-            });
-        }
     }
 
     /**

@@ -7,6 +7,7 @@ import MinimapManager from '../managers/MinimapManager.js';
 import PingManager from '../managers/PingManager.js';
 import CheatManager from '../managers/CheatManager.js';
 import EffectManager from '../effects/EffectManager.js';
+import ProjectileManager from '../managers/ProjectileManager.js';
 
 export default class GameScene extends Phaser.Scene {
     constructor() {
@@ -54,6 +55,7 @@ export default class GameScene extends Phaser.Scene {
         this.pingManager = null;
         this.cheatManager = null;
         this.effectManager = null;
+        this.projectileManager = null;
     }
     
     init(data) {
@@ -78,6 +80,9 @@ export default class GameScene extends Phaser.Scene {
         
         // 매니저들 초기화
         this.initializeManagers();
+        
+        // 투사체 매니저 초기화
+        this.projectileManager = new ProjectileManager(this);
         
         // 네트워크 이벤트 설정
         this.networkEventManager.setupNetworkListeners();
@@ -128,14 +133,38 @@ export default class GameScene extends Phaser.Scene {
             this.player = null;
         }
         
-        // 다른 플레이어들 제거
-        if (this.otherPlayers?.children) {
-            this.otherPlayers.clear(true, true);
+        // 다른 플레이어들 제거 (안전한 방법으로)
+        if (this.otherPlayers) {
+            try {
+                // 개별 요소들 먼저 안전하게 제거
+                const otherPlayerChildren = this.otherPlayers.getChildren();
+                otherPlayerChildren.forEach(player => {
+                    if (player && player.active) {
+                        player.destroy();
+                    }
+                });
+                // 그룹 자체는 clear(false)로 정리
+                this.otherPlayers.clear(false);
+            } catch (e) {
+                console.warn('다른 플레이어 제거 중 오류:', e);
+            }
         }
         
-        // 적들 제거
-        if (this.enemies?.children) {
-            this.enemies.clear(true, true);
+        // 적들 제거 (안전한 방법으로)
+        if (this.enemies) {
+            try {
+                // 개별 요소들 먼저 안전하게 제거
+                const enemyChildren = this.enemies.getChildren();
+                enemyChildren.forEach(enemy => {
+                    if (enemy && enemy.active) {
+                        enemy.destroy();
+                    }
+                });
+                // 그룹 자체는 clear(false)로 정리
+                this.enemies.clear(false);
+            } catch (e) {
+                console.warn('적 제거 중 오류:', e);
+            }
         }
         
         // 네트워크 상태 초기화
@@ -334,31 +363,8 @@ export default class GameScene extends Phaser.Scene {
                     // 기존 이동 애니메이션 중단
                     this.tweens.killTweensOf(enemy);
                     
-                    // 즉시 위치 및 상태 업데이트
-                    enemy.x = enemyData.x;
-                    enemy.y = enemyData.y;
-                    enemy.hp = enemyData.hp;
-                    enemy.maxHp = enemyData.maxHp;
-                    
-                    // 물리 바디 위치 즉시 반영
-                    if (enemy.body) {
-                        enemy.body.setPosition(enemyData.x - enemy.width/2, enemyData.y - enemy.height/2);
-                        
-                        // 속도 정보도 복원
-                        if (enemyData.vx !== undefined && enemyData.vy !== undefined) {
-                            enemy.body.setVelocity(enemyData.vx, enemyData.vy);
-                        }
-                    }
-                    
-                    // HP 바 업데이트
-                    if (enemy.hpBar) {
-                        enemy.updateHpBar();
-                    }
-                    
-                    // 공격 상태 복원
-                    if (enemyData.isAttacking) {
-                        enemy.playAttackAnimation();
-                    }
+                    // 서버에서 받은 모든 정보로 상태 복원
+                    enemy.applyServerStats(enemyData);
                 }
             });
             
@@ -604,9 +610,6 @@ export default class GameScene extends Phaser.Scene {
         
         // 와드 탐지 시스템 업데이트
         this.minimapManager.updateWardDetectedEnemies();
-
-        // 이동 제한
-        this.mapManager.restrictMovement();
         
         // 스폰 구역 상태 체크 (경고 메시지용)
         this.checkSpawnZoneStatus();
@@ -678,6 +681,15 @@ export default class GameScene extends Phaser.Scene {
         this.player.isDead = true; // 사망 상태 설정
         this.player.setVisible(false);
         this.player.setActive(false);
+        
+        // 스킬 관련 상태 초기화
+        this.player.isCasting = false;
+        this.player.isStunned = false;
+        this.player.isStealth = false;
+        this.player.isJumping = false;
+        
+        // 지연된 스킬 이펙트들 정리
+        this.player.clearDelayedSkillEffects();
         
         // 색상 초기화 (데미지로 인한 빨간색 제거)
         this.player.clearTint();
@@ -813,7 +825,7 @@ export default class GameScene extends Phaser.Scene {
      * 플레이어 리스폰
      */
     respawnPlayer() {
-        console.log('플레이어 리스폰 시작');
+        console.log('플레이어 리스폰 요청 시작');
         
         if (!this.player) {
             console.warn('플레이어가 존재하지 않아 리스폰을 건너뜁니다');
@@ -829,60 +841,8 @@ export default class GameScene extends Phaser.Scene {
             this.respawnTimerText = null;
         }
         
-        // 플레이어를 스폰 구역의 랜덤한 위치에 배치
-        const spawnPosition = this.getRandomSpawnPosition();
-        if (spawnPosition) {
-            // 플레이어 다시 활성화
-            this.player.isDead = false; // 사망 상태 해제
-            this.player.setVisible(true);
-            this.player.setActive(true);
-            
-            // 색상 초기화 (데미지로 인한 빨간색 제거)
-            this.player.clearTint();
-            
-            // 위치 설정 (스프라이트와 물리 바디 모두)
-            this.player.setPosition(spawnPosition.x, spawnPosition.y);
-            if (this.player.body) {
-                this.player.body.setEnable(true);
-                this.player.body.reset(spawnPosition.x, spawnPosition.y);
-            }
-            
-            // 방향을 front로 초기화
-            this.player.direction = 'front';
-            this.player.updateJobSprite();
-            
-            // 이름표도 다시 표시
-            if (this.player.nameText) {
-                this.player.nameText.setVisible(true);
-                this.player.updateNameTextPosition();
-            }
-            
-            // HP 완전 회복
-            this.player.hp = this.player.maxHp;
-            this.player.updateUI();
-            
-            // 서버에 리스폰 알림
-            this.networkManager.emit('player-respawned', {
-                x: spawnPosition.x,
-                y: spawnPosition.y
-            });
-            
-            // 카메라가 플레이어를 다시 따라가도록 설정
-            this.cameras.main.startFollow(this.player);
-            
-            // 리스폰 이펙트
-            this.effectManager.showExplosion(spawnPosition.x, spawnPosition.y, 0x00ff00, 50);
-            this.effectManager.showMessage(
-                spawnPosition.x, 
-                spawnPosition.y - 50, 
-                '리스폰!', 
-                { fill: '#00ff00', fontSize: '20px' }
-            );
-            
-            console.log('플레이어 리스폰 완료:', spawnPosition);
-        } else {
-            console.error('스폰 위치를 찾을 수 없어 리스폰에 실패했습니다');
-        }
+        // 서버에 리스폰 요청
+        this.networkManager.requestRespawn();
     }
 
     /**
@@ -938,30 +898,81 @@ export default class GameScene extends Phaser.Scene {
                 this.player = null;
             }
             
-            // 다른 플레이어들 제거
+            // 다른 플레이어들 제거 (안전한 방법으로)
             if (this.otherPlayers) {
-                this.otherPlayers.clear(true, true);
+                try {
+                    // 개별 요소들 먼저 안전하게 제거
+                    const otherPlayerChildren = this.otherPlayers.getChildren();
+                    otherPlayerChildren.forEach(player => {
+                        if (player && player.active) {
+                            player.destroy();
+                        }
+                    });
+                    this.otherPlayers.clear(false);
+                } catch (e) {
+                    console.warn('다른 플레이어 제거 중 오류:', e);
+                }
             }
             
-            // 적들 제거
+            // 적들 제거 (안전한 방법으로)
             if (this.enemies) {
-                this.enemies.clear(true, true);
+                try {
+                    // 개별 요소들 먼저 안전하게 제거
+                    const enemyChildren = this.enemies.getChildren();
+                    enemyChildren.forEach(enemy => {
+                        if (enemy && enemy.active) {
+                            enemy.destroy();
+                        }
+                    });
+                    this.enemies.clear(false);
+                } catch (e) {
+                    console.warn('적 제거 중 오류:', e);
+                }
             }
             
             // 벽 제거
-            if (this.walls) {
-                this.walls.clear(true, true);
+            if (this.walls && this.walls.active) {
+                try {
+                    // 개별 요소들 먼저 안전하게 제거
+                    const wallChildren = [...this.walls.getChildren()];
+                    wallChildren.forEach(wall => {
+                        if (wall && wall.active) {
+                            wall.destroy();
+                        }
+                    });
+                    this.walls.clear(true, true);
+                } catch (e) {
+                    console.warn('벽 제거 중 오류:', e);
+                }
             }
             
             // 스폰 배리어 제거
-            if (this.spawnBarriers) {
-                this.spawnBarriers.clear(true, true);
+            if (this.spawnBarriers && this.spawnBarriers.active) {
+                try {
+                    // 개별 요소들 먼저 안전하게 제거
+                    const barrierChildren = [...this.spawnBarriers.getChildren()];
+                    barrierChildren.forEach(barrier => {
+                        if (barrier && barrier.active) {
+                            barrier.destroy();
+                        }
+                    });
+                    this.spawnBarriers.clear(true, true);
+                } catch (e) {
+                    console.warn('스폰 배리어 제거 중 오류:', e);
+                }
             }
             
             // 와드 제거
             if (this.activeWard) {
-                this.activeWard.destroy();
-                this.activeWard = null;
+                try {
+                    if (this.activeWard.sprite && this.activeWard.sprite.active) {
+                        this.activeWard.sprite.destroy();
+                    }
+                    this.activeWard = null;
+                } catch (e) {
+                    console.warn('와드 제거 중 오류:', e);
+                    this.activeWard = null;
+                }
             }
             
             // 매니저들 정리
@@ -1001,5 +1012,53 @@ export default class GameScene extends Phaser.Scene {
         } catch (error) {
             console.error('GameScene 강제 초기화 중 오류:', error);
         }
+    }
+
+    /**
+     * 중복된 적들 정리 (GameScene에서 호출 가능한 메서드)
+     */
+    cleanupDuplicateEnemies() {
+        if (this.networkEventManager && this.networkEventManager.cleanupDuplicateEnemies) {
+            console.log('GameScene에서 중복 적 정리 호출');
+            this.networkEventManager.cleanupDuplicateEnemies();
+        }
+    }
+
+    /**
+     * 적 상태 디버그 정보 출력
+     */
+    debugEnemyStatus() {
+        if (!this.enemies) {
+            console.log('적 그룹이 존재하지 않습니다.');
+            return;
+        }
+
+        const enemies = this.enemies.getChildren();
+        const enemyGroups = new Map();
+
+        console.log('=== 적 상태 디버그 정보 ===');
+        console.log(`총 적 수: ${enemies.length}`);
+
+        // ID별로 그룹화
+        enemies.forEach((enemy, index) => {
+            const id = enemy.networkId || '(ID 없음)';
+            if (!enemyGroups.has(id)) {
+                enemyGroups.set(id, []);
+            }
+            enemyGroups.get(id).push({ index, enemy });
+        });
+
+        // 그룹별 정보 출력
+        enemyGroups.forEach((enemyList, id) => {
+            if (enemyList.length > 1) {
+                console.warn(`🔴 중복 적 발견! ID: ${id}, 개수: ${enemyList.length}`);
+                enemyList.forEach((item, idx) => {
+                    const enemy = item.enemy;
+                    console.log(`  ${idx + 1}. 위치: (${Math.round(enemy.x)}, ${Math.round(enemy.y)}), HP: ${enemy.hp}/${enemy.maxHp}, 활성: ${enemy.active}`);
+                });
+            }
+        });
+
+        console.log('=== 디버그 정보 끝 ===');
     }
 }

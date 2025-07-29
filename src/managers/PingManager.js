@@ -193,7 +193,7 @@ export default class PingManager {
         const arrow = this.scene.add.image(arrowX, arrowY, 'ping_arrow');
         arrow.setScrollFactor(0);
         arrow.setDepth(1001);
-        arrow.setScale(0.07);
+        arrow.setScale(0.5);
         arrow.setRotation(angle);
         
         // 화살표 객체를 Map에 저장
@@ -262,7 +262,7 @@ export default class PingManager {
             minimapArrow.setDepth(1003);
             minimapArrow.pingWorldX = pingX;
             minimapArrow.pingWorldY = pingY;
-            minimapArrow.setScale(0.02);
+            minimapArrow.setScale(0.2);
             minimapArrow.setRotation(angle);
             
             // 화살표 애니메이션 (3초)
@@ -401,15 +401,23 @@ export default class PingManager {
      * 정리 작업
      */
     destroy() {
-        if (this.pings) {
-            this.pings.clear(true, true);
+        if (this.pings && this.pings.active) {
+            try {
+                this.pings.clear(true, true);
+            } catch (e) {
+                console.warn('핑 제거 중 오류:', e);
+            }
         }
         
         if (this.pingMessageText) {
             this.pingMessageText.destroy();
         }
         
-        this.activePingArrows.clear();
-        this.activePingPositions.clear();
+        if (this.activePingArrows) {
+            this.activePingArrows.clear();
+        }
+        if (this.activePingPositions) {
+            this.activePingPositions.clear();
+        }
     }
 } 

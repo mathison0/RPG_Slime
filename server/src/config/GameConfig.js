@@ -2,6 +2,8 @@
  * 게임 전역 설정
  * 모든 게임 관련 상수값들을 중앙에서 관리
  */
+const { MAX_MONSTERS_PER_LEVEL } = require('../../shared/MonsterConfig');
+
 const gameConfig = {
   // 타일 기반 맵 크기 (타일 개수)
   MAP_WIDTH_TILES: 120,
@@ -10,6 +12,7 @@ const gameConfig = {
   SPAWN_WIDTH_TILES: 6,
   SPAWN_BARRIER_EXTRA_TILES: 4, // 스폰 구역보다 추가로 확장할 타일 수
   PLAZA_SIZE_TILES: 30,
+  PLAZA_LEVEL3_EXTRA_TILES: 6, // 광장 주변 레벨 3 구역 확장 타일 수
   
   // 계산된 픽셀 크기 (하위 호환성을 위해 유지)
   get MAP_WIDTH() { 
@@ -32,21 +35,10 @@ const gameConfig = {
   },
   WALL_REMOVAL_RATIO: 0.5,
   
-  // 적 관련 설정
-  ENEMY: {
-    MAX_COUNT: 10,
-    SPAWN_INTERVAL: 10000, // 10초
-    TYPES: ['basic', 'fast', 'tank', 'ranged'],
-    AGGRO_RANGE: 200,
-    ATTACK_RANGE: 60,
-    ATTACK_COOLDOWN: 1500
-  },
-  
   // 플레이어 관련 설정
   PLAYER: {
     DEFAULT_HP: 100,
     DEFAULT_ATTACK: 20,
-    DEFAULT_DEFENSE: 10,
     DEFAULT_SPEED: 200,
     VISION_RANGE: 300,
     DEFAULT_SIZE: 32, // AssetConfig의 MIN_SIZE와 맞춤 (레벨 1 기본 크기)
@@ -69,6 +61,14 @@ const gameConfig = {
       BASE_RANGE_REFERENCE: 64  // 슬라임 스킬 범위 계산 기준 크기
     }
   },
+
+  // 적(몬스터) 관련 설정
+  ENEMY: {
+    get MAX_COUNT() {
+      // 모든 레벨의 최대 몬스터 수를 합계
+      return Object.values(MAX_MONSTERS_PER_LEVEL).reduce((sum, count) => sum + count, 0);
+    },
+  },
   
   // 스폰 배리어 관련 설정
   SPAWN_BARRIER: {
@@ -79,7 +79,7 @@ const gameConfig = {
   
   // 서버 관련 설정
   SERVER: {
-    GAME_LOOP_INTERVAL: 50, // 50ms
+    GAME_LOOP_INTERVAL: 15, // 15ms
     DEFAULT_PORT: 3000
   }
 };

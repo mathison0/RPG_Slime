@@ -1,26 +1,78 @@
-import { getJobInfo } from '../../shared/JobClasses.js';
+import EffectManager from '../../effects/EffectManager.js';
 
 /**
- * 기본 직업 클래스
- * 모든 직업 클래스의 기본이 되는 클래스
+ * 모든 직업의 기본 클래스
  */
 export default class BaseJob {
     constructor(player) {
         this.player = player;
         this.scene = player.scene;
+        this.effectManager = new EffectManager(player.scene);
         
         this.skillCooldowns = new Map();
         this.effects = new Map();
     }
 
     /**
-     * 스킬 사용
+     * 직업별 스킬 사용 메서드
      * @param {number} skillNumber - 스킬 번호 (1, 2, 3)
-     * @param {Object} options - 추가 옵션
+     * @param {Object} options - 스킬 사용 옵션
      */
     useSkill(skillNumber, options = {}) {
-        // 기본 구현 - 각 직업에서 오버라이드
-        console.log(`BaseJob: 스킬 ${skillNumber} 사용`);
+        console.log(`BaseJob: 스킬 ${skillNumber} 사용됨`);
+        // 각 직업에서 오버라이드해야 함
+    }
+
+    /**
+     * 기본 공격 이펙트
+     */
+    showBasicAttackEffect(targetX, targetY) {
+        console.log('BaseJob: 기본 공격 이펙트');
+        // 각 직업에서 오버라이드해야 함
+    }
+
+    /**
+     * 기본 공격 (투사체 발사)
+     * @param {number} targetX - 목표 X 좌표
+     * @param {number} targetY - 목표 Y 좌표
+     */
+    useBasicAttack(targetX, targetY) {
+        // 기본 공격 쿨타임 설정
+        this.setBasicAttackCooldown();
+        
+        // 서버에 투사체 발사 요청
+        if (this.player.networkManager) {
+            this.player.networkManager.socket.emit('fire-projectile', {
+                targetX: targetX,
+                targetY: targetY
+            });
+        }
+    }
+
+    /**
+     * 기본 공격 쿨타임 확인
+     * @returns {boolean} - 쿨다운 중인지 여부
+     */
+    isBasicAttackOnCooldown() {
+        const now = this.scene.time.now;
+        const lastUsed = this.lastBasicAttackTime || 0;
+        
+        // 서버에서 받은 쿨타임 정보 사용
+        const jobClass = this.player.jobClass;
+        let cooldown = 600; // 기본값
+        
+        if (this.scene.jobCooldowns && this.scene.jobCooldowns[jobClass]) {
+            cooldown = this.scene.jobCooldowns[jobClass].basicAttackCooldown;
+        }
+        
+        return (now - lastUsed) < cooldown;
+    }
+
+    /**
+     * 기본 공격 쿨타임 설정
+     */
+    setBasicAttackCooldown() {
+        this.lastBasicAttackTime = this.scene.time.now;
     }
 
     /**
@@ -77,52 +129,29 @@ export default class BaseJob {
     }
 
     /**
-     * 스킬의 최대 쿨타임 반환
-     * @param {number} skillNumber - 스킬 번호
-     * @returns {number} - 최대 쿨타임 (ms)
+     * 스킬의 최대 쿨타임을 반환 (정확한 값은 서버 설정을 따라감)
      */
     getSkillMaxCooldown(skillNumber) {
-        const jobInfo = getJobInfo(this.player.jobClass);
-        const skillIndex = skillNumber - 1; // 배열 인덱스는 0부터 시작
+        const jobType = this.player.job || 'slime';
         
-        if (jobInfo.skills && jobInfo.skills[skillIndex]) {
-            return jobInfo.skills[skillIndex].cooldown;
-        }
+        // 기본값들 (서버와 동기화 필요)
+        const defaultCooldowns = {
+            slime: { 1: 2000 },
+            warrior: { 1: 3000, 2: 5000, 3: 7000 },
+            archer: { 1: 2000, 2: 4000, 3: 6000 },
+            mage: { 1: 2500, 2: 4500, 3: 8000 },
+            assassin: { 1: 1500, 2: 3500, 3: 9000 },
+            supporter: { 1: 3000, 2: 4000, 3: 6000 },
+            mechanic: { 1: 2000, 2: 5000, 3: 7500 },
+            ninja: { 1: 1800, 2: 3000, 3: 5000 }
+        };
         
-        // 기본값
-        return 3000;
+        return defaultCooldowns[jobType]?.[skillNumber] || 1000;
     }
 
-    /**
-     * 쿨타임 메시지 표시
-     */
-    showCooldownMessage(message = '쿨타임 대기 중!') {
-        if (this.player.cooldownMessageActive) return;
-        
-        this.player.cooldownMessageActive = true;
-        
-        const cooldownText = this.scene.add.text(
-            this.player.x, 
-            this.player.y - 80, 
-            message, 
-            {
-                fontSize: '14px',
-                fill: '#ffff00',
-                stroke: '#000000',
-                strokeThickness: 2
-            }
-        ).setOrigin(0.5);
-        
-        this.scene.time.delayedCall(1500, () => {
-            if (cooldownText.active) {
-                cooldownText.destroy();
-            }
-            this.player.cooldownMessageActive = false;
-        });
-    }
 
     /**
-     * 점프 기능 (모든 직업 공통)
+     * 점프 기능 (모든 직업 공통) - 서버에 요청만 전송
      */
     useJump() {
         // 이미 점프 중이거나 다른 플레이어면 실행하지 않음
@@ -130,48 +159,12 @@ export default class BaseJob {
             return;
         }
         
-        const originalY = this.player.y;
-        const originalNameY = this.player.nameText ? this.player.nameText.y : null;
-        
-        this.player.setVelocity(0);
-        this.player.isJumping = true;
-        
-        // 플레이어와 이름표를 함께 애니메이션
-        const targets = [this.player];
-        if (this.player.nameText) {
-            targets.push(this.player.nameText);
-        }
-        
-        this.scene.tweens.add({
-            targets: targets,
-            y: originalY - 50,
-            duration: 200,
-            yoyo: true,
-            ease: 'Power2',
-            onComplete: () => {
-                // 점프 완료 후 정확한 위치로 복원
-                this.player.y = originalY;
-                if (this.player.nameText && originalNameY !== null) {
-                    this.player.nameText.y = originalNameY;
-                }
-                this.player.isJumping = false;
-                
-                // 점프 완료 후 서버에 위치 동기화
-                if (this.player.networkManager) {
-                    this.player.networkManager.updatePlayerPosition(
-                        this.player.x, 
-                        this.player.y, 
-                        this.player.direction, 
-                        false
-                    );
-                }
-            }
-        });
-
-        // 네트워크 동기화
+        // 네트워크 동기화 (서버에 점프 요청만 전송)
         if (this.player.networkManager && !this.player.isOtherPlayer) {
             this.player.networkManager.useSkill('jump');
         }
+
+        console.log('점프 사용 요청 전송!');
     }
 
     /**
@@ -269,6 +262,34 @@ export default class BaseJob {
     update(delta) {
         // 기본 업데이트 로직
         // 각 직업에서 필요시 오버라이드
+    }
+
+    /**
+     * 스킬 이펙트 정리 (사망 시 호출)
+     */
+    clearSkillEffects() {
+        console.log('BaseJob: 스킬 효과 정리');
+        // 각 직업에서 필요에 따라 오버라이드
+    }
+
+    /**
+     * 스킬 이펙트 표시
+     */
+    showSkillEffect(skillType, data = null) {
+        console.log('BaseJob: 스킬 이펙트 표시', skillType, data);
+        // 각 직업에서 오버라이드해야 함
+    }
+
+    /**
+     * 스킬 번호로 스킬명을 반환
+     */
+    getSkillName(skillNumber) {
+        switch (skillNumber) {
+            case 1: return 'skill1';
+            case 2: return 'skill2';
+            case 3: return 'skill3';
+            default: return 'unknown';
+        }
     }
 
     /**

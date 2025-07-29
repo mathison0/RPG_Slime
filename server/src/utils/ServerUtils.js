@@ -40,16 +40,25 @@ class ServerUtils {
    */
   static isWallPosition(x, y, mapData) {
     if (!mapData || !mapData.walls) {
+      console.warn('mapData 또는 walls 정보가 없습니다');
       return false;
     }
 
-    const tolerance = gameConfig.TILE_SIZE / 2;
+    // 더 큰 tolerance 사용하여 벽 체크 범위 확대
+    const tolerance = gameConfig.TILE_SIZE * 0.8;
     
-    return mapData.walls.some(wall => {
+    const isWall = mapData.walls.some(wall => {
       const dx = Math.abs(wall.x - x);
       const dy = Math.abs(wall.y - y);
       return dx < tolerance && dy < tolerance;
     });
+
+    // 디버깅용 로그 (필요시 주석 해제)
+    // if (isWall) {
+    //   console.log(`벽 충돌 감지: (${x}, ${y}), tolerance: ${tolerance}`);
+    // }
+    
+    return isWall;
   }
 
   /**

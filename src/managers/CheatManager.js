@@ -27,15 +27,19 @@ export default class CheatManager {
             two: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO),
             three: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE),
             four: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.FOUR),
-            zero: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ZERO)
+            zero: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ZERO),
+            k: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.K)
         };
         
         console.log('디버그 치트 키 활성화됨:');
+        console.log('T - 디버그 모드 토글 (몬스터 어그로 범위 표시 포함)');
         console.log('O - 전체 맵 발견 처리');
         console.log('P - 자살 (리스폰)');
         console.log('Shift - 속도 부스트 (누르고 있기)');
         console.log('1,2,3,4 - 맵 꼭짓점으로 이동');
         console.log('0 - 광장 중앙으로 이동');
+        console.log('E - 중복 적 정리');
+        console.log('D - 적 상태 디버그 정보 출력');
     }
 
     /**
@@ -85,6 +89,12 @@ export default class CheatManager {
         // 0 - 광장 중앙으로 이동
         if (Phaser.Input.Keyboard.JustDown(this.cheatKeys.zero)) {
             this.teleportToPlaza();
+        }
+        
+        // K - 적 상태 디버그 정보 출력
+        if (Phaser.Input.Keyboard.JustDown(this.cheatKeys.k)) {
+            console.log('적 디버그 정보 출력 치트 사용');
+            this.debugEnemyStatus();
         }
     }
 
@@ -142,6 +152,30 @@ export default class CheatManager {
         console.log(`텔레포트: 광장 중앙 (${x}, ${y})`);
         this.scene.player.x = x;
         this.scene.player.y = y;
+    }
+
+    /**
+     * 중복 적 정리 치트
+     */
+    cleanupDuplicateEnemies() {
+        if (this.scene.cleanupDuplicateEnemies) {
+            console.log('치트 키로 중복 적 정리 실행');
+            this.scene.cleanupDuplicateEnemies();
+        } else {
+            console.warn('중복 적 정리 메서드를 찾을 수 없습니다.');
+        }
+    }
+
+    /**
+     * 적 디버그 정보 출력 치트
+     */
+    debugEnemyStatus() {
+        if (this.scene.debugEnemyStatus) {
+            console.log('치트 키로 적 디버그 정보 출력');
+            this.scene.debugEnemyStatus();
+        } else {
+            console.warn('적 디버그 메서드를 찾을 수 없습니다.');
+        }
     }
 
     /**

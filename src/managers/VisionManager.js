@@ -78,6 +78,11 @@ export default class VisionManager {
         this.renderBaseVision(playerPos, visionRadius, cam);
         this.renderShadowVision(playerPos, visionRadius, endpoints, cam);
 
+        // 와드 시야 추가
+        const wardVisionMask = this.scene.make.graphics({ add: false });
+        this.addWardVisionToMask(wardVisionMask, cam);
+        this.baseVisionTexture.erase(wardVisionMask);
+
         // 다른 플레이어들의 가시성 업데이트
         this.updateOtherPlayersDepth(playerPos, endpoints, visionRadius);
     }
@@ -206,16 +211,18 @@ export default class VisionManager {
      * 와드 범위 내 시야를 마스크에 추가
      */
     addWardVisionToMask(visionMaskGraphics, cam) {
+        visionMaskGraphics.fillStyle(0xffffff);
+        
         // 로컬 와드
         if (this.scene.activeWard) {
             const ward = this.scene.activeWard;
             visionMaskGraphics.fillCircle(ward.x - cam.scrollX, ward.y - cam.scrollY, ward.radius);
         }
         
-        // 같은 팀 다른 플레이어들의 와드들
+        // 다른 플레이어들의 와드들 (시야 효과는 같은 팀만)
         this.scene.children.list.forEach(child => {
             if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
-                const wardOwner = this.scene.otherPlayers.getChildren().find(p => p.networkId === child.wardOwnerId);
+                const wardOwner = this.scene.otherPlayers.getChildren().find(p => p.networkId === child.ownerId);
                 
                 if (wardOwner && wardOwner.team === this.scene.player.team) {
                     visionMaskGraphics.fillCircle(child.x - cam.scrollX, child.y - cam.scrollY, 120);
@@ -319,8 +326,10 @@ export default class VisionManager {
      */
     setPlayerDepthWithNameTag(player, playerDepth, isFullyVisible) {
         player.setDepth(playerDepth);
+        const nameTagDepth = playerDepth + 10; // 플레이어보다 약간 위에 표시
+        
         if (player.nameText) {
-            player.nameText.setDepth(960);
+            player.nameText.setDepth(nameTagDepth);
             
             const isEnemyTeam = this.scene.player && player.team !== this.scene.player.team;
             if (isEnemyTeam && !isFullyVisible) {
@@ -328,6 +337,11 @@ export default class VisionManager {
             } else {
                 player.nameText.setVisible(true);
             }
+        }
+        
+        // 체력바도 이름표와 같은 depth로 설정
+        if (player.healthBar && player.healthBar.container) {
+            player.healthBar.container.setDepth(nameTagDepth);
         }
     }
 

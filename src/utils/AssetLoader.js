@@ -57,12 +57,8 @@ export default class AssetLoader {
         const healthBarSize = getUISize('HEALTH_BAR');
         const expBarSize = getUISize('EXP_BAR');
         
-        // 적 스프라이트 (원형으로 생성)
-        const enemyGraphics = scene.add.graphics()
-            .fillStyle(AssetConfig.COLORS.ENEMY)
-            .fillCircle(enemySize.RADIUS, enemySize.RADIUS, enemySize.RADIUS);
-        enemyGraphics.generateTexture('enemy', enemySize.WIDTH, enemySize.HEIGHT);
-        enemyGraphics.destroy();
+        // 적 스프라이트는 이제 이미지 파일을 사용하므로 제거
+        // 몬스터 타입별 이미지는 loadAdditionalAssets에서 로드됨
         
         // 벽 스프라이트 (사각형으로 생성)
         const wallGraphics = scene.add.graphics()
@@ -126,6 +122,11 @@ export default class AssetLoader {
         AssetConfig.ADDITIONAL_ASSETS.forEach(assetName => {
             scene.load.image(assetName, `assets/${assetName}.png`);
         });
+        
+        // 몬스터 타입별 이미지 로드
+        scene.load.image('enemy_basic', 'assets/basic.png');
+        scene.load.image('enemy_charge', 'assets/charge.png');
+        scene.load.image('enemy_elite', 'assets/elite.png');
     }
     
     static createAnimations(scene) {

@@ -12,7 +12,7 @@ export default class MinimapManager {
         this.minimapScale = this.minimapSize / this.minimapViewSize;
         
         // 빅맵 설정
-        this.bigMapSize = 800;
+        this.bigMapSize = 600;
         this.bigMapScale = 0;
         
         // 맵 그리드
@@ -275,6 +275,31 @@ export default class MinimapManager {
             });
         }
         
+        // 적들 그리기 (주황색) - 방문한 지역에서만 표시
+        if (this.scene.enemies?.children) {
+            this.scene.enemies.getChildren().forEach(enemy => {
+                if (enemy.active) {
+                    // 적이 있는 타일이 발견된 지역인지 확인
+                    const enemyCol = Math.floor(enemy.x / this.scene.TILE_SIZE);
+                    const enemyRow = Math.floor(enemy.y / this.scene.TILE_SIZE);
+                    
+                    // 타일 인덱스가 유효하고 해당 타일이 발견된 상태인지 확인
+                    if (enemyRow >= 0 && enemyRow < this.mapRows && 
+                        enemyCol >= 0 && enemyCol < this.mapCols &&
+                        this.discovered[enemyRow] && this.discovered[enemyRow][enemyCol]) {
+                        
+                        const enemyX = (enemy.x - offsetX) * scale;
+                        const enemyY = (enemy.y - offsetY) * scale;
+                        
+                        if (enemyX >= 0 && enemyX <= size && enemyY >= 0 && enemyY <= size) {
+                            this.minimap.fillStyle(0xff6600); // 주황색
+                            this.minimap.fillCircle(enemyX, enemyY, 3);
+                        }
+                    }
+                }
+            });
+        }
+        
         // 내 플레이어 (중앙에 파란색)
         this.minimap.fillStyle(0x0099ff);
         this.minimap.fillCircle(size / 2, size / 2, 4);
@@ -332,9 +357,35 @@ export default class MinimapManager {
                         this.bigMap.fillStyle(0x00ff00);
                         this.bigMap.fillCircle(playerX, playerY, 4);
                     } else {
-                        if (otherPlayer.depth === 950) {
+                        // 상대팀 플레이어: 시야에 보이거나 와드에 감지된 경우 표시
+                        if (otherPlayer.depth === 950 || otherPlayer.wardDetected) {
                             this.bigMap.fillStyle(0xff0000);
                             this.bigMap.fillCircle(playerX, playerY, 4);
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 적들 그리기 (주황색) - 방문한 지역 또는 와드에 감지된 경우 표시
+        if (this.scene.enemies?.children) {
+            this.scene.enemies.getChildren().forEach(enemy => {
+                if (enemy.active) {
+                    // 적이 있는 타일이 발견된 지역인지 확인
+                    const enemyCol = Math.floor(enemy.x / this.scene.TILE_SIZE);
+                    const enemyRow = Math.floor(enemy.y / this.scene.TILE_SIZE);
+                    
+                    // 타일 인덱스가 유효하고 해당 타일이 발견된 상태인 경우만 표시
+                    if (enemyRow >= 0 && enemyRow < this.mapRows && 
+                         enemyCol >= 0 && enemyCol < this.mapCols &&
+                         this.discovered[enemyRow] && this.discovered[enemyRow][enemyCol]) {
+                        
+                        const enemyX = enemy.x * scale;
+                        const enemyY = enemy.y * scale;
+                        
+                        if (enemyX >= 0 && enemyX <= size && enemyY >= 0 && enemyY <= size) {
+                            this.bigMap.fillStyle(0xff6600); // 주황색
+                            this.bigMap.fillCircle(enemyX, enemyY, 3);
                         }
                     }
                 }
@@ -458,78 +509,84 @@ export default class MinimapManager {
         const offsetX = this.scene.player.x - (this.minimapSize / 2) / scale;
         const offsetY = this.scene.player.y - (this.minimapSize / 2) / scale;
         
-        // 모든 와드 수집
+        // 모든 와드 수집 (같은 팀 와드만)
         const allWards = [];
         
+        // 자신의 와드
         if (this.scene.activeWard) {
-            allWards.push(this.scene.activeWard);
+            allWards.push({
+                x: this.scene.activeWard.x,
+                y: this.scene.activeWard.y,
+                radius: 120,
+                ownerId: this.scene.player.networkId
+            });
         }
         
+        // 다른 플레이어의 와드 (같은 팀만)
         this.scene.children.list.forEach(child => {
-            if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
-                const wardOwner = this.scene.otherPlayers.getChildren().find(p => p.networkId === child.wardOwnerId);
-                
-                if (wardOwner && wardOwner.team === this.scene.player.team) {
-                    allWards.push({ x: child.x, y: child.y, radius: 120 });
+            if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {                
+                if (child.wardOwnerTeam === this.scene.player.team) {
+                    allWards.push({ 
+                        x: child.x, 
+                        y: child.y, 
+                        radius: 120,
+                        ownerId: child.ownerId 
+                    });
+                    
                 }
             }
         });
         
-        // 적 탐지 처리
-        this.scene.enemies.getChildren().forEach(enemy => {
-            if (!enemy.isDead) {
+        // 상대팀 플레이어 탐지 처리
+        this.scene.otherPlayers.getChildren().forEach(otherPlayer => {
+            if (!otherPlayer.isDead && otherPlayer.team !== this.scene.player.team) {
                 let isDetectedByAnyWard = false;
                 
                 allWards.forEach(ward => {
-                    const distance = Phaser.Math.Distance.Between(ward.x, ward.y, enemy.x, enemy.y);
+                    // 와드 소유자는 자신의 와드에 감지되지 않음
+                    if (ward.ownerId && ward.ownerId === otherPlayer.networkId) {
+                        return; // 이 와드는 건너뛰기
+                    }
+                    
+                    const distance = Phaser.Math.Distance.Between(ward.x, ward.y, otherPlayer.x, otherPlayer.y);
                     if (distance <= ward.radius) {
                         isDetectedByAnyWard = true;
                     }
                 });
                 
                 if (isDetectedByAnyWard) {
-                    if (!enemy.wardDetected) {
-                        enemy.wardDetected = true;
-                        enemy.setTint(0xff0000);
-                        enemy.setAlpha(0.8);
-                        
-                        if (!enemy.minimapIndicator) {
-                            this.showEnemyOnMinimapForWard(enemy);
-                        }
+                    if (!otherPlayer.wardDetected) {
+                        otherPlayer.wardDetected = true;
+                        this.showEnemyOnMinimapForWard(otherPlayer);
                     }
                 } else {
-                    if (enemy.wardDetected) {
-                        enemy.wardDetected = false;
-                        enemy.clearTint();
-                        enemy.setAlpha(1.0);
-                        
-                        if (enemy.minimapIndicator) {
-                            this.hideEnemyFromMinimapForWard(enemy);
-                        }
+                    if (otherPlayer.wardDetected) {
+                        otherPlayer.wardDetected = false;
+                        this.hideEnemyFromMinimapForWard(otherPlayer);
                     }
                 }
             }
         });
         
-        // 미니맵 위치 업데이트
-        this.scene.enemies.getChildren().forEach(enemy => {
-            if (enemy.wardDetected && enemy.minimapIndicator) {
-                const minimapX = (enemy.x - offsetX) * scale;
-                const minimapY = (enemy.y - offsetY) * scale;
+        // 미니맵 위치 업데이트 (상대팀 플레이어)
+        this.scene.otherPlayers.getChildren().forEach(otherPlayer => {
+            if (otherPlayer.wardDetected && otherPlayer.minimapIndicator) {
+                const minimapX = (otherPlayer.x - offsetX) * scale;
+                const minimapY = (otherPlayer.y - offsetY) * scale;
                 
                 const clampedX = Math.max(0, Math.min(this.minimapSize, minimapX));
                 const clampedY = Math.max(0, Math.min(this.minimapSize, minimapY));
                 
-                enemy.minimapIndicator.setPosition(
+                otherPlayer.minimapIndicator.setPosition(
                     this.minimap.x + clampedX, 
                     this.minimap.y + clampedY
                 );
                 
                 if (minimapX < 0 || minimapX > this.minimapSize || 
                     minimapY < 0 || minimapY > this.minimapSize) {
-                    enemy.minimapIndicator.setVisible(false);
+                    otherPlayer.minimapIndicator.setVisible(false);
                 } else {
-                    enemy.minimapIndicator.setVisible(true);
+                    otherPlayer.minimapIndicator.setVisible(true);
                 }
             }
         });
@@ -562,14 +619,6 @@ export default class MinimapManager {
         minimapEnemy.setDepth(1004);
         
         enemy.minimapIndicator = minimapEnemy;
-        
-        this.scene.tweens.add({
-            targets: minimapEnemy,
-            alpha: 0.3,
-            duration: 500,
-            yoyo: true,
-            repeat: -1
-        });
     }
 
     /**

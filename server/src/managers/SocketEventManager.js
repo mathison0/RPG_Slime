@@ -5,12 +5,13 @@ const SkillManager = require('./SkillManager');
  * 소켓 이벤트 관리 매니저
  */
 class SocketEventManager {
-  constructor(io, gameStateManager, enemyManager) {
+  constructor(io, gameStateManager, enemyManager, skillManager = null, projectileManager = null) {
     this.io = io;
     this.gameStateManager = gameStateManager;
     this.enemyManager = enemyManager;
     this.playerSockets = new Map(); // 플레이어 ID -> 소켓 매핑
-    this.skillManager = new SkillManager(gameStateManager);
+    this.skillManager = skillManager || new SkillManager(gameStateManager);
+    this.projectileManager = projectileManager;
   }
 
   /**
@@ -29,9 +30,14 @@ class SocketEventManager {
       this.setupPlayerUpdateHandler(socket);
       this.setupPlayerJobChangeHandler(socket);
       this.setupPlayerSkillHandler(socket);
+      this.setupWardDetectionHandler(socket); // 와드 감지 핸들러 추가
       this.setupPlayerLevelUpHandler(socket); // 레벨업 요청 핸들러 추가
+      this.setupPlayerSuicideHandler(socket); // 자살 치트 요청 핸들러 추가
+      this.setupPlayerInvincibleHandler(socket); // 무적 상태 토글 치트 요청 핸들러 추가
       this.setupPlayerPingHandler(socket);
       this.setupEnemyHitHandler(socket);
+      this.setupProjectileWallCollisionHandler(socket);
+      this.setupProjectileHandler(socket);
       this.setupGameSyncHandler(socket);
       this.setupPlayerRespawnHandler(socket);
       this.setupDisconnectHandler(socket);
@@ -72,18 +78,32 @@ class SocketEventManager {
       // 플레이어 생성
       const player = this.gameStateManager.addPlayer(playerId, spawnPoint.x, spawnPoint.y, team, nickname);
       
-      // JobClasses를 사용한 올바른 초기 스탯 설정
-      player.initializeStatsFromJobClass();
-      
-      // 게임 참가 응답
-      const gameJoinedData = {
-        playerId: playerId,
-        playerData: player.getState(),
-        players: this.gameStateManager.getPlayersState(),
-        enemies: this.gameStateManager.getEnemiesState(),
-        mapData: this.gameStateManager.mapData,
-        serverConfig: this.gameConfig // 서버 설정 추가
-      };
+              // JobClasses를 사용한 올바른 초기 스탯 설정
+        player.initializeStatsFromJobClass();
+        
+        // JobClasses에서 쿨타임 정보 가져오기
+        const { getJobInfo } = require('../../shared/JobClasses.js');
+        const jobCooldowns = {};
+        
+        // 모든 직업의 기본공격 쿨타임 정보 수집
+        const jobClasses = ['slime', 'ninja', 'archer', 'mage', 'assassin', 'warrior', 'supporter', 'mechanic'];
+        jobClasses.forEach(jobClass => {
+            const jobInfo = getJobInfo(jobClass);
+            jobCooldowns[jobClass] = {
+                basicAttackCooldown: jobInfo.basicAttackCooldown
+            };
+        });
+        
+        // 게임 참가 응답
+        const gameJoinedData = {
+            playerId: playerId,
+            playerData: player.getState(),
+            players: this.gameStateManager.getPlayersState(),
+            enemies: this.gameStateManager.getEnemiesState(),
+            mapData: this.gameStateManager.mapData,
+            serverConfig: this.gameConfig, // 서버 설정 추가
+            jobCooldowns: jobCooldowns // 쿨타임 정보 추가
+        };
       
       socket.emit('game-joined', gameJoinedData);
       socket.broadcast.emit('player-joined', player.getState());
@@ -93,8 +113,10 @@ class SocketEventManager {
     });
   }
 
+
+
   /**
-   * 플레이어 업데이트 이벤트 핸들러
+   * 플레이어 업데이트 이벤트 핸들러 (클라이언트에서 위치 전송)
    */
   setupPlayerUpdateHandler(socket) {
     socket.on('player-update', (data) => {
@@ -102,6 +124,7 @@ class SocketEventManager {
       
       // 플레이어가 존재하지 않는 경우 에러 리턴
       if (!player) {
+        console.log(`[서버] 플레이어를 찾을 수 없음: ${socket.id}`);
         socket.emit('player-update-error', { error: 'Player not found' });
         return;
       }
@@ -124,6 +147,7 @@ class SocketEventManager {
         y: player.y,
         direction: player.direction,
         isJumping: player.isJumping,
+        isStunned: player.isStunned, // 기절 상태 추가
         jobClass: player.jobClass,
         level: player.level,
         size: player.size,
@@ -155,6 +179,8 @@ class SocketEventManager {
    */
   setupPlayerSkillHandler(socket) {
     socket.on('player-skill', (data) => {
+      console.log(`스킬 요청 받음: ${data.skillType}, 플레이어: ${socket.id}`);
+      
       const player = this.gameStateManager.getPlayer(socket.id);
       if (!player) {
         socket.emit('skill-error', { error: 'Player not found' });
@@ -167,10 +193,22 @@ class SocketEventManager {
         return;
       }
 
-      // 서버에서 스킬 사용 검증 및 처리
+      // 스킬 타입을 직업별 스킬로 매핑
+      const actualSkillType = this.mapSkillType(player.jobClass, data.skillType);
+      console.log(`스킬 매핑: ${data.skillType} -> ${actualSkillType}, 직업: ${player.jobClass}`);
+      
+      if (!actualSkillType) {
+        socket.emit('skill-error', { 
+          error: 'Invalid skill type',
+          skillType: data.skillType 
+        });
+        return;
+      }
+
+      // 서버에서 스킬 사용 검증 및 처리 (모든 조건 체크는 SkillManager에서 수행)
       const skillResult = this.skillManager.useSkill(
         player,
-        data.skillType, 
+        actualSkillType, 
         data.targetX, 
         data.targetY
       );
@@ -199,13 +237,21 @@ class SocketEventManager {
       const broadcastData = {
         playerId: socket.id,
         skillType: skillResult.skillType,
-        timestamp: skillResult.timestamp,
+        endTime: skillResult.endTime, // 스킬 완료 시간 (후딜레이 포함)
         x: skillResult.x,
         y: skillResult.y,
         team: player.team,
         skillInfo: skillResult.skillInfo,
         damageResult: damageResult // 데미지 결과 추가
       };
+
+      // 와드 스킬의 경우 크기 정보 추가
+      if (skillResult.skillType === 'ward') {
+        broadcastData.wardScale = 0.2; // 와드 크기 정보
+        broadcastData.wardBodySize = 125; // 와드 물리 바디 크기
+        broadcastData.playerId = socket.id; // 와드 설치자 ID 추가
+        broadcastData.playerTeam = player.team; // 와드 설치자 팀 정보 추가
+      }
 
       // 타겟 위치가 있는 경우 추가
       if (skillResult.targetX !== null) {
@@ -221,20 +267,116 @@ class SocketEventManager {
   }
 
   /**
+   * 와드 감지 정보 처리
+   */
+  setupWardDetectionHandler(socket) {
+    socket.on('ward-detection', (data) => {
+      const player = this.gameStateManager.getPlayer(socket.id);
+      if (!player) return;
+
+      // 같은 팀 플레이어들에게만 브로드캐스트
+      const teamPlayers = this.gameStateManager.getPlayersByTeam(player.team);
+      const teamPlayerIds = teamPlayers.map(p => p.id);
+      
+      this.emitToPlayers(teamPlayerIds, 'ward-detection-update', {
+        wardOwnerId: socket.id,
+        wardOwnerTeam: player.team,
+        ...data
+      });
+      
+      console.log(`Ward detection: ${data.type} ${data.targetId} ${data.detected ? 'detected' : 'undetected'} by ${socket.id}`);
+    });
+  }
+
+  /**
+   * 스킬 타입을 직업별 실제 스킬로 매핑
+   */
+  mapSkillType(jobClass, skillType) {
+    const skillMappings = {
+      slime: {
+        skill1: 'spread'
+      },
+      assassin: {
+        skill1: 'stealth'
+      },
+      ninja: {
+        skill1: 'stealth'
+      },
+      warrior: {
+        skill1: 'roar',
+        skill2: 'sweep',
+        skill3: 'thrust'
+      },
+      mage: {
+        skill1: 'ward',
+        skill2: 'ice_field',
+        skill3: 'magic_missile'
+      },
+      mechanic: {
+        skill1: 'repair'
+      },
+      archer: {
+        skill1: 'roll',
+        skill2: 'focus'
+      },
+      supporter: {
+        skill1: 'ward',
+        skill2: 'buff_field',
+        skill3: 'heal_field'
+      }
+    };
+    
+    const jobSkills = skillMappings[jobClass];
+    const mappedSkill = jobSkills ? jobSkills[skillType] : null;
+    if (skillType === 'basic_attack') {
+      return 'basic_attack';
+    }
+    
+    return mappedSkill;
+  }
+
+  /**
    * 점프 액션 처리
    */
   handleJumpAction(socket, player) {
+    // 죽은 플레이어는 점프 불가
+    if (player.isDead) {
+      socket.emit('skill-error', { error: 'Cannot jump while dead' });
+      return;
+    }
+
+    // 기절 상태에서는 점프 불가
+    if (player.isStunned) {
+      socket.emit('skill-error', { error: 'Cannot jump while stunned' });
+      return;
+    }
+
+    // 시전시간이 있는 스킬 사용 중인지 체크
+    const castingSkills = this.skillManager.getCastingSkills(player);
+    if (castingSkills.length > 0) {
+      socket.emit('skill-error', { error: 'Cannot jump while casting a skill' });
+      return;
+    }
+
+    // 후딜레이 중인지 체크
+    const inAfterDelay = this.skillManager.isInAfterDelay(player);
+    if (inAfterDelay) {
+      socket.emit('skill-error', { error: 'Cannot jump while in after delay' });
+      return;
+    }
+
     // 점프 시작 처리
     const jumpDuration = 400;
-    if (!player.startJump(jumpDuration)) {
+    if (!this.skillManager.startJump(player, jumpDuration)) {
       return; // 이미 점프 중이면 무시
     }
 
     // 모든 클라이언트에게 점프 알림
+    const now = Date.now();
     this.io.emit('player-skill-used', {
       playerId: socket.id,
       skillType: 'jump',
-      timestamp: Date.now(),
+      endTime: now + jumpDuration,
       x: player.x,
       y: player.y,
       team: player.team,
@@ -248,7 +390,7 @@ class SocketEventManager {
     // 점프 완료 후 상태 복원
     setTimeout(() => {
       if (player) {
-        player.endJump();
+        this.skillManager.endJump(player);
       }
     }, jumpDuration);
 
@@ -284,38 +426,133 @@ class SocketEventManager {
       const player = this.gameStateManager.getPlayer(socket.id);
 
       if (enemy && player) {
-        const isDead = enemy.takeDamage(player.attack);
+        const result = this.gameStateManager.takeDamage(player, enemy, player.attack);
         
-        if (isDead) {
-          // 적 제거 및 경험치 지급
-          this.gameStateManager.removeEnemy(data.enemyId);
-          const leveledUp = player.gainExp(25); // 적 처치 시 25 경험치
-          
-          this.io.emit('enemy-destroyed', { enemyId: data.enemyId });
-          
-          if (leveledUp) {
-            this.io.emit('player-level-up', {
-              playerId: socket.id,
-              level: player.level,
-              stats: {
-                hp: player.hp,
-                maxHp: player.maxHp,
-                attack: player.attack,
-                defense: player.defense
-              }
-            });
+        if (result.success) {
+          // 몬스터 사망 체크
+          if (enemy.hp <= 0) {
+            // 적 제거 및 경험치 지급
+            this.gameStateManager.removeEnemy(data.enemyId);
+            const leveledUp = player.gainExp(25); // 적 처치 시 25 경험치
+            
+            this.io.emit('enemy-destroyed', { enemyId: data.enemyId });
+            
+            if (leveledUp) {
+              this.io.emit('player-level-up', {
+                playerId: socket.id,
+                level: player.level,
+                stats: {
+                  hp: player.hp,
+                  maxHp: player.maxHp,
+                  attack: player.attack
+                }
+              });
+            }
+            
+            // 새로운 적 스폰
+            this.enemyManager.spawnEnemy();
           }
-          
-          // 새로운 적 스폰
-          this.enemyManager.spawnEnemy();
-        } else {
-          // 적 데미지 알림
-          this.io.emit('enemy-damaged', {
-            enemyId: data.enemyId,
-            hp: enemy.hp,
-            maxHp: enemy.maxHp
-          });
+          // 데미지 이벤트는 통합 함수에서 이미 처리됨
         }
+      }
+    });
+  }
+
+  /**
+   * 투사체 벽 충돌 이벤트 핸들러
+   */
+  setupProjectileWallCollisionHandler(socket) {
+    socket.on('projectile-wall-collision', (data) => {
+      const player = this.gameStateManager.getPlayer(data.playerId);
+      if (!player || player.isDead) {
+        return;
+      }
+
+      // 마법사의 경우 벽 충돌 시 범위 공격 실행
+      if (data.jobClass === 'mage') {
+        const explosionRadius = 60;
+        const explosionX = data.x;
+        const explosionY = data.y;
+        
+        const enemies = this.gameStateManager.enemies;
+        const players = this.gameStateManager.players;
+        
+        // 범위 내 모든 적들에게 데미지 적용
+        enemies.forEach(enemy => {
+          if (enemy.isDead) return;
+          
+          const distance = Math.sqrt((enemy.x - explosionX) ** 2 + (enemy.y - explosionY) ** 2);
+          if (distance <= explosionRadius) {
+            const damage = player.attack;
+            const result = this.gameStateManager.takeDamage(player, enemy, damage);
+            
+            if (result.success) {
+              // 적이 죽었으면 제거
+              if (enemy.hp <= 0) {
+                this.gameStateManager.removeEnemy(enemy.id);
+                this.io.emit('enemy-destroyed', { enemyId: enemy.id });
+              }
+              // 데미지 이벤트는 통합 함수에서 이미 처리됨
+            }
+          }
+        });
+        
+        // 범위 내 모든 다른 플레이어들에게 데미지 적용 (적팀만)
+        players.forEach(targetPlayer => {
+          if (targetPlayer.id === player.id || targetPlayer.team === player.team) return;
+          
+          const distance = Math.sqrt((targetPlayer.x - explosionX) ** 2 + (targetPlayer.y - explosionY) ** 2);
+          if (distance <= explosionRadius) {
+            const damage = player.attack;
+            const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+            
+            // 데미지 이벤트는 통합 함수에서 이미 처리됨
+          }
+        });
+        
+        console.log(`마법사 ${player.id} 투사체 벽 충돌 범위 공격 실행 at (${explosionX}, ${explosionY})`);
+      }
+    });
+  }
+
+    /**
+   * 투사체 발사 이벤트 핸들러
+   */
+  setupProjectileHandler(socket) {
+    socket.on('fire-projectile', (data) => {
+      const timestamp = Date.now();
+      console.log(`\n[${timestamp}] [${socket.id}] fire-projectile 요청 받음:`, data);
+      
+      const playerId = socket.id;
+      const player = this.gameStateManager.getPlayer(playerId);
+      
+      if (!player) {
+        console.log(`[${timestamp}] [${playerId}] 플레이어를 찾을 수 없음`);
+        return;
+      }
+      
+      // 투사체 생성
+      const projectileId = this.projectileManager.createProjectile(
+        playerId, 
+        data.targetX, 
+        data.targetY, 
+        player.jobClass
+      );
+      
+      if (projectileId) {
+        // 모든 클라이언트에게 투사체 생성 알림
+        const projectileData = {
+          projectileId: projectileId,
+          playerId: playerId,
+          jobClass: player.jobClass,
+          x: player.x,
+          y: player.y,
+          targetX: data.targetX,
+          targetY: data.targetY,
+          team: player.team
+        };
+        
+        this.io.emit('projectile-created', projectileData);
       }
     });
   }
@@ -386,40 +623,48 @@ class SocketEventManager {
   }
 
   /**
-   * 플레이어 리스폰 이벤트 핸들러
+   * 플레이어 리스폰 요청 이벤트 핸들러
    */
   setupPlayerRespawnHandler(socket) {
-    socket.on('player-respawned', (data) => {
+    socket.on('player-respawn-request', (data) => {
       const player = this.gameStateManager.getPlayer(socket.id);
-      if (player) {
-        // 플레이어 위치 업데이트
-        player.x = data.x;
-        player.y = data.y;
-        
-        // 사망 상태 해제 및 HP 회복
-        player.respawn();
-        
-        // 플레이어가 활성 상태인지 확인
-        player.lastUpdateTime = Date.now();
-        
-        console.log(`플레이어 ${socket.id} 리스폰: (${data.x}, ${data.y}), HP: ${player.hp}/${player.maxHp}`);
-        
-        // 다른 플레이어들에게 리스폰 알림
-        socket.broadcast.emit('player-respawned', {
-          playerId: socket.id,
-          x: data.x,
-          y: data.y,
-          hp: player.hp,
-          maxHp: player.maxHp
-        });
-        
-        // 리스폰 후 즉시 플레이어 상태 동기화
-        const playerState = player.getState();
-        socket.emit('player-state-sync', {
-          playerId: socket.id,
-          playerData: playerState
-        });
+      if (!player) {
+        socket.emit('respawn-error', { error: 'Player not found' });
+        return;
       }
+
+      // 플레이어가 죽은 상태인지 확인
+      if (!player.isDead) {
+        socket.emit('respawn-error', { error: 'Player is not dead' });
+        return;
+      }
+
+      console.log(`플레이어 ${socket.id} 리스폰 요청 받음`);
+
+      // 서버에서 스폰 위치 계산
+      const spawnPoint = ServerUtils.getSpawnPoint(player.team);
+      
+      // 플레이어 위치 업데이트 및 리스폰 처리
+      player.x = spawnPoint.x;
+      player.y = spawnPoint.y;
+      player.respawn();
+      player.lastUpdateTime = Date.now();
+      
+      console.log(`플레이어 ${socket.id} 리스폰 처리 완료: (${spawnPoint.x}, ${spawnPoint.y}), HP: ${player.hp}/${player.maxHp}`);
+      
+      // 모든 클라이언트에게 리스폰 완료 브로드캐스트 (요청한 클라이언트 포함)
+      this.io.emit('player-respawned', {
+        playerId: socket.id,
+        x: spawnPoint.x,
+        y: spawnPoint.y,
+        hp: player.hp,
+        maxHp: player.maxHp,
+        team: player.team,
+        jobClass: player.jobClass,
+        level: player.level,
+        nickname: player.nickname,
+        isDead: player.isDead
+      });
     });
   }
 
@@ -471,6 +716,60 @@ class SocketEventManager {
           jobClass: data.jobClass
         });
       }
+    });
+  }
+
+  /**
+   * 플레이어 자살 치트 요청 이벤트 핸들러
+   */
+  setupPlayerSuicideHandler(socket) {
+    socket.on('player-suicide-request', (data) => {
+      const player = this.gameStateManager.getPlayer(socket.id);
+      if (!player) {
+        socket.emit('suicide-error', { error: 'Player not found' });
+        return;
+      }
+
+      // 이미 죽은 상태인지 확인
+      if (player.isDead) {
+        socket.emit('suicide-error', { error: 'Player is already dead' });
+        return;
+      }
+
+      console.log(`플레이어 ${socket.id} 자살 치트 요청 받음`);
+
+      // 플레이어 HP를 0으로 설정하고 사망 원인 설정
+      player.hp = 0;
+      player.lastDamageSource = {
+        type: 'suicide',
+        timestamp: Date.now()
+      };
+    });
+  }
+
+  /**
+   * 플레이어 무적 상태 토글 치트 요청 이벤트 핸들러
+   */
+  setupPlayerInvincibleHandler(socket) {
+    socket.on('player-invincible-request', (data) => {
+      const player = this.gameStateManager.getPlayer(socket.id);
+      if (!player) {
+        socket.emit('invincible-error', { error: 'Player not found' });
+        return;
+      }
+
+      console.log(`플레이어 ${socket.id} 무적 상태 토글 치트 요청 받음`);
+
+      // 무적 상태 토글
+      const newInvincibleState = player.toggleInvincible();
+
+      // 요청한 클라이언트에게 결과 전송
+      socket.emit('player-invincible-changed', {
+        playerId: socket.id,
+        isInvincible: newInvincibleState
+      });
+
+      console.log(`플레이어 ${socket.id} 무적 상태 토글 완료: ${newInvincibleState}`);
     });
   }
 

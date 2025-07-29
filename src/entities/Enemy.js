@@ -1,313 +1,252 @@
 import Phaser from 'phaser';
+import HealthBar from '../ui/HealthBar.js';
 
+/**
+ * 서버 제어 적 클래스
+ * - 모든 AI, 스탯, 색상 정보는 서버에서 관리
+ * - 클라이언트는 위치 업데이트, 애니메이션, 렌더링만 담당
+ */
 export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y, type = 'basic') {
-        super(scene, x, y, 'enemy');
+        // 몬스터 타입에 따른 스프라이트 키 결정
+        const spriteKey = Enemy.getSpriteKeyForType(type);
+        super(scene, x, y, spriteKey);
         
         this.scene = scene;
         this.scene.add.existing(this);
         this.scene.physics.add.existing(this);
         
+        // 서버에서 관리되는 속성들
+        this.networkId = null;
         this.type = type;
-        this.setupEnemyType();
+        this.hp = 50;
+        this.maxHp = 50;
+        this.attack = 15;
         
-        // 기본 설정
-        this.setDisplaySize(24, 24);
-        this.setCollideWorldBounds(true);
-        this.body.setSize(20, 20);
+        // 서버에서 받은 이동 정보
+        this.vx = 0;
+        this.vy = 0;
         
-        // AI 관련
-        this.moveSpeed = 100;
-        this.detectionRange = 150;
-        this.attackRange = 30;
-        this.lastAttackTime = 0;
-        this.attackCooldown = 1000;
-        
-        // 상태
+        // 상태 플래그
         this.isDead = false;
-        this.lastDirection = { x: 0, y: 0 };
         
-        // 애니메이션
-        this.startPatrol();
+        // UI 요소
+        this.healthBar = null;
+        
+        // 기본 물리 설정
+        this.initializePhysics();
+        
+        // 체력바 생성
+        this.createHealthBar();
+        
+        // 애니메이션 관련
+        this.lastAttackTime = 0;
+        this.isAttacking = false;
     }
     
-    setupEnemyType() {
-        switch (this.type) {
-            case 'fast':
-                this.maxHp = 30;
-                this.hp = this.maxHp;
-                this.attack = 15;
-                this.moveSpeed = 150;
-                this.setTint(0xff6600); // 주황색
-                break;
-            case 'tank':
-                this.maxHp = 100;
-                this.hp = this.maxHp;
-                this.attack = 25;
-                this.moveSpeed = 60;
-                this.setTint(0x8b4513); // 갈색
-                break;
-            case 'ranged':
-                this.maxHp = 40;
-                this.hp = this.maxHp;
-                this.attack = 20;
-                this.moveSpeed = 80;
-                this.attackRange = 120;
-                this.setTint(0x9932cc); // 보라색
-                break;
-            default: // basic
-                this.maxHp = 50;
-                this.hp = this.maxHp;
-                this.attack = 20;
-                this.moveSpeed = 100;
-                this.setTint(0xff0000); // 빨간색
-                break;
-        }
+    /**
+     * 물리 바디 초기화
+     */
+    initializePhysics() {
+        // 기본 크기 설정 (서버에서 받은 크기로 나중에 업데이트됨)
+        this.setDisplaySize(32, 32);
+        this.setCollideWorldBounds(true);
+        
+        // 기본 충돌체 크기 설정
+        this.colliderSize = 32;
+        this.updatePhysicsBody();
+        
+        // 서버 제어 적 물리 설정
+        this.body.pushable = false; // 밀리지 않음
+        this.body.immovable = true; // 충돌 시 움직이지 않음
     }
-    
-    // Enemy.js의 update 메서드
-    update(time, delta) {
-        if (this.isDead) return;
-        
-        // 서버에서 관리되는 적은 클라이언트에서 AI 실행하지 않음
-        if (this.isServerControlled) {
-            // 서버에서 받은 속도로 이동만 처리
-            if (this.vx !== undefined && this.vy !== undefined) {
-                this.setVelocity(this.vx, this.vy);
-            }
-            return;
-        }
-        
-        const player = this.scene.player;
-        if (!player || !player.active) {
-            this.setVelocity(0, 0);
-            return;
-        }
 
-        // [핵심 로직]
-        // 1. 매 프레임마다 플레이어가 스폰 구역에 있는지 최우선으로 확인합니다.
-        const inRedSpawn = this.scene.redSpawnRect.contains(player.x, player.y);
-        const inBlueSpawn = this.scene.blueSpawnRect.contains(player.x, player.y);
-
-        // 2. 만약 플레이어가 스폰 구역 안에 있다면,
-        if (inRedSpawn || inBlueSpawn) {
-            // 어그로 상태였더라도 즉시 순찰(patrol) 상태로 전환하고,
-            this.patrol(); 
-            // update 함수를 여기서 종료하여 아래의 추적(chasePlayer) 코드가 실행되지 않게 합니다.
-            return; 
-        }
-        // [핵심 로직 끝]
-
-        // 3. (플레이어가 스폰 구역 밖에 있을 때만 이 코드가 실행됩니다)
-        const distance = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
-        
-        if (distance <= this.detectionRange) {
-            this.chasePlayer(player, distance);
-        } else {
-            this.patrol();
-        }
-    }
-    
-    chasePlayer(player, distance) {
-        // 플레이어 방향으로 이동
-        const angle = Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y);
-        const velocityX = Math.cos(angle) * this.moveSpeed;
-        const velocityY = Math.sin(angle) * this.moveSpeed;
-        
-        this.setVelocity(velocityX, velocityY);
-        this.lastDirection = { x: velocityX, y: velocityY };
-        
-        // 공격 범위 내에 있으면 공격
-        if (distance <= this.attackRange) {
-            this.attackPlayer(player);
-        }
-    }
-    
-    patrol() {
-        // 현재 속도가 거의 0일 때만 새로운 순찰 방향을 설정 (벽에 부딪혔을 때 등)
-        if (this.body.velocity.length() < 10) {
-            this.startPatrol();
-        }
-        
-        // 주기적으로 순찰 방향 변경
-        if (Phaser.Math.Between(0, 200) < 1) {
-            this.startPatrol();
-        }
-    }
-    
-    startPatrol() {
-        // 초기 순찰 방향 설정
-        const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-        // 순찰 시에는 속도를 약간 줄임
-        const patrolSpeed = this.moveSpeed * 0.5;
-        const velocityX = Math.cos(angle) * patrolSpeed;
-        const velocityY = Math.sin(angle) * patrolSpeed;
-        
-        this.setVelocity(velocityX, velocityY);
-        this.lastDirection = { x: velocityX, y: velocityY };
-    }
-    
-    attackPlayer(player) {
-        const currentTime = this.scene.time.now;
-        if (currentTime - this.lastAttackTime >= this.attackCooldown) {
-            this.lastAttackTime = currentTime;
+    /**
+     * 물리 바디 크기 업데이트 (Player와 동일한 방식)
+     */
+    updatePhysicsBody() {
+        if (this.body) {
+            const bodyWidth = this.colliderSize / this.scaleX;
+            const bodyHeight = this.colliderSize / this.scaleY;
             
-            // 근접 공격
-            if (this.type !== 'ranged') {
-                player.takeDamage(this.attack);
-                
-                // 공격 애니메이션
-                this.scene.tweens.add({
-                    targets: this,
-                    scaleX: 1.2,
-                    scaleY: 1.2,
-                    duration: 100,
-                    yoyo: true
-                });
+            this.body.setSize(bodyWidth, bodyHeight);
+            
+            // 충돌 박스를 스프라이트 중앙에 맞추기 위한 오프셋 계산
+            this.body.setOffset(0, 0);
+        }
+    }
+    
+    /**
+     * 몬스터 타입에 따른 스프라이트 키 반환
+     */
+    static getSpriteKeyForType(type) {
+        switch (type) {
+            case 'basic':
+                return 'enemy_basic';
+            case 'charge':
+                return 'enemy_charge';
+            case 'elite':
+                return 'enemy_elite';
+            default:
+                return 'enemy_basic'; // 기본값
+        }
+    }
+    
+    /**
+     * 네트워크 ID 설정
+     */
+    setNetworkId(id) {
+        this.networkId = id;
+    }
+    
+    /**
+     * 체력바 생성 (이름표 없음)
+     */
+    createHealthBar() {
+        if (this.healthBar) {
+            this.healthBar.destroy();
+        }
+        
+        // 적 체력바 설정 (체력바만, 이름표 없음)
+        const healthBarConfig = {
+            barWidth: 40,
+            barHeight: 5,
+            borderWidth: 1,
+            backgroundColor: 0x000000,
+            borderColor: 0xffffff,
+            healthColor: 0xff8800, // 적은 주황색
+            lowHealthColor: 0xff0000,
+            lowHealthThreshold: 0.3,
+            yOffsetFromTop: -8, // 엔티티 위쪽 가장자리에서 8px 위에
+            depth: 660 // 적은 동적 변경 없이 고정값 사용
+        };
+        
+        this.healthBar = new HealthBar(this.scene, this, healthBarConfig);
+        this.updateHealthBar();
+    }
+    
+    /**
+     * 체력바 업데이트
+     */
+    updateHealthBar() {
+        if (this.healthBar) {
+            this.healthBar.updateHealth(this.hp, this.maxHp);
+            this.healthBar.updatePosition();
+        }
+    }
+    
+    /**
+     * 서버에서 받은 스탯 정보 적용
+     */
+    applyServerStats(enemyData) {
+        // 위치 업데이트
+        this.x = enemyData.x;
+        this.y = enemyData.y;
+        
+        // HP 정보 업데이트
+        this.hp = enemyData.hp;
+        this.maxHp = enemyData.maxHp;
+        
+        // 이동 속도 정보
+        this.vx = enemyData.vx || 0;
+        this.vy = enemyData.vy || 0;
+        
+        // 몬스터 타입 업데이트 (새로운 타입이면 스프라이트 변경)
+        if (enemyData.type && enemyData.type !== this.type) {
+            this.type = enemyData.type;
+            const newSpriteKey = Enemy.getSpriteKeyForType(this.type);
+            this.setTexture(newSpriteKey);
+        }
+        
+        // 물리 바디 위치 동기화
+        if (this.body) {
+            this.body.x = enemyData.x - this.width/2;
+            this.body.y = enemyData.y - this.height/2;
+            this.body.velocity.x = this.vx;
+            this.body.velocity.y = this.vy;
+        }
+        
+        // 크기 적용
+        if (enemyData.size) {
+            this.applyServerSize(enemyData.size);
+        }
+        
+        // 기절 상태 적용
+        if (enemyData.isStunned !== undefined) {
+            this.isStunned = enemyData.isStunned;
+            if (this.isStunned) {
+                // 기절 상태일 때 색상 변경
+                this.setTint(0x888888);
             } else {
-                // 원거리 공격
-                this.rangedAttack(player);
-            }
-        }
-    }
-    
-    rangedAttack(player) {
-        // 투사체 생성
-        const projectile = this.scene.add.circle(this.x, this.y, 5, 0xff0000);
-        this.scene.physics.add.existing(projectile);
-        
-        const angle = Phaser.Math.Angle.Between(this.x, this.y, player.x, player.y);
-        const velocityX = Math.cos(angle) * 200;
-        const velocityY = Math.sin(angle) * 200;
-        
-        projectile.body.setVelocity(velocityX, velocityY);
-        
-        // 투사체 충돌 체크
-        this.scene.physics.add.overlap(projectile, player, () => {
-            player.takeDamage(this.attack);
-            projectile.destroy();
-        });
-        
-        // 3초 후 투사체 제거
-        this.scene.time.delayedCall(3000, () => {
-            if (projectile.active) {
-                projectile.destroy();
-            }
-        });
-    }
-    
-    takeDamage(damage) {
-        if (this.isDead) return;
-
-        this.hp -= damage;
-        
-        // 데미지 표시
-        const damageText = this.scene.add.text(this.x, this.y - 20, `-${damage}`, {
-            fontSize: '14px',
-            fill: '#ff0000',
-            fontStyle: 'bold'
-        }).setOrigin(0.5);
-
-        // 텍스트가 위로 올라가며 사라지는 효과
-        this.scene.tweens.add({
-            targets: damageText,
-            y: damageText.y - 30,
-            alpha: 0,
-            duration: 800,
-            ease: 'Power1',
-            onComplete: () => {
-                damageText.destroy();
-            }
-        });
-        
-        // 피격 시 색상 변경 후 원래 색으로 복귀
-        this.setTintFill(0xffffff); // 흰색으로 번쩍임
-        this.scene.time.delayedCall(100, () => {
-            if (this.active) {
+                // 기절 해제 시 색상 복구
                 this.clearTint();
-                this.setupEnemyType(); // 원래 색상으로 복구
             }
-        });
-        
-        if (this.hp <= 0) {
-            this.die();
         }
+        
+        // 체력바 업데이트
+        this.updateHealthBar();
     }
     
+    /**
+     * 서버에서 받은 크기 적용 (Player의 updateSize 방식 적용)
+     */
+    applyServerSize(size) {
+        // 화면 표시 크기와 물리적 충돌 크기를 동일하게 설정
+        this.setDisplaySize(size, size);
+        this.colliderSize = size; // 스프라이트 크기와 동일하게 설정
+        
+        this.updatePhysicsBody();
+    }
+    
+    /**
+     * 사망 처리 (서버에서 호출)
+     */
     die() {
         this.isDead = true;
-        this.body.enable = false; // 물리 효과 비활성화
-        this.setVelocity(0, 0);
         
-        // 경험치 드롭
-        const expAmount = this.getExpReward();
-        this.scene.player.gainExp(expAmount);
+        // 물리 바디 비활성화
+        if (this.body) {
+            this.body.setEnable(false);
+        }
         
         // 사망 애니메이션
         this.scene.tweens.add({
             targets: this,
             alpha: 0,
-            scaleX: 0,
-            scaleY: 0,
-            duration: 500,
+            scaleX: 0.5,
+            scaleY: 0.5,
+            duration: 300,
             ease: 'Power2',
             onComplete: () => {
-                this.destroy();
-            }
-        });
-        
-        // 경험치 획득 표시
-        const expText = this.scene.add.text(this.x, this.y, `+${expAmount} EXP`, {
-            fontSize: '16px',
-            fill: '#ffff00',
-            fontStyle: 'bold'
-        }).setOrigin(0.5);
-
-        this.scene.tweens.add({
-            targets: expText,
-            y: expText.y - 40,
-            alpha: 0,
-            duration: 1200,
-            ease: 'Power1',
-            onComplete: () => {
-                expText.destroy();
+                if (this.active) {
+                    this.destroy();
+                }
             }
         });
     }
     
-    getExpReward() {
-        switch (this.type) {
-            case 'fast': return 15;
-            case 'tank': return 30;
-            case 'ranged': return 20;
-            default: return 10;
-        }
-    }
-
-    // 네트워크 ID 설정
-    setNetworkId(id) {
-        this.networkId = id;
-    }
-
     /**
-     * 서버에서 받은 체력 정보로 업데이트
+     * 정리 작업
      */
-    updateHealthFromServer() {
-        // 서버에서 이미 데미지가 적용되었으므로 클라이언트에서는 시각적 효과만 처리
-        if (this.hp <= 0 && !this.isDead) {
-            this.die();
+    destroy() {
+        // 체력바가 있다면 제거
+        if (this.healthBar) {
+            this.healthBar.destroy();
+            this.healthBar = null;
         }
-    }
-
-    /**
-     * 서버에서 체력 정보 설정
-     */
-    setHealthFromServer(hp, maxHp) {
-        this.hp = hp;
-        this.maxHp = maxHp;
         
-        if (this.hp <= 0 && !this.isDead) {
-            this.die();
+        // HP 바가 있다면 제거 (기존 코드 호환성)
+        if (this.hpBar) {
+            this.hpBar.destroy();
+            this.hpBar = null;
         }
+        
+        // 미니맵 표시 제거
+        if (this.minimapIndicator) {
+            this.minimapIndicator.destroy();
+            this.minimapIndicator = null;
+        }
+        
+        super.destroy();
     }
 }
