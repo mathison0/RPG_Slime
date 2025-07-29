@@ -11,12 +11,12 @@ export default class ProjectileManager {
                 size: 18,
                 rotation: true
             },
-            'mage': {
-                sprite: null, // 원형으로 렌더링
-                size: 4,
-                color: 0x0000ff,
-                rotation: false
-            },
+                               'mage': {
+                       sprite: null, // 원형으로 렌더링
+                       size: 4,
+                       color: 0x00ffff, // 밝은 청록색으로 변경
+                       rotation: false
+                   },
             'archer': {
                 sprite: 'archer_basic_attack',
                 size: 16,
@@ -231,6 +231,106 @@ export default class ProjectileManager {
             // 맵에서 제거
             this.projectiles.delete(projectileId);
         }
+    }
+
+    /**
+     * 서버에서 투사체 제거 이벤트 처리
+     */
+    handleProjectileRemoved(data) {
+        const { projectileId, reason } = data;
+        
+        // 투사체 제거
+        this.removeProjectile(projectileId);
+        
+        // 제거 이유에 따른 이펙트 추가 (필요시)
+        switch (reason) {
+            case 'max_distance':
+                // 최대 거리 도달 시 이펙트
+                break;
+            case 'wall_collision':
+                // 벽 충돌 시 이펙트
+                break;
+            case 'player_collision':
+                // 플레이어 충돌 시 이펙트
+                break;
+            case 'enemy_collision':
+                // 적 충돌 시 이펙트
+                break;
+            case 'lifetime_expired':
+                // 수명 만료 시 이펙트
+                break;
+        }
+    }
+
+    /**
+     * 투사체 벽 충돌 처리
+     */
+    handleProjectileHitWall(data) {
+        // 벽 충돌 시 이펙트 없음
+    }
+
+    /**
+     * 투사체 플레이어 충돌 처리
+     */
+    handleProjectileHitPlayer(data) {
+        const { projectileId, projectileJobClass, playerId, damage, hitPosition } = data;
+        
+        // 플레이어 피격 이펙트 추가
+        this.addPlayerHitEffect(hitPosition, projectileJobClass, damage);
+    }
+
+    /**
+     * 투사체 적 충돌 처리
+     */
+    handleProjectileHitEnemy(data) {
+        const { projectileId, projectileJobClass, enemyId, damage, hitPosition } = data;
+        
+        // 적 피격 이펙트 추가
+        this.addEnemyHitEffect(hitPosition, projectileJobClass, damage);
+    }
+
+
+
+    /**
+     * 플레이어 피격 이펙트 추가
+     */
+    addPlayerHitEffect(position, jobClass, damage) {
+        // 데미지 텍스트 표시
+        const damageText = this.scene.add.text(position.x, position.y - 20, `-${damage}`, {
+            fontSize: '16px',
+            fill: '#ff0000',
+            stroke: '#000000',
+            strokeThickness: 2
+        });
+        
+        this.scene.tweens.add({
+            targets: damageText,
+            y: damageText.y - 30,
+            alpha: 0,
+            duration: 1000,
+            onComplete: () => damageText.destroy()
+        });
+    }
+
+    /**
+     * 적 피격 이펙트 추가
+     */
+    addEnemyHitEffect(position, jobClass, damage) {
+        // 데미지 텍스트 표시
+        const damageText = this.scene.add.text(position.x, position.y - 20, `-${damage}`, {
+            fontSize: '16px',
+            fill: '#ff0000',
+            stroke: '#000000',
+            strokeThickness: 2
+        });
+        
+        this.scene.tweens.add({
+            targets: damageText,
+            y: damageText.y - 30,
+            alpha: 0,
+            duration: 1000,
+            onComplete: () => damageText.destroy()
+        });
     }
 
     /**

@@ -143,6 +143,24 @@ export default class NetworkEventManager {
         this.networkManager.on('projectiles-update', (data) => {
             this.handleProjectilesUpdate(data);
         });
+
+        // 투사체 제거
+        this.networkManager.on('projectile-removed', (data) => {
+            this.handleProjectileRemoved(data);
+        });
+
+        // 투사체 충돌 이벤트들
+        this.networkManager.on('projectile-hit-wall', (data) => {
+            this.handleProjectileHitWall(data);
+        });
+
+        this.networkManager.on('projectile-hit-player', (data) => {
+            this.handleProjectileHitPlayer(data);
+        });
+
+        this.networkManager.on('projectile-hit-enemy', (data) => {
+            this.handleProjectileHitEnemy(data);
+        });
         
         // 기타 이벤트
         this.setupMiscEvents();
@@ -917,6 +935,42 @@ export default class NetworkEventManager {
     handleProjectilesUpdate(data) {
         if (this.scene.projectileManager) {
             this.scene.projectileManager.handleProjectilesUpdate(data);
+        }
+    }
+
+    /**
+     * 투사체 제거 처리
+     */
+    handleProjectileRemoved(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectileRemoved(data);
+        }
+    }
+
+    /**
+     * 투사체 벽 충돌 처리
+     */
+    handleProjectileHitWall(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectileHitWall(data);
+        }
+    }
+
+    /**
+     * 투사체 플레이어 충돌 처리
+     */
+    handleProjectileHitPlayer(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectileHitPlayer(data);
+        }
+    }
+
+    /**
+     * 투사체 적 충돌 처리
+     */
+    handleProjectileHitEnemy(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectileHitEnemy(data);
         }
     }
 

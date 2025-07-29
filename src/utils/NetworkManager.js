@@ -181,6 +181,22 @@ class NetworkManager {
         this.socket.on('projectiles-update', (data) => {
             this.emit('projectiles-update', data);
         });
+
+        this.socket.on('projectile-removed', (data) => {
+            this.emit('projectile-removed', data);
+        });
+
+        this.socket.on('projectile-hit-wall', (data) => {
+            this.emit('projectile-hit-wall', data);
+        });
+
+        this.socket.on('projectile-hit-player', (data) => {
+            this.emit('projectile-hit-player', data);
+        });
+
+        this.socket.on('projectile-hit-enemy', (data) => {
+            this.emit('projectile-hit-enemy', data);
+        });
     }
 
     // 게임 입장

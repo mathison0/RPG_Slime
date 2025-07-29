@@ -7,7 +7,7 @@ export default class NinjaJob extends BaseJob {
     constructor(player) {
         super(player);
         this.lastBasicAttackTime = 0;
-        this.basicAttackCooldown = 500; // 기본 공격 쿨다운 (밀리초)
+        this.basicAttackCooldown = 300; // 기본 공격 쿨다운 (밀리초)
     }
 
     useSkill(skillNumber, options = {}) {

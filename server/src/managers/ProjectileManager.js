@@ -64,26 +64,28 @@ class ProjectileManager {
         // 투사체 방향 계산
         const angle = Math.atan2(targetY - player.y, targetX - player.x);
         
-        // 투사체 정보 생성
-        const projectile = {
-            id: projectileId,
-            playerId: playerId,
-            jobClass: jobClass,
-            x: player.x,
-            y: player.y,
-            vx: Math.cos(angle) * config.speed,
-            vy: Math.sin(angle) * config.speed,
-            targetX: targetX,
-            targetY: targetY,
-            maxDistance: config.maxDistance,
-            speed: config.speed,
-            size: config.size,
-            sprite: config.sprite,
-            lifetime: config.lifetime,
-            createdAt: Date.now(),
-            team: player.team,
-            isActive: true
-        };
+                       // 투사체 정보 생성
+               const projectile = {
+                   id: projectileId,
+                   playerId: playerId,
+                   jobClass: jobClass,
+                   x: player.x,
+                   y: player.y,
+                   startX: player.x,  // 발사 위치 저장
+                   startY: player.y,  // 발사 위치 저장
+                   vx: Math.cos(angle) * config.speed,
+                   vy: Math.sin(angle) * config.speed,
+                   targetX: targetX,
+                   targetY: targetY,
+                   maxDistance: config.maxDistance,
+                   speed: config.speed,
+                   size: config.size,
+                   sprite: config.sprite,
+                   lifetime: config.lifetime,
+                   createdAt: Date.now(),
+                   team: player.team,
+                   isActive: true
+               };
 
         this.projectiles.set(projectileId, projectile);
         
@@ -105,6 +107,11 @@ class ProjectileManager {
 
             // 수명 체크
             if (currentTime - projectile.createdAt > projectile.lifetime) {
+                // 수명 만료 시 클라이언트에게 제거 이벤트 전송
+                this.gameStateManager.io.emit('projectile-removed', {
+                    projectileId: projectileId,
+                    reason: 'lifetime_expired'
+                });
                 projectilesToRemove.push(projectileId);
                 return;
             }
@@ -114,31 +121,58 @@ class ProjectileManager {
             projectile.x += projectile.vx * dt;
             projectile.y += projectile.vy * dt;
 
-            // 최대 거리 체크
-            const distance = Math.sqrt(
-                Math.pow(projectile.x - projectile.targetX, 2) + 
-                Math.pow(projectile.y - projectile.targetY, 2)
-            );
-            
-            if (distance > projectile.maxDistance) {
-                projectilesToRemove.push(projectileId);
-                return;
-            }
+                            // 최대 거리 체크 (발사 위치에서 현재 위치까지의 거리)
+                const distance = Math.sqrt(
+                    Math.pow(projectile.x - projectile.startX, 2) + 
+                    Math.pow(projectile.y - projectile.startY, 2)
+                );
+                
+                if (distance > projectile.maxDistance) {
+                    // 최대 거리 도달 시 클라이언트에게 제거 이벤트 전송
+                    this.gameStateManager.io.emit('projectile-removed', {
+                        projectileId: projectileId,
+                        reason: 'max_distance'
+                    });
+                    projectilesToRemove.push(projectileId);
+                    return;
+                }
 
             // 벽 충돌 체크
             if (this.checkWallCollision(projectile)) {
+                // 벽 충돌 시 클라이언트에게 충돌 이벤트 전송
+                this.gameStateManager.io.emit('projectile-hit-wall', {
+                    projectileId: projectileId,
+                    projectileJobClass: projectile.jobClass,
+                    hitPosition: { x: projectile.x, y: projectile.y }
+                });
+                
+                // 벽 충돌 시 클라이언트에게 제거 이벤트 전송
+                this.gameStateManager.io.emit('projectile-removed', {
+                    projectileId: projectileId,
+                    reason: 'wall_collision'
+                });
                 projectilesToRemove.push(projectileId);
                 return;
             }
 
             // 플레이어 충돌 체크
             if (this.checkPlayerCollision(projectile)) {
+                // 플레이어 충돌 시 클라이언트에게 제거 이벤트 전송
+                this.gameStateManager.io.emit('projectile-removed', {
+                    projectileId: projectileId,
+                    reason: 'player_collision'
+                });
                 projectilesToRemove.push(projectileId);
                 return;
             }
 
             // 적 충돌 체크
             if (this.checkEnemyCollision(projectile)) {
+                // 적 충돌 시 클라이언트에게 제거 이벤트 전송
+                this.gameStateManager.io.emit('projectile-removed', {
+                    projectileId: projectileId,
+                    reason: 'enemy_collision'
+                });
                 projectilesToRemove.push(projectileId);
                 return;
             }
@@ -163,15 +197,29 @@ class ProjectileManager {
             return true;
         }
 
-        // 벽 충돌 체크 (간단한 구현)
+        // 벽 충돌 체크 (사각형 기반)
         const walls = this.gameStateManager.getWalls();
+        const TILE_SIZE = 100; // 타일 크기
+        const halfTile = TILE_SIZE / 2; // 타일의 절반
+        
         for (const wall of walls) {
-            const distance = Math.sqrt(
-                Math.pow(projectile.x - wall.x, 2) + 
-                Math.pow(projectile.y - wall.y, 2)
-            );
+            // 벽의 사각형 범위 계산
+            const wallLeft = wall.x - halfTile;
+            const wallRight = wall.x + halfTile;
+            const wallTop = wall.y - halfTile;
+            const wallBottom = wall.y + halfTile;
             
-            if (distance < wall.radius + projectile.size) {
+            // 투사체의 사각형 범위 계산
+            const projectileLeft = projectile.x - projectile.size;
+            const projectileRight = projectile.x + projectile.size;
+            const projectileTop = projectile.y - projectile.size;
+            const projectileBottom = projectile.y + projectile.size;
+            
+            // 사각형 충돌 체크
+            if (projectileRight >= wallLeft && 
+                projectileLeft <= wallRight && 
+                projectileBottom >= wallTop && 
+                projectileTop <= wallBottom) {
                 return true;
             }
         }
@@ -249,6 +297,15 @@ class ProjectileManager {
             jobClass: projectile.jobClass
         };
 
+        // 클라이언트에게 충돌 이벤트 전송
+        this.gameStateManager.io.emit('projectile-hit-player', {
+            projectileId: projectile.id,
+            projectileJobClass: projectile.jobClass,
+            playerId: player.id,
+            damage: damage,
+            hitPosition: { x: projectile.x, y: projectile.y }
+        });
+
         console.log(`플레이어 피격: ${player.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${damage} 데미지`);
     }
 
@@ -265,6 +322,15 @@ class ProjectileManager {
             id: projectile.playerId,
             jobClass: projectile.jobClass
         };
+
+        // 클라이언트에게 충돌 이벤트 전송
+        this.gameStateManager.io.emit('projectile-hit-enemy', {
+            projectileId: projectile.id,
+            projectileJobClass: projectile.jobClass,
+            enemyId: enemy.id,
+            damage: damage,
+            hitPosition: { x: projectile.x, y: projectile.y }
+        });
 
         console.log(`적 피격: ${enemy.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${damage} 데미지`);
     }

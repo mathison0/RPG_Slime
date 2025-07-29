@@ -29,6 +29,9 @@ export default class BaseJob {
      * @param {number} targetY - 목표 Y 좌표
      */
     useBasicAttack(targetX, targetY) {
+        // 기본 공격 쿨타임 설정
+        this.setBasicAttackCooldown();
+        
         // 서버에 투사체 발사 요청
         if (this.player.networkManager) {
             this.player.networkManager.socket.emit('fire-projectile', {
@@ -36,6 +39,25 @@ export default class BaseJob {
                 targetY: targetY
             });
         }
+    }
+
+    /**
+     * 기본 공격 쿨타임 확인
+     * @returns {boolean} - 쿨다운 중인지 여부
+     */
+    isBasicAttackOnCooldown() {
+        const now = this.scene.time.now;
+        const lastUsed = this.lastBasicAttackTime || 0;
+        const cooldown = this.basicAttackCooldown || 600; // 기본값 600ms
+        
+        return (now - lastUsed) < cooldown;
+    }
+
+    /**
+     * 기본 공격 쿨타임 설정
+     */
+    setBasicAttackCooldown() {
+        this.lastBasicAttackTime = this.scene.time.now;
     }
 
     /**

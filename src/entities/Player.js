@@ -397,6 +397,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
 
+        // 기본 공격 쿨타임 체크
+        if (this.job && this.job.isBasicAttackOnCooldown && this.job.isBasicAttackOnCooldown()) {
+            return; // 쿨다운 중이면 기본 공격 사용 불가
+        }
+
         // 중복 실행 방지 (마지막 클릭 시간 체크)
         const currentTime = this.scene.time.now;
         if (this.lastClickTime && currentTime - this.lastClickTime < 100) {
