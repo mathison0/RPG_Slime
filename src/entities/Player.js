@@ -404,13 +404,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         }
         this.lastClickTime = currentTime;
 
-        // 서버로 기본 공격 요청만 전송 (애니메이션은 서버 응답 후 실행)
-        if (this.networkManager) {
-            this.networkManager.useSkill('basic_attack', {
-                targetX: worldX,
-                targetY: worldY,
-                jobClass: this.jobClass
-            });
+        // 서버로 투사체 발사 요청 전송
+        if (this.job && this.job.useBasicAttack) {
+            this.job.useBasicAttack(worldX, worldY);
         }
     }
 

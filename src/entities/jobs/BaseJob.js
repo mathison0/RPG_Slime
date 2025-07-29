@@ -24,6 +24,21 @@ export default class BaseJob {
     }
 
     /**
+     * 기본 공격 (투사체 발사)
+     * @param {number} targetX - 목표 X 좌표
+     * @param {number} targetY - 목표 Y 좌표
+     */
+    useBasicAttack(targetX, targetY) {
+        // 서버에 투사체 발사 요청
+        if (this.player.networkManager) {
+            this.player.networkManager.socket.emit('fire-projectile', {
+                targetX: targetX,
+                targetY: targetY
+            });
+        }
+    }
+
+    /**
      * 스킬 쿨타임 확인
      * @param {string} skillKey - 스킬 키
      * @returns {boolean} - 사용 가능 여부

@@ -49,6 +49,8 @@ export default class NetworkEventManager {
         this.networkManager.off('disconnect');
         this.networkManager.off('connect_error');
         this.networkManager.off('player-stunned');
+        this.networkManager.off('projectile-created');
+        this.networkManager.off('projectiles-update');
         
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
@@ -130,6 +132,16 @@ export default class NetworkEventManager {
         this.networkManager.on('player-stunned', (data) => {
             console.log('NetworkEventManager: player-stunned 이벤트 받음:', data);
             this.handlePlayerStunned(data);
+        });
+
+        // 투사체 생성
+        this.networkManager.on('projectile-created', (data) => {
+            this.handleProjectileCreated(data);
+        });
+
+        // 투사체 업데이트
+        this.networkManager.on('projectiles-update', (data) => {
+            this.handleProjectilesUpdate(data);
         });
         
         // 기타 이벤트
@@ -887,6 +899,24 @@ export default class NetworkEventManager {
             this.scene.player.updateUI();
             
             console.log(`본인 플레이어 무적 상태 변경: ${data.isInvincible}`);
+        }
+    }
+
+    /**
+     * 투사체 생성 처리
+     */
+    handleProjectileCreated(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectileCreated(data);
+        }
+    }
+
+    /**
+     * 투사체 업데이트 처리
+     */
+    handleProjectilesUpdate(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectilesUpdate(data);
         }
     }
 

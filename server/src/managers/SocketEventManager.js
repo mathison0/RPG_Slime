@@ -5,12 +5,13 @@ const SkillManager = require('./SkillManager');
  * 소켓 이벤트 관리 매니저
  */
 class SocketEventManager {
-  constructor(io, gameStateManager, enemyManager, skillManager = null) {
+  constructor(io, gameStateManager, enemyManager, skillManager = null, projectileManager = null) {
     this.io = io;
     this.gameStateManager = gameStateManager;
     this.enemyManager = enemyManager;
     this.playerSockets = new Map(); // 플레이어 ID -> 소켓 매핑
     this.skillManager = skillManager || new SkillManager(gameStateManager);
+    this.projectileManager = projectileManager;
   }
 
   /**
@@ -35,6 +36,7 @@ class SocketEventManager {
       this.setupPlayerPingHandler(socket);
       this.setupEnemyHitHandler(socket);
       this.setupProjectileWallCollisionHandler(socket);
+      this.setupProjectileHandler(socket);
       this.setupGameSyncHandler(socket);
       this.setupPlayerRespawnHandler(socket);
       this.setupDisconnectHandler(socket);
@@ -465,6 +467,48 @@ class SocketEventManager {
         });
         
         console.log(`마법사 ${player.id} 투사체 벽 충돌 범위 공격 실행 at (${explosionX}, ${explosionY})`);
+      }
+    });
+  }
+
+    /**
+   * 투사체 발사 이벤트 핸들러
+   */
+  setupProjectileHandler(socket) {
+    socket.on('fire-projectile', (data) => {
+      const timestamp = Date.now();
+      console.log(`\n[${timestamp}] [${socket.id}] fire-projectile 요청 받음:`, data);
+      
+      const playerId = socket.id;
+      const player = this.gameStateManager.getPlayer(playerId);
+      
+      if (!player) {
+        console.log(`[${timestamp}] [${playerId}] 플레이어를 찾을 수 없음`);
+        return;
+      }
+      
+      // 투사체 생성
+      const projectileId = this.projectileManager.createProjectile(
+        playerId, 
+        data.targetX, 
+        data.targetY, 
+        player.jobClass
+      );
+      
+      if (projectileId) {
+        // 모든 클라이언트에게 투사체 생성 알림
+        const projectileData = {
+          projectileId: projectileId,
+          playerId: playerId,
+          jobClass: player.jobClass,
+          x: player.x,
+          y: player.y,
+          targetX: data.targetX,
+          targetY: data.targetY,
+          team: player.team
+        };
+        
+        this.io.emit('projectile-created', projectileData);
       }
     });
   }

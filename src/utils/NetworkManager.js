@@ -172,6 +172,15 @@ class NetworkManager {
         this.socket.on('player-stunned', (data) => {
             this.emit('player-stunned', data);
         });
+
+        // 투사체 관련 이벤트
+        this.socket.on('projectile-created', (data) => {
+            this.emit('projectile-created', data);
+        });
+
+        this.socket.on('projectiles-update', (data) => {
+            this.emit('projectiles-update', data);
+        });
     }
 
     // 게임 입장

@@ -34,7 +34,7 @@ const JobClasses = {
                 description: '주변 범위에 데미지를 입히는 슬라임 스킬입니다.',
                 cooldown: 1000,
                 damage: 'attack',
-                range: 50,
+                range: 150,
                 duration: 400,
                 key: '1',
                 type: 'spread'
