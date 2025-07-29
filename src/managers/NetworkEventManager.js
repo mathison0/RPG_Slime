@@ -492,27 +492,132 @@ export default class NetworkEventManager {
                 this.handleSkillDamageResult(data.damageResult);
             }
             
-            // 타임스탬프 기반 이펙트 동기화 (모든 스킬 타입 통일 처리)
+            // 네트워크 지연 보정을 포함한 정확한 스킬 동기화
             const currentTime = Date.now();
-            const skillDelay = currentTime - data.timestamp;
+            const skillStartTime = data.skillStartTime || data.timestamp;
+            const skillEndTime = data.skillEndTime; // 서버에서 받은 정확한 종료 시간 사용
+            const skillDuration = data.skillDuration || 0;
+            const networkDelay = data.networkDelay || 0;
             
-            // 지연시간이 너무 크면 (1초 이상) 이펙트 스킵
-            if (skillDelay > 1000) {
-                return;
-            }
+            // 스킬 동기화 디버그 정보
+            const debugInfo = {
+                skillType: data.skillType,
+                playerId: data.playerId,
+                isOwnPlayer: isOwnPlayer,
+                skillStartTime: skillStartTime,
+                skillEndTime: skillEndTime,
+                skillDuration: skillDuration,
+                networkDelay: networkDelay,
+                currentTime: currentTime,
+                timeUntilEnd: skillEndTime - currentTime
+            };
             
-            // 지연시간만큼 조정해서 이펙트 재생
-            const adjustedDelay = Math.max(0, -skillDelay);
+            console.log(`스킬 동기화 디버그:`, debugInfo);
             
-            if (adjustedDelay > 0) {
-                // 지연해서 재생
-                this.scene.time.delayedCall(adjustedDelay, () => {
-                    this.showSkillEffect(player, data.skillType, data);
-                });
+            // 서버 기준 종료 시간을 사용한 정확한 동기화
+            const timeUntilEnd = skillEndTime - currentTime;
+            
+            if (timeUntilEnd > 0) {
+                // 스킬이 아직 진행 중인 경우
+                if (timeUntilEnd <= skillDuration) {
+                    // 스킬이 진행 중이면 남은 시간만큼만 애니메이션 재생
+                    console.log(`스킬 진행 중: ${timeUntilEnd}ms 남음`);
+                    this.showSkillEffectWithDuration(player, data.skillType, data, timeUntilEnd);
+                } else {
+                    // 스킬이 아직 시작되지 않았으면 지연 실행
+                    const timeUntilStart = skillStartTime - currentTime;
+                    console.log(`스킬 시작 지연: ${timeUntilStart}ms 후 실행`);
+                    this.scene.time.delayedCall(timeUntilStart, () => {
+                        this.showSkillEffect(player, data.skillType, data);
+                    });
+                }
             } else {
-                // 즉시 재생
+                // 스킬이 이미 끝난 경우, 즉시 실행 (짧은 이펙트)
+                console.log(`스킬 이미 종료됨, 즉시 실행`);
                 this.showSkillEffect(player, data.skillType, data);
             }
+        }
+    }
+
+    /**
+     * 지속시간이 있는 스킬 이펙트 표시
+     */
+    showSkillEffectWithDuration(player, skillType, data, remainingTime) {
+        if (!player || !player.job) return;
+        
+        console.log(`지속시간 스킬 이펙트: ${skillType}, 플레이어: ${player.networkId}, 직업: ${player.jobClass}, 남은시간: ${remainingTime}ms`);
+        
+        // 스킬 타입에 따라 적절한 지속시간 애니메이션 적용
+        switch (skillType) {
+            case 'jump':
+                this.showJumpEffectWithDuration(player, data, remainingTime);
+                break;
+            case 'sweep':
+            case 'thrust':
+            case 'roar':
+                console.log(`전사 스킬 처리: ${skillType}, 직업: ${player.jobClass}`);
+                this.showWarriorSkillEffectWithDuration(player, skillType, data, remainingTime);
+                break;
+            default:
+                // 기본적으로 즉시 실행
+                console.log(`기본 스킬 이펙트 실행: ${skillType}`);
+                this.showSkillEffect(player, skillType, data);
+                break;
+        }
+    }
+
+    /**
+     * 지속시간이 있는 점프 이펙트
+     */
+    showJumpEffectWithDuration(player, data, remainingTime) {
+        if (player.isJumping) return;
+        
+        const originalY = player.y;
+        const originalNameY = player.nameText ? player.nameText.y : null;
+        player.isJumping = true;
+        
+        const targets = [player];
+        if (player.nameText) {
+            targets.push(player.nameText);
+        }
+        
+        // 남은 시간에 비례해서 점프 높이 조정
+        const totalDuration = data.skillDuration || 400;
+        const jumpProgress = 1 - (remainingTime / totalDuration);
+        const maxJumpHeight = 50;
+        const currentJumpHeight = maxJumpHeight * (1 - jumpProgress);
+        
+        this.scene.tweens.add({
+            targets: targets,
+            y: `-=${currentJumpHeight}`,
+            duration: Math.min(remainingTime / 2, 100), // 남은 시간의 절반
+            yoyo: true,
+            ease: 'Power2',
+            onComplete: () => {
+                if (player.active) {
+                    player.y = originalY;
+                    if (player.nameText && originalNameY !== null) {
+                        player.nameText.y = originalNameY;
+                    }
+                    player.isJumping = false;
+                    player.updateNameTextPosition();
+                }
+            }
+        });
+    }
+
+    /**
+     * 지속시간이 있는 전사 스킬 이펙트
+     */
+    showWarriorSkillEffectWithDuration(player, skillType, data, remainingTime) {
+        if (!player.job) return;
+        
+        // 전사 스킬의 경우 지속시간에 따라 이펙트 조정
+        if (player.jobClass === 'warrior' && player.job.showWarriorSkillEffectWithDuration) {
+            player.job.showWarriorSkillEffectWithDuration(skillType, data, remainingTime);
+        } else {
+            // 기본 이펙트 실행
+            this.showSkillEffect(player, skillType, data);
         }
     }
 
@@ -1118,6 +1223,7 @@ export default class NetworkEventManager {
                 for (let i = 1; i < enemiesWithSameId.length; i++) {
                     console.log(`중복 적 제거: ID ${enemyData.id} (${i + 1}/${enemiesWithSameId.length})`);
                     enemiesWithSameId[i].destroy();
+                    totalDuplicatesRemoved++;
                 }
             }
         });
@@ -1152,7 +1258,10 @@ export default class NetworkEventManager {
         const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === data.id);
         if (otherPlayer) {
             otherPlayer.jobClass = data.jobClass;
+            otherPlayer.updateJobClass(); // 직업 인스턴스 업데이트
             otherPlayer.updateJobSprite();
+            
+            console.log(`다른 플레이어 직업 변경: ${data.id}, 새 직업: ${data.jobClass}, 직업 인스턴스: ${otherPlayer.job ? '생성됨' : '생성 실패'}`);
         }
     }
 
@@ -1404,8 +1513,13 @@ export default class NetworkEventManager {
         // 무적 상태 설정
         otherPlayer.isInvincible = playerData.isInvincible || false;
         
+        // 직업 인스턴스 생성 (중요!)
+        otherPlayer.updateJobClass();
+        
         otherPlayer.updateSize(); // 크기 업데이트 적용
         otherPlayer.updateJobSprite();
+        
+        console.log(`다른 플레이어 생성 완료: ${playerData.id}, 직업: ${playerData.jobClass}, 직업 인스턴스: ${otherPlayer.job ? '생성됨' : '생성 실패'}`);
         
         this.scene.otherPlayers.add(otherPlayer);
         otherPlayer.setDepth(650);
@@ -1488,6 +1602,8 @@ export default class NetworkEventManager {
     showSkillEffect(player, skillType, data = null) {
         if (!player || !player.job) return;
         
+        console.log(`스킬 이펙트 표시: ${skillType}, 플레이어: ${player.networkId}, 직업: ${player.jobClass}`);
+        
         switch (skillType) {
             case 'basic_attack':
                 this.showBasicAttackEffect(player, data);
@@ -1522,19 +1638,25 @@ export default class NetworkEventManager {
                 }
                 break;
             case 'roar':
+                console.log(`울부짖기 이펙트 호출: 플레이어 ${player.networkId}`);
                 if (player.job.showRoarEffect) {
                     player.job.showRoarEffect(data);
                 }
                 break;
             case 'sweep':
+                console.log(`휩쓸기 이펙트 호출: 플레이어 ${player.networkId}`);
                 if (player.job.showSweepEffect) {
                     player.job.showSweepEffect(data);
                 }
                 break;
             case 'thrust':
+                console.log(`찌르기 이펙트 호출: 플레이어 ${player.networkId}`);
                 if (player.job.showThrustEffect) {
                     player.job.showThrustEffect(data);
                 }
+                break;
+            default:
+                console.log(`알 수 없는 스킬 타입: ${skillType}`);
                 break;
         }
     }

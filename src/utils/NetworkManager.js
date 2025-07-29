@@ -241,15 +241,24 @@ class NetworkManager {
     }
 
     // 스킬 사용
-    useSkill(skillType, targetX = null, targetY = null) {
+    useSkill(skillType, targetX = null, targetY = null, skillRequest = null) {
         if (this.isConnected) {
-            console.log(`스킬 사용 전송: ${skillType}, 위치: (${targetX}, ${targetY})`);
-            this.socket.emit('player-skill', {
+            // 기본 스킬 요청 데이터
+            const skillData = {
                 skillType: skillType,
                 targetX: targetX,
                 targetY: targetY,
                 timestamp: Date.now()
-            });
+            };
+            
+            // 추가 스킬 요청 정보가 있으면 포함
+            if (skillRequest) {
+                skillData.clientTimestamp = skillRequest.clientTimestamp;
+                skillData.playerPosition = skillRequest.playerPosition;
+            }
+            
+            console.log(`스킬 사용 전송: ${skillType}, 위치: (${targetX}, ${targetY}), 클라이언트 타임스탬프: ${skillData.clientTimestamp || 'N/A'}`);
+            this.socket.emit('player-skill', skillData);
         }
     }
 

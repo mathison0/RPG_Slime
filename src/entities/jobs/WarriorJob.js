@@ -757,4 +757,145 @@ export default class WarriorJob extends BaseJob {
             return angle >= startAngle && angle <= endAngle;
         }
     }
+
+    /**
+     * 지속시간이 있는 전사 스킬 이펙트
+     */
+    showWarriorSkillEffectWithDuration(skillType, data, remainingTime) {
+        console.log(`WarriorJob 지속시간 이펙트: ${skillType}, 남은시간: ${remainingTime}ms, 플레이어: ${this.player.networkId}`);
+        
+        switch (skillType) {
+            case 'sweep':
+                this.showSweepEffectWithDuration(data, remainingTime);
+                break;
+            case 'thrust':
+                this.showThrustEffectWithDuration(data, remainingTime);
+                break;
+            case 'roar':
+                this.showRoarEffectWithDuration(data, remainingTime);
+                break;
+            default:
+                // 기본 이펙트 실행
+                console.log(`WarriorJob 기본 이펙트 실행: ${skillType}`);
+                this.showSkillEffect(skillType, data);
+                break;
+        }
+    }
+
+    /**
+     * 지속시간이 있는 휩쓸기 이펙트
+     */
+    showSweepEffectWithDuration(data, remainingTime) {
+        if (this.isSweeping) return;
+        
+        this.isSweeping = true;
+        
+        // 남은 시간에 비례해서 이펙트 조정
+        const totalDuration = data.skillDuration || 2000;
+        const sweepProgress = 1 - (remainingTime / totalDuration);
+        
+        // 휩쓸기 이펙트 생성 (남은 시간만큼만)
+        const centerX = data.x || this.player.x;
+        const centerY = data.y || this.player.y;
+        const targetX = data.targetX || centerX;
+        const targetY = data.targetY || centerY;
+        
+        // 각도 계산
+        const angleToTarget = Math.atan2(targetY - centerY, targetX - centerX);
+        const sweepAngle = Math.PI / 3; // 60도
+        const startAngle = angleToTarget - sweepAngle / 2;
+        const endAngle = angleToTarget + sweepAngle / 2;
+        
+        // 휩쓸기 그래픽 생성
+        this.sweepGraphics = this.player.scene.add.graphics();
+        this.sweepGraphics.setDepth(800);
+        
+        // 남은 시간에 비례해서 투명도 조정
+        const alpha = 0.3 + (0.4 * sweepProgress);
+        
+        this.sweepGraphics.fillStyle(0xff0000, alpha);
+        this.sweepGraphics.fillArc(centerX, centerY, 80, startAngle, endAngle);
+        
+        // 남은 시간만큼만 표시
+        this.player.scene.time.delayedCall(remainingTime, () => {
+            if (this.sweepGraphics) {
+                this.sweepGraphics.destroy();
+                this.sweepGraphics = null;
+            }
+            this.isSweeping = false;
+        });
+    }
+
+    /**
+     * 지속시간이 있는 찌르기 이펙트
+     */
+    showThrustEffectWithDuration(data, remainingTime) {
+        if (this.isThrusting) return;
+        
+        this.isThrusting = true;
+        
+        // 남은 시간에 비례해서 이펙트 조정
+        const totalDuration = data.skillDuration || 1500;
+        const thrustProgress = 1 - (remainingTime / totalDuration);
+        
+        // 찌르기 이펙트 생성
+        const centerX = data.x || this.player.x;
+        const centerY = data.y || this.player.y;
+        const targetX = data.targetX || centerX;
+        const targetY = data.targetY || centerY;
+        
+        // 찌르기 그래픽 생성
+        this.thrustGraphics = this.player.scene.add.graphics();
+        this.thrustGraphics.setDepth(800);
+        
+        // 남은 시간에 비례해서 투명도 조정
+        const alpha = 0.4 + (0.3 * thrustProgress);
+        
+        this.thrustGraphics.fillStyle(0xff6600, alpha);
+        this.thrustGraphics.fillRect(centerX - 5, centerY - 40, 10, 80);
+        
+        // 남은 시간만큼만 표시
+        this.player.scene.time.delayedCall(remainingTime, () => {
+            if (this.thrustGraphics) {
+                this.thrustGraphics.destroy();
+                this.thrustGraphics = null;
+            }
+            this.isThrusting = false;
+        });
+    }
+
+    /**
+     * 지속시간이 있는 울부짖기 이펙트
+     */
+    showRoarEffectWithDuration(data, remainingTime) {
+        if (this.isRoaring) return;
+        
+        this.isRoaring = true;
+        
+        // 남은 시간에 비례해서 이펙트 조정
+        const totalDuration = data.skillDuration || 3000;
+        const roarProgress = 1 - (remainingTime / totalDuration);
+        
+        // 울부짖기 이펙트 생성
+        const centerX = data.x || this.player.x;
+        const centerY = data.y || this.player.y;
+        
+        // 울부짖기 그래픽 생성
+        const roarGraphics = this.player.scene.add.graphics();
+        roarGraphics.setDepth(800);
+        
+        // 남은 시간에 비례해서 투명도 조정
+        const alpha = 0.2 + (0.3 * roarProgress);
+        
+        roarGraphics.fillStyle(0xffff00, alpha);
+        roarGraphics.fillCircle(centerX, centerY, 100);
+        
+        // 남은 시간만큼만 표시
+        this.player.scene.time.delayedCall(remainingTime, () => {
+            if (roarGraphics) {
+                roarGraphics.destroy();
+            }
+            this.isRoaring = false;
+        });
+    }
 } 

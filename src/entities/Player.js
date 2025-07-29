@@ -536,7 +536,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 서버에 스킬 사용 요청
+     * 스킬 사용 요청 (서버 권한 방식)
      */
     requestSkillUse(skillType) {
         if (this.networkManager) {
@@ -544,7 +544,24 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             const pointer = this.scene.input.activePointer;
             const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
             
-            this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y);
+            // 클라이언트 타임스탬프 추가 (서버와의 동기화를 위해)
+            const clientTimestamp = Date.now();
+            
+            // 스킬 요청 데이터 구성
+            const skillRequest = {
+                skillType: skillType,
+                targetX: worldPoint.x,
+                targetY: worldPoint.y,
+                clientTimestamp: clientTimestamp,
+                playerPosition: {
+                    x: this.x,
+                    y: this.y
+                }
+            };
+            
+            console.log(`스킬 사용 요청: ${skillType}, 클라이언트 타임스탬프: ${clientTimestamp}`);
+            
+            this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y, skillRequest);
         }
     }
     

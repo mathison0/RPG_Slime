@@ -210,6 +210,19 @@ class SocketEventManager {
         return;
       }
 
+      // 클라이언트 타임스탬프 처리 (네트워크 지연 보정)
+      const serverTimestamp = Date.now();
+      const clientTimestamp = data.clientTimestamp || serverTimestamp;
+      const networkDelay = serverTimestamp - clientTimestamp;
+      
+      // 클라이언트 타임스탬프를 소켓에 저장 (점프 액션에서 사용)
+      socket.lastSkillData = {
+        clientTimestamp: clientTimestamp,
+        networkDelay: networkDelay
+      };
+      
+      console.log(`네트워크 지연: ${networkDelay}ms (클라이언트: ${clientTimestamp}, 서버: ${serverTimestamp})`);
+
       // 서버에서 스킬 사용 검증 및 처리
       const skillResult = this.skillManager.useSkill(
         player,
@@ -238,14 +251,27 @@ class SocketEventManager {
         skillResult.targetY
       );
 
+      // 스킬 시작/종료 시간 계산 (클라이언트 타임스탬프 기반)
+      const skillStartTime = clientTimestamp;
+      const skillDuration = skillResult.skillInfo.duration || 0;
+      const skillEndTime = skillStartTime + skillDuration;
+
+      // 서버에서 정확한 종료 시간 계산 (모든 클라이언트가 동일한 종료 시점을 가지도록)
+      const serverEndTime = serverTimestamp + skillDuration;
+
       // 스킬 사용 성공 시 모든 클라이언트에게 브로드캐스트
       const broadcastData = {
         playerId: socket.id,
         skillType: skillResult.skillType,
         timestamp: skillResult.timestamp,
+        skillStartTime: skillStartTime,
+        skillEndTime: serverEndTime, // 서버 기준 종료 시간 사용
+        skillDuration: skillDuration,
+        networkDelay: networkDelay, // 네트워크 지연 정보 추가
         x: skillResult.x,
         y: skillResult.y,
         team: player.team,
+        jobClass: player.jobClass,
         skillInfo: skillResult.skillInfo,
         damageResult: damageResult // 데미지 결과 추가
       };
@@ -259,7 +285,7 @@ class SocketEventManager {
       // 모든 클라이언트에게 스킬 사용 알림
       this.io.emit('player-skill-used', broadcastData);
       
-      console.log(`Player ${socket.id} used skill: ${skillResult.skillType}`);
+      console.log(`Player ${socket.id} used skill: ${skillResult.skillType}, Start: ${skillStartTime}, End: ${skillEndTime}, Duration: ${skillDuration}ms, Network Delay: ${networkDelay}ms`);
     });
   }
 
@@ -320,20 +346,39 @@ class SocketEventManager {
       return;
     }
 
+    // 클라이언트 타임스탬프 처리 (네트워크 지연 보정)
+    const serverTimestamp = Date.now();
+    const clientTimestamp = socket.lastSkillData?.clientTimestamp || serverTimestamp;
+    const networkDelay = serverTimestamp - clientTimestamp;
+    
+    console.log(`점프 네트워크 지연: ${networkDelay}ms (클라이언트: ${clientTimestamp}, 서버: ${serverTimestamp})`);
+
     // 점프 시작 처리
     const jumpDuration = 400;
     if (!this.skillManager.startJump(player, jumpDuration)) {
       return; // 이미 점프 중이면 무시
     }
 
+    // 점프 시작/종료 시간 계산 (클라이언트 타임스탬프 기반)
+    const jumpStartTime = clientTimestamp;
+    const jumpEndTime = jumpStartTime + jumpDuration;
+
+    // 서버에서 정확한 종료 시간 계산 (모든 클라이언트가 동일한 종료 시점을 가지도록)
+    const serverJumpEndTime = serverTimestamp + jumpDuration;
+
     // 모든 클라이언트에게 점프 알림
     this.io.emit('player-skill-used', {
       playerId: socket.id,
       skillType: 'jump',
-      timestamp: Date.now(),
+      timestamp: serverTimestamp,
+      skillStartTime: jumpStartTime,
+      skillEndTime: serverJumpEndTime, // 서버 기준 종료 시간 사용
+      skillDuration: jumpDuration,
+      networkDelay: networkDelay,
       x: player.x,
       y: player.y,
       team: player.team,
+      jobClass: player.jobClass,
       skillInfo: {
         range: 0,
         damage: 0,
@@ -348,7 +393,7 @@ class SocketEventManager {
       }
     }, jumpDuration);
 
-    console.log(`Player ${socket.id} used jump`);
+    console.log(`Player ${socket.id} used jump, Start: ${jumpStartTime}, End: ${jumpEndTime}, Duration: ${jumpDuration}ms, Network Delay: ${networkDelay}ms`);
   }
 
   /**
