@@ -1,22 +1,15 @@
 import BaseJob from './BaseJob.js';
 
 /**
- * 서포터 직업 클래스
+ * 지원자 직업 클래스
  */
 export default class SupporterJob extends BaseJob {
     constructor(player) {
         super(player);
-        this.lastBasicAttackTime = 0;
-        this.basicAttackCooldown = 700; // 기본 공격 쿨다운 (밀리초)
-    }
-
-    useSkill(skillNumber, options = {}) {
-        // 서포터의 스킬들을 여기에 추가
-        console.log('SupporterJob: 스킬 사용 요청', skillNumber);
     }
 
     /**
-     * 서포터 기본 공격 애니메이션 (근접 부채꼴)
+     * 지원자 기본 공격 이펙트 (녹색 부채꼴)
      */
     showBasicAttackEffect(targetX, targetY) {
         // 부채꼴 공격 범위 설정
@@ -32,10 +25,10 @@ export default class SupporterJob extends BaseJob {
         const startAngle = angleToMouse - angleOffset;
         const endAngle = angleToMouse + angleOffset;
         
-        // 부채꼴 근접 공격 이펙트 (노란색 부채꼴)
+        // 지원자 근접 공격 이펙트 (녹색 부채꼴)
         const graphics = this.player.scene.add.graphics();
-        graphics.fillStyle(0xFFFF00, 0.6);
-        graphics.lineStyle(2, 0xFFFF00, 1);
+        graphics.fillStyle(0x00ff00, 0.8); // 녹색
+        graphics.lineStyle(3, 0x00ff00, 1);
         
         // 부채꼴 그리기
         graphics.beginPath();
@@ -49,10 +42,38 @@ export default class SupporterJob extends BaseJob {
         this.player.scene.tweens.add({
             targets: graphics,
             alpha: 0,
-            duration: 350,
+            duration: 400,
             onComplete: () => {
                 graphics.destroy();
             }
         });
     }
-} 
+
+    /**
+     * 지원자 스킬 사용
+     */
+    useSkill(skillNumber, options = {}) {
+        if (this.player.isOtherPlayer || !this.player.networkManager) {
+            return;
+        }
+        switch (skillNumber) {
+            case 1: // Q키
+                this.player.networkManager.useSkill('heal');
+                break;
+            case 2: // E키
+                this.player.networkManager.useSkill('shield', {
+                    targetX: this.scene.input.mousePointer.worldX,
+                    targetY: this.scene.input.mousePointer.worldY
+                });
+                break;
+            case 3: // R키
+                this.player.networkManager.useSkill('blessing', {
+                    targetX: this.scene.input.mousePointer.worldX,
+                    targetY: this.scene.input.mousePointer.worldY
+                });
+                break;
+            default:
+                console.log('SupporterJob: 알 수 없는 스킬 번호:', skillNumber);
+        }
+    }
+}

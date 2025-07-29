@@ -1,113 +1,15 @@
 import BaseJob from './BaseJob.js';
-// JobClasses는 서버에서 관리하므로 import 제거
 
 /**
- * 메카닉 직업 클래스
+ * 기계공 직업 클래스
  */
 export default class MechanicJob extends BaseJob {
     constructor(player) {
         super(player);
-        // 직업 정보는 서버에서 받아옴
-        this.lastBasicAttackTime = 0;
-        this.basicAttackCooldown = 750; // 기본 공격 쿨다운 (밀리초)
-    }
-
-    useSkill(skillNumber, options = {}) {
-        switch (skillNumber) {
-            case 1:
-                this.useRepair();
-                break;
-            default:
-                console.log('MechanicJob: 알 수 없는 스킬 번호:', skillNumber);
-        }
     }
 
     /**
-     * 수리 스킬
-     */
-    useRepair() {
-        const skillKey = 'skill1'; // 통일된 스킬 키 사용
-        
-        // 다른 플레이어면 실행하지 않음
-        if (this.player.isOtherPlayer) {
-            return;
-        }
-        
-        // 네트워크 매니저가 없으면 실행하지 않음
-        if (!this.player.networkManager) {
-            console.log('NetworkManager가 없어서 스킬을 사용할 수 없습니다.');
-            return;
-        }
-        
-        // 스킬 정보는 서버에서 처리됨
-        
-        // 쿨타임은 서버에서 관리됨
-
-        // 서버에 스킬 사용 요청
-        this.player.networkManager.useSkill('repair');
-        
-        console.log('수리 스킬 서버 요청 전송');
-    }
-
-    /**
-     * 쿨타임 정보 반환
-     */
-    getSkillCooldowns() {
-        return {
-            // 서버에서 받은 쿨타임 정보를 사용
-            ...(this.player.serverSkillCooldowns || {})
-        };
-    }
-
-    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
-
-    createMeleeAttackEffect(centerX, centerY, startAngle, endAngle, radius) {
-        // 부채꼴 근접 공격 이펙트 (카키색 부채꼴)
-        const graphics = this.player.scene.add.graphics();
-        graphics.fillStyle(0x556B2F, 0.7);
-        graphics.lineStyle(2, 0x556B2F, 1);
-        
-        // 부채꼴 그리기
-        graphics.beginPath();
-        graphics.moveTo(centerX, centerY);
-        graphics.arc(centerX, centerY, radius, startAngle, endAngle);
-        graphics.closePath();
-        graphics.fill();
-        graphics.stroke();
-        
-        // 이펙트 애니메이션
-        this.player.scene.tweens.add({
-            targets: graphics,
-            alpha: 0,
-            duration: 380,
-            onComplete: () => {
-                graphics.destroy();
-            }
-        });
-    }
-
-    performMeleeAttack(centerX, centerY, startAngle, endAngle, radius) {
-        // 시각적 효과만 (데미지는 서버에서 처리)
-        console.log('메카닉 부채꼴 근접 공격 이펙트 (데미지는 서버에서 처리)');
-    }
-
-    // 각도가 부채꼴 범위 내에 있는지 확인하는 헬퍼 메서드
-    isAngleInRange(angle, startAngle, endAngle) {
-        // 각도를 0~2π 범위로 정규화
-        angle = Phaser.Math.Angle.Normalize(angle);
-        startAngle = Phaser.Math.Angle.Normalize(startAngle);
-        endAngle = Phaser.Math.Angle.Normalize(endAngle);
-        
-        // 부채꼴이 0도를 걸치는 경우 처리
-        if (startAngle > endAngle) {
-            return angle >= startAngle || angle <= endAngle;
-        } else {
-            return angle >= startAngle && angle <= endAngle;
-        }
-    }
-
-    /**
-     * 메카닉 기본 공격 애니메이션 (근접 부채꼴)
+     * 기계공 기본 공격 이펙트 (파란색 부채꼴)
      */
     showBasicAttackEffect(targetX, targetY) {
         // 부채꼴 공격 범위 설정
@@ -123,10 +25,10 @@ export default class MechanicJob extends BaseJob {
         const startAngle = angleToMouse - angleOffset;
         const endAngle = angleToMouse + angleOffset;
         
-        // 부채꼴 근접 공격 이펙트 (카키색 부채꼴)
+        // 기계공 근접 공격 이펙트 (파란색 부채꼴)
         const graphics = this.player.scene.add.graphics();
-        graphics.fillStyle(0x556B2F, 0.7);
-        graphics.lineStyle(2, 0x556B2F, 1);
+        graphics.fillStyle(0x0088ff, 0.8); // 파란색
+        graphics.lineStyle(3, 0x0088ff, 1);
         
         // 부채꼴 그리기
         graphics.beginPath();
@@ -140,10 +42,38 @@ export default class MechanicJob extends BaseJob {
         this.player.scene.tweens.add({
             targets: graphics,
             alpha: 0,
-            duration: 380,
+            duration: 400,
             onComplete: () => {
                 graphics.destroy();
             }
         });
     }
-} 
+
+    /**
+     * 기계공 스킬 사용
+     */
+    useSkill(skillNumber, options = {}) {
+        if (this.player.isOtherPlayer || !this.player.networkManager) {
+            return;
+        }
+        switch (skillNumber) {
+            case 1: // Q키
+                this.player.networkManager.useSkill('repair');
+                break;
+            case 2: // E키
+                this.player.networkManager.useSkill('turret', {
+                    targetX: this.scene.input.mousePointer.worldX,
+                    targetY: this.scene.input.mousePointer.worldY
+                });
+                break;
+            case 3: // R키
+                this.player.networkManager.useSkill('overcharge', {
+                    targetX: this.scene.input.mousePointer.worldX,
+                    targetY: this.scene.input.mousePointer.worldY
+                });
+                break;
+            default:
+                console.log('MechanicJob: 알 수 없는 스킬 번호:', skillNumber);
+        }
+    }
+}
