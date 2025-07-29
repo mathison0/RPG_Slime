@@ -274,6 +274,12 @@ export default class NetworkEventManager {
             console.log('서버 설정이 클라이언트에 동기화되었습니다:', data.serverConfig);
         }
         
+        // 쿨타임 정보 저장
+        if (data.jobCooldowns) {
+            this.scene.jobCooldowns = data.jobCooldowns;
+            console.log('직업별 쿨타임 정보가 서버에서 동기화되었습니다:', data.jobCooldowns);
+        }
+        
         // 서버 맵 데이터로 맵 재생성
         if (data.mapData) {
             this.scene.mapManager.recreateMapFromServer(data.mapData);
