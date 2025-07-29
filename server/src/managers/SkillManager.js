@@ -464,6 +464,98 @@ class SkillManager {
   }
 
   /**
+   * 근접 부채꼴 공격 데미지 적용
+   */
+  applyMeleeSweepDamage(player, baseDamage, x, y, targetX, targetY, range, angleOffset) {
+    const damageResult = {
+      affectedEnemies: [],
+      affectedPlayers: [],
+      totalDamage: 0
+    };
+
+    const enemies = this.gameStateManager.enemies;
+    const players = this.gameStateManager.players;
+    const centerX = x;
+    const centerY = y;
+    const mouseX = targetX;
+    const mouseY = targetY;
+
+    // 적에게 데미지 적용 (Map 객체인 경우 values() 사용)
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    enemyArray.forEach(enemy => {
+      if (enemy.isDead) return;
+
+      const enemyX = enemy.x;
+      const enemyY = enemy.y;
+      
+      // 범위 내에 있는지 확인
+      if (this.isInMeleeSweepRange(centerX, centerY, enemyX, enemyY, mouseX, mouseY, range, angleOffset)) {
+        const damage = Math.floor(baseDamage);
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y,
+            type: enemy.type
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    // 다른 플레이어에게 데미지 적용 (PvP) (Map 객체인 경우 values() 사용)
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+    playerArray.forEach(targetPlayer => {
+      if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) return;
+
+      const playerX = targetPlayer.x;
+      const playerY = targetPlayer.y;
+      
+      // 범위 내에 있는지 확인
+      if (this.isInMeleeSweepRange(centerX, centerY, playerX, playerY, mouseX, mouseY, range, angleOffset)) {
+        const damage = Math.floor(baseDamage * 0.5); // PvP 데미지는 50%
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+        
+        if (result.success) {
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y,
+            team: targetPlayer.team
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    return damageResult;
+  }
+
+  /**
+   * 근접 부채꼴 범위 내에 있는지 확인
+   */
+  isInMeleeSweepRange(centerX, centerY, targetX, targetY, mouseX, mouseY, range, angleOffset) {
+    const distance = Math.sqrt((targetX - centerX) ** 2 + (targetY - centerY) ** 2);
+    if (distance > range) return false;
+
+    const angleToMouse = Math.atan2(mouseY - centerY, mouseX - centerX);
+    const angleToTarget = Math.atan2(targetY - centerY, targetX - centerX);
+    
+    let angleDiff = Math.abs(angleToMouse - angleToTarget);
+    if (angleDiff > Math.PI) {
+      angleDiff = 2 * Math.PI - angleDiff;
+    }
+    
+    return angleDiff <= angleOffset;
+  }
+
+  /**
    * 기본 공격 처리
    */
   handleBasicAttack(player, targetX, targetY) {

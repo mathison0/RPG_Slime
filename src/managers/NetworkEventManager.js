@@ -166,7 +166,12 @@ export default class NetworkEventManager {
         this.networkManager.on('projectile-removed', (data) => {
             this.handleProjectileRemoved(data);
         });
-        
+
+        // 근접 공격 수행
+        this.networkManager.on('melee-attack-performed', (data) => {
+            this.handleMeleeAttackPerformed(data);
+        });
+
         // 기타 이벤트
         this.setupMiscEvents();
 
@@ -1083,8 +1088,62 @@ export default class NetworkEventManager {
      * 투사체 제거 처리
      */
     handleProjectileRemoved(data) {
-        if (this.scene.projectileManager) {
-            this.scene.projectileManager.handleProjectileRemoved(data);
+        console.log('투사체 제거됨:', data);
+        // 투사체 제거 로직은 ProjectileManager에서 처리됨
+    }
+
+    /**
+     * 근접 공격 수행 처리
+     */
+    handleMeleeAttackPerformed(data) {
+        console.log('근접 공격 수행됨:', data);
+        
+        const player = this.findPlayerById(data.playerId);
+        if (!player) {
+            console.warn('근접 공격 플레이어를 찾을 수 없음:', data.playerId);
+            return;
+        }
+
+        console.log('플레이어 찾음:', player);
+        console.log('플레이어 직업:', player.jobClass);
+        console.log('플레이어 job 객체:', player.job);
+
+        // 근접 공격 이펙트 표시
+        this.showMeleeAttackEffect(player, data);
+        
+        // 데미지 결과 처리
+        if (data.damageResult) {
+            this.handleSkillDamageResult(data.damageResult);
+        }
+    }
+
+    /**
+     * 근접 공격 이펙트 표시
+     */
+    showMeleeAttackEffect(player, data) {
+        const jobClass = data.jobClass;
+        const targetX = data.targetX;
+        const targetY = data.targetY;
+        
+        // 직업별 근접 공격 이펙트 처리
+        switch (jobClass) {
+            case 'warrior':
+            case 'supporter':
+            case 'mechanic':
+            case 'assassin':
+                // 각 직업 클래스의 showBasicAttackEffect 메서드 사용
+                if (player.job && player.job.showBasicAttackEffect) {
+                    console.log('showBasicAttackEffect 메서드 호출');
+                    player.job.showBasicAttackEffect(targetX, targetY);
+                } else {
+                    console.warn('player.job 또는 showBasicAttackEffect 메서드가 없음:', {
+                        hasJob: !!player.job,
+                        hasMethod: player.job ? !!player.job.showBasicAttackEffect : false
+                    });
+                }
+                break;
+            default:
+                console.warn('알 수 없는 직업의 근접 공격:', jobClass);
         }
     }
 
