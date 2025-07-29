@@ -77,18 +77,32 @@ class SocketEventManager {
       // 플레이어 생성
       const player = this.gameStateManager.addPlayer(playerId, spawnPoint.x, spawnPoint.y, team, nickname);
       
-      // JobClasses를 사용한 올바른 초기 스탯 설정
-      player.initializeStatsFromJobClass();
-      
-      // 게임 참가 응답
-      const gameJoinedData = {
-        playerId: playerId,
-        playerData: player.getState(),
-        players: this.gameStateManager.getPlayersState(),
-        enemies: this.gameStateManager.getEnemiesState(),
-        mapData: this.gameStateManager.mapData,
-        serverConfig: this.gameConfig // 서버 설정 추가
-      };
+              // JobClasses를 사용한 올바른 초기 스탯 설정
+        player.initializeStatsFromJobClass();
+        
+        // JobClasses에서 쿨타임 정보 가져오기
+        const { getJobInfo } = require('../../shared/JobClasses.js');
+        const jobCooldowns = {};
+        
+        // 모든 직업의 기본공격 쿨타임 정보 수집
+        const jobClasses = ['slime', 'ninja', 'archer', 'mage', 'assassin', 'warrior', 'supporter', 'mechanic'];
+        jobClasses.forEach(jobClass => {
+            const jobInfo = getJobInfo(jobClass);
+            jobCooldowns[jobClass] = {
+                basicAttackCooldown: jobInfo.basicAttackCooldown
+            };
+        });
+        
+        // 게임 참가 응답
+        const gameJoinedData = {
+            playerId: playerId,
+            playerData: player.getState(),
+            players: this.gameStateManager.getPlayersState(),
+            enemies: this.gameStateManager.getEnemiesState(),
+            mapData: this.gameStateManager.mapData,
+            serverConfig: this.gameConfig, // 서버 설정 추가
+            jobCooldowns: jobCooldowns // 쿨타임 정보 추가
+        };
       
       socket.emit('game-joined', gameJoinedData);
       socket.broadcast.emit('player-joined', player.getState());

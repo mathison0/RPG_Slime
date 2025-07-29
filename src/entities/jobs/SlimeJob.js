@@ -9,7 +9,7 @@ export default class SlimeJob extends BaseJob {
         super(player);
         // 직업 정보는 서버에서 받아옴
         this.lastBasicAttackTime = 0;
-        this.basicAttackCooldown = 600; // 기본 공격 쿨다운 (밀리초)
+        // 쿨타임은 서버에서 관리됨
     }
 
     useSkill(skillNumber, options = {}) {

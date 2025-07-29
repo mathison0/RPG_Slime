@@ -48,7 +48,14 @@ export default class BaseJob {
     isBasicAttackOnCooldown() {
         const now = this.scene.time.now;
         const lastUsed = this.lastBasicAttackTime || 0;
-        const cooldown = this.basicAttackCooldown || 600; // 기본값 600ms
+        
+        // 서버에서 받은 쿨타임 정보 사용
+        const jobClass = this.player.jobClass;
+        let cooldown = 600; // 기본값
+        
+        if (this.scene.jobCooldowns && this.scene.jobCooldowns[jobClass]) {
+            cooldown = this.scene.jobCooldowns[jobClass].basicAttackCooldown;
+        }
         
         return (now - lastUsed) < cooldown;
     }
