@@ -397,6 +397,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
 
+        // 기본 공격 쿨타임 체크
+        if (this.job && this.job.isBasicAttackOnCooldown && this.job.isBasicAttackOnCooldown()) {
+            return; // 쿨다운 중이면 기본 공격 사용 불가
+        }
+
         // 중복 실행 방지 (마지막 클릭 시간 체크)
         const currentTime = this.scene.time.now;
         if (this.lastClickTime && currentTime - this.lastClickTime < 100) {
@@ -404,13 +409,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         }
         this.lastClickTime = currentTime;
 
-        // 서버로 기본 공격 요청만 전송 (애니메이션은 서버 응답 후 실행)
-        if (this.networkManager) {
-            this.networkManager.useSkill('basic_attack', {
-                targetX: worldX,
-                targetY: worldY,
-                jobClass: this.jobClass
-            });
+        // 서버로 투사체 발사 요청 전송
+        if (this.job && this.job.useBasicAttack) {
+            this.job.useBasicAttack(worldX, worldY);
         }
     }
 

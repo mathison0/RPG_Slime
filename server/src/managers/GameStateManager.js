@@ -101,6 +101,16 @@ class GameStateManager {
   }
 
   /**
+   * 벽 정보 조회
+   */
+  getWalls() {
+    if (!this.mapData || !this.mapData.walls) {
+      return [];
+    }
+    return this.mapData.walls;
+  }
+
+  /**
    * 적 상태 배열 조회
    */
   getEnemiesState() {

@@ -8,7 +8,7 @@ class MageJob extends BaseJob {
     constructor(player) {
         super(player);
         this.jobInfo = getJobInfo('mage');
-        this.basicAttackCooldown = 700; // 기본 공격 쿨다운 (밀리초)
+        this.basicAttackCooldown = 700; // 기본 공격 쿨다운 (밀리초) - 이미 올바른 값
         this.lastBasicAttackTime = 0;
     }
 

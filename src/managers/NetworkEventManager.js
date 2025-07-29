@@ -49,6 +49,8 @@ export default class NetworkEventManager {
         this.networkManager.off('disconnect');
         this.networkManager.off('connect_error');
         this.networkManager.off('player-stunned');
+        this.networkManager.off('projectile-created');
+        this.networkManager.off('projectiles-update');
         
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
@@ -130,6 +132,34 @@ export default class NetworkEventManager {
         this.networkManager.on('player-stunned', (data) => {
             console.log('NetworkEventManager: player-stunned 이벤트 받음:', data);
             this.handlePlayerStunned(data);
+        });
+
+        // 투사체 생성
+        this.networkManager.on('projectile-created', (data) => {
+            this.handleProjectileCreated(data);
+        });
+
+        // 투사체 업데이트
+        this.networkManager.on('projectiles-update', (data) => {
+            this.handleProjectilesUpdate(data);
+        });
+
+        // 투사체 제거
+        this.networkManager.on('projectile-removed', (data) => {
+            this.handleProjectileRemoved(data);
+        });
+
+        // 투사체 충돌 이벤트들
+        this.networkManager.on('projectile-hit-wall', (data) => {
+            this.handleProjectileHitWall(data);
+        });
+
+        this.networkManager.on('projectile-hit-player', (data) => {
+            this.handleProjectileHitPlayer(data);
+        });
+
+        this.networkManager.on('projectile-hit-enemy', (data) => {
+            this.handleProjectileHitEnemy(data);
         });
         
         // 기타 이벤트
@@ -887,6 +917,60 @@ export default class NetworkEventManager {
             this.scene.player.updateUI();
             
             console.log(`본인 플레이어 무적 상태 변경: ${data.isInvincible}`);
+        }
+    }
+
+    /**
+     * 투사체 생성 처리
+     */
+    handleProjectileCreated(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectileCreated(data);
+        }
+    }
+
+    /**
+     * 투사체 업데이트 처리
+     */
+    handleProjectilesUpdate(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectilesUpdate(data);
+        }
+    }
+
+    /**
+     * 투사체 제거 처리
+     */
+    handleProjectileRemoved(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectileRemoved(data);
+        }
+    }
+
+    /**
+     * 투사체 벽 충돌 처리
+     */
+    handleProjectileHitWall(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectileHitWall(data);
+        }
+    }
+
+    /**
+     * 투사체 플레이어 충돌 처리
+     */
+    handleProjectileHitPlayer(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectileHitPlayer(data);
+        }
+    }
+
+    /**
+     * 투사체 적 충돌 처리
+     */
+    handleProjectileHitEnemy(data) {
+        if (this.scene.projectileManager) {
+            this.scene.projectileManager.handleProjectileHitEnemy(data);
         }
     }
 

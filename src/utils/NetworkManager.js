@@ -172,6 +172,31 @@ class NetworkManager {
         this.socket.on('player-stunned', (data) => {
             this.emit('player-stunned', data);
         });
+
+        // 투사체 관련 이벤트
+        this.socket.on('projectile-created', (data) => {
+            this.emit('projectile-created', data);
+        });
+
+        this.socket.on('projectiles-update', (data) => {
+            this.emit('projectiles-update', data);
+        });
+
+        this.socket.on('projectile-removed', (data) => {
+            this.emit('projectile-removed', data);
+        });
+
+        this.socket.on('projectile-hit-wall', (data) => {
+            this.emit('projectile-hit-wall', data);
+        });
+
+        this.socket.on('projectile-hit-player', (data) => {
+            this.emit('projectile-hit-player', data);
+        });
+
+        this.socket.on('projectile-hit-enemy', (data) => {
+            this.emit('projectile-hit-enemy', data);
+        });
     }
 
     // 게임 입장
