@@ -14,7 +14,7 @@ const MAP_LEVELS = {
   LEVEL_1_RED: 1, // 빨강팀 스폰 배리어 구역
   LEVEL_1_BLUE: 2, // 파랑팀 스폰 배리어 구역
   LEVEL_2: 3, // 스폰 배리어 구역 밖 ~ 레벨 3,4 맵 제외한 모든 곳
-  LEVEL_3: 4, // 광장 외부 4타일
+  LEVEL_3: 4, // 광장 외부 타일 (GameConfig.PLAZA_LEVEL3_EXTRA_TILES로 설정)
   LEVEL_4: 5  // 광장 내부
 };
 
@@ -25,24 +25,30 @@ const BASE_MONSTER_STATS = {
     attack: 15,
     speed: 80,
     size: 32,
-    baseColor: { r: 180, g: 255, b: 180 }, // 밝은 초록
-    exp: 10
+    exp: 10,
+    aggroRange: 250,      // 기본 인식 범위
+    maxAggroRange: 500,   // 최대 인식 범위
+    wanderSpeed: 40       // 배회 속도
   },
   [MONSTER_TYPES.CHARGE]: {
     hp: 30,
     attack: 30,
     speed: 160,
     size: 36,
-    baseColor: { r: 255, g: 200, b: 100 }, // 밝은 주황
-    exp: 15
+    exp: 15,
+    aggroRange: 350,      // 더 넓은 인식 범위 (공격적)
+    maxAggroRange: 700,   // 더 넓은 최대 인식 범위
+    wanderSpeed: 80       // 빠른 배회 속도
   },
   [MONSTER_TYPES.ELITE]: {
     hp: 200,
     attack: 50,
     speed: 120,
     size: 44,
-    baseColor: { r: 220, g: 150, b: 255 }, // 밝은 보라
-    exp: 30
+    exp: 30,
+    aggroRange: 150,      // 가장 넓은 인식 범위 (경계심 높음)
+    maxAggroRange: 600,   // 가장 넓은 최대 인식 범위
+    wanderSpeed: 60       // 적당한 배회 속도
   }
 };
 
@@ -98,33 +104,17 @@ const MAX_MONSTERS_PER_LEVEL = {
   [MAP_LEVELS.LEVEL_1_RED]: 15, // 빨강팀 구역
   [MAP_LEVELS.LEVEL_1_BLUE]: 15, // 파랑팀 구역
   [MAP_LEVELS.LEVEL_2]: 200,
-  [MAP_LEVELS.LEVEL_3]: 20,
+  [MAP_LEVELS.LEVEL_3]: 40,
   [MAP_LEVELS.LEVEL_4]: 40
 };
 
 // 공통 설정
 const COMMON_CONFIG = {
-  AGGRO_RANGE: 200, // 기본 인식 범위 (어그로가 끌리는 범위) - 적당한 크기로 조정
-  MAX_AGGRO_RANGE: 400, // 최대 인식 범위 (어그로가 풀리는 범위) - 적당한 크기로 조정
   ATTACK_RANGE: 10,
   ATTACK_COOLDOWN: 1500,
-  WANDER_SPEED: 50, // 배회할 때의 고정 속도 - 적당한 속도로 조정
-  COLOR_INTENSITY_STEP: 0.2, // 레벨별 색깔 진해지는 정도
   SPAWN_AVOID_PLAYER_RANGE: 3, // 플레이어 주변 피할 타일 수
   SPAWN_AVOID_MONSTER_RANGE: 2 // 몬스터 밀집 피할 타일 수
 };
-
-/**
- * 레벨에 따른 색상 계산 (레벨이 높을수록 어두워짐)
- */
-function calculateLevelColor(baseColor, level) {
-  const intensityReduction = COMMON_CONFIG.COLOR_INTENSITY_STEP * (level - 1);
-  return {
-    r: Math.max(30, Math.floor(baseColor.r * (1 - intensityReduction))),
-    g: Math.max(30, Math.floor(baseColor.g * (1 - intensityReduction))),
-    b: Math.max(30, Math.floor(baseColor.b * (1 - intensityReduction)))
-  };
-}
 
 /**
  * 맵 좌표에서 레벨 계산
@@ -133,7 +123,7 @@ function getMapLevelFromPosition(x, y, gameConfig) {
   const {
     MAP_WIDTH_TILES, MAP_HEIGHT_TILES, TILE_SIZE,
     SPAWN_WIDTH_TILES, SPAWN_BARRIER_EXTRA_TILES,
-    PLAZA_SIZE_TILES
+    PLAZA_SIZE_TILES, PLAZA_LEVEL3_EXTRA_TILES
   } = gameConfig;
   
   // 픽셀 좌표를 타일 좌표로 변환
@@ -159,9 +149,9 @@ function getMapLevelFromPosition(x, y, gameConfig) {
     return MAP_LEVELS.LEVEL_4;
   }
   
-  // 광장 외부 4타일 (레벨 3)
-  if (tileX >= plazaCenterX - plazaHalfSize - 4 && tileX < plazaCenterX + plazaHalfSize + 4 &&
-      tileY >= plazaCenterY - plazaHalfSize - 4 && tileY < plazaCenterY + plazaHalfSize + 4) {
+  // 광장 외부 타일 (레벨 3)
+  if (tileX >= plazaCenterX - plazaHalfSize - PLAZA_LEVEL3_EXTRA_TILES && tileX < plazaCenterX + plazaHalfSize + PLAZA_LEVEL3_EXTRA_TILES &&
+      tileY >= plazaCenterY - plazaHalfSize - PLAZA_LEVEL3_EXTRA_TILES && tileY < plazaCenterY + plazaHalfSize + PLAZA_LEVEL3_EXTRA_TILES) {
     return MAP_LEVELS.LEVEL_3;
   }
   
@@ -214,7 +204,6 @@ function calculateMonsterStats(type, level) {
     attack: Math.floor(baseStats.attack * multiplier),
     speed: baseStats.speed, // 속도는 배율 적용 안함
     size: baseStats.size,
-    color: calculateLevelColor(baseStats.baseColor, level),
     exp: Math.floor(baseStats.exp * expMultiplier)
   };
 }
@@ -228,7 +217,6 @@ module.exports = {
   EXP_MULTIPLIERS,
   MAX_MONSTERS_PER_LEVEL,
   COMMON_CONFIG,
-  calculateLevelColor,
   getMapLevelFromPosition,
   selectMonsterType,
   calculateMonsterStats

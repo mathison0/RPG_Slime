@@ -27,12 +27,15 @@ class ServerEnemy {
     this.color = stats.color;
     this.exp = stats.exp;
     
+    // 타입별 설정 (BASE_MONSTER_STATS에서 가져옴)
+    const baseStats = MonsterConfig.BASE_MONSTER_STATS[type];
+    this.aggroRange = baseStats.aggroRange;
+    this.maxAggroRange = baseStats.maxAggroRange;
+    this.wanderSpeed = baseStats.wanderSpeed;
+    
     // 공통 설정
-    this.aggroRange = MonsterConfig.COMMON_CONFIG.AGGRO_RANGE;
-    this.maxAggroRange = MonsterConfig.COMMON_CONFIG.MAX_AGGRO_RANGE;
     this.attackRange = MonsterConfig.COMMON_CONFIG.ATTACK_RANGE;
     this.attackCooldown = MonsterConfig.COMMON_CONFIG.ATTACK_COOLDOWN;
-    this.wanderSpeed = MonsterConfig.COMMON_CONFIG.WANDER_SPEED;
     
     // 상태 관리
     this.target = null;
@@ -40,101 +43,21 @@ class ServerEnemy {
     this.lastUpdate = Date.now();
     this.isAttacking = false;
     
+    // 기절 상태 관리
+    this.isStunned = false;
+    this.stunStartTime = 0;
+    this.stunDuration = 0;
+    
     // 이동 관련
     this.vx = 0;
     this.vy = 0;
     this.wanderDirection = Math.random() * Math.PI * 2;
     this.wanderChangeTime = Date.now() + Math.random() * 3000 + 2000;
     
-    // 스폰 구역 경계 계산 (구역 제한용)
-    this.calculateSpawnBounds();
+    // 구역 제한용 - MonsterConfig.getMapLevelFromPosition 사용
   }
 
-  /**
-   * 스폰 구역 경계 계산
-   */
-  calculateSpawnBounds() {
-    const {
-      MAP_WIDTH_TILES, MAP_HEIGHT_TILES, TILE_SIZE,
-      SPAWN_WIDTH_TILES, SPAWN_BARRIER_EXTRA_TILES,
-      PLAZA_SIZE_TILES
-    } = gameConfig;
-    
-    // 현재 몬스터가 스폰된 구역의 경계를 계산
-    switch (this.mapLevel) {
-      case MonsterConfig.MAP_LEVELS.LEVEL_1_RED:
-        // 빨강팀 스폰 배리어 구역 (왼쪽)
-        this.bounds = {
-          left: SPAWN_WIDTH_TILES * TILE_SIZE,
-          right: (SPAWN_WIDTH_TILES + SPAWN_BARRIER_EXTRA_TILES) * TILE_SIZE,
-          top: 0,
-          bottom: MAP_HEIGHT_TILES * TILE_SIZE
-        };
-        break;
-        
-      case MonsterConfig.MAP_LEVELS.LEVEL_1_BLUE:
-        // 파랑팀 스폰 배리어 구역 (오른쪽)
-        this.bounds = {
-          left: (MAP_WIDTH_TILES - SPAWN_WIDTH_TILES - SPAWN_BARRIER_EXTRA_TILES) * TILE_SIZE,
-          right: (MAP_WIDTH_TILES - SPAWN_WIDTH_TILES) * TILE_SIZE,
-          top: 0,
-          bottom: MAP_HEIGHT_TILES * TILE_SIZE
-        };
-        break;
-        
-      case MonsterConfig.MAP_LEVELS.LEVEL_2:
-        // 레벨 2 구역 (광장 제외)
-        const plazaCenterX = (MAP_WIDTH_TILES / 2) * TILE_SIZE;
-        const plazaCenterY = (MAP_HEIGHT_TILES / 2) * TILE_SIZE;
-        const plazaHalfSize = (PLAZA_SIZE_TILES / 2) * TILE_SIZE;
-        
-        this.bounds = {
-          left: (SPAWN_WIDTH_TILES + SPAWN_BARRIER_EXTRA_TILES) * TILE_SIZE,
-          right: (MAP_WIDTH_TILES - SPAWN_WIDTH_TILES - SPAWN_BARRIER_EXTRA_TILES) * TILE_SIZE,
-          top: 0,
-          bottom: MAP_HEIGHT_TILES * TILE_SIZE,
-          // 광장 제외 구역
-          plazaLeft: plazaCenterX - plazaHalfSize - 4 * TILE_SIZE,
-          plazaRight: plazaCenterX + plazaHalfSize + 4 * TILE_SIZE,
-          plazaTop: plazaCenterY - plazaHalfSize - 4 * TILE_SIZE,
-          plazaBottom: plazaCenterY + plazaHalfSize + 4 * TILE_SIZE
-        };
-        break;
-        
-      case MonsterConfig.MAP_LEVELS.LEVEL_3:
-        // 광장 외부 4타일
-        const plaza3CenterX = (MAP_WIDTH_TILES / 2) * TILE_SIZE;
-        const plaza3CenterY = (MAP_HEIGHT_TILES / 2) * TILE_SIZE;
-        const plaza3HalfSize = (PLAZA_SIZE_TILES / 2) * TILE_SIZE;
-        
-        this.bounds = {
-          left: plaza3CenterX - plaza3HalfSize - 4 * TILE_SIZE,
-          right: plaza3CenterX + plaza3HalfSize + 4 * TILE_SIZE,
-          top: plaza3CenterY - plaza3HalfSize - 4 * TILE_SIZE,
-          bottom: plaza3CenterY + plaza3HalfSize + 4 * TILE_SIZE,
-          // 광장 내부 제외
-          innerLeft: plaza3CenterX - plaza3HalfSize,
-          innerRight: plaza3CenterX + plaza3HalfSize,
-          innerTop: plaza3CenterY - plaza3HalfSize,
-          innerBottom: plaza3CenterY + plaza3HalfSize
-        };
-        break;
-        
-      case MonsterConfig.MAP_LEVELS.LEVEL_4:
-        // 광장 내부
-        const plaza4CenterX = (MAP_WIDTH_TILES / 2) * TILE_SIZE;
-        const plaza4CenterY = (MAP_HEIGHT_TILES / 2) * TILE_SIZE;
-        const plaza4HalfSize = (PLAZA_SIZE_TILES / 2) * TILE_SIZE;
-        
-        this.bounds = {
-          left: plaza4CenterX - plaza4HalfSize,
-          right: plaza4CenterX + plaza4HalfSize,
-          top: plaza4CenterY - plaza4HalfSize,
-          bottom: plaza4CenterY + plaza4HalfSize
-        };
-        break;
-    }
-  }
+
 
   /**
    * 두 엔티티 간의 모서리 간 최단 거리 계산
@@ -189,6 +112,11 @@ class ServerEnemy {
     const now = Date.now();
     this.lastUpdate = now;
     
+    // 기절 상태에서는 행동 제한
+    if (this.isStunned) {
+      return;
+    }
+    
     this.findTarget(players);
     
     if (this.target) {
@@ -210,7 +138,6 @@ class ServerEnemy {
     }
     
     this.move(delta, walls);
-    this.checkBounds();
   }
 
   /**
@@ -268,11 +195,6 @@ class ServerEnemy {
         console.log(`몬스터 ${this.id} 타겟 변경: ${previousTarget} -> ${this.target.id} (거리: ${Math.round(closestDistance)})`);
       }
     }
-    
-    // 어그로 범위 내에 아무도 없으면 타겟 해제
-    if (!closestPlayer) {
-      this.target = null;
-    }
   }
 
   /**
@@ -325,16 +247,39 @@ class ServerEnemy {
   }
 
   /**
-   * 이동 처리 (벽 충돌 체크 제거)
+   * 이동 처리 (구역 경계 체크 포함)
    */
   move(delta, walls) {
     const deltaTime = delta / 1000;
     const nextX = this.x + this.vx * deltaTime;
     const nextY = this.y + this.vy * deltaTime;
     
-    // 벽 충돌 체크 없이 자유롭게 이동
-    this.x = nextX;
-    this.y = nextY;
+    // 구역 경계 체크 - 이동 가능한 경우만 이동
+    if (this.canMoveTo(nextX, nextY, walls)) {
+      this.x = nextX;
+      this.y = nextY;
+    } else {
+      // 축별로 개별 체크하여 막힌 축의 속도만 0으로 설정
+      const canMoveX = this.canMoveTo(nextX, this.y, walls);
+      const canMoveY = this.canMoveTo(this.x, nextY, walls);
+      
+      if (canMoveX) {
+        this.x = nextX; // X축 이동 가능
+      } else {
+        this.vx = 0; // X축 막힘
+      }
+      
+      if (canMoveY) {
+        this.y = nextY; // Y축 이동 가능  
+      } else {
+        this.vy = 0; // Y축 막힘
+      }
+      
+      // 배회 상태일 때만 방향 전환 (타겟 추적 중이 아닐 때)
+      if (!this.target) {
+        this.wanderDirection = Math.random() * Math.PI * 2;
+      }
+    }
   }
 
   /**
@@ -346,69 +291,22 @@ class ServerEnemy {
   }
 
   /**
-   * 구역 경계 내부인지 체크
+   * 구역 경계 내부인지 체크 - MonsterConfig.getMapLevelFromPosition 사용
    */
   isWithinBounds(x, y) {
-    const bounds = this.bounds;
+    // 해당 위치의 맵 레벨을 확인
+    const positionLevel = MonsterConfig.getMapLevelFromPosition(x, y, gameConfig);
     
-    // 기본 경계 체크
-    if (x < bounds.left || 
-        x + this.size > bounds.right || 
-        y < bounds.top || 
-        y + this.size > bounds.bottom) {
+    // 스폰 불가 구역이면 false
+    if (positionLevel === null) {
       return false;
     }
     
-    // 레벨 2인 경우 광장 구역 제외
-    if (this.mapLevel === MonsterConfig.MAP_LEVELS.LEVEL_2) {
-      if (x + this.size > bounds.plazaLeft &&
-          x < bounds.plazaRight &&
-          y + this.size > bounds.plazaTop &&
-          y < bounds.plazaBottom) {
-        return false;
-      }
-    }
-    
-    // 레벨 3인 경우 광장 내부 제외
-    if (this.mapLevel === MonsterConfig.MAP_LEVELS.LEVEL_3) {
-      if (x + this.size > bounds.innerLeft &&
-          x < bounds.innerRight &&
-          y + this.size > bounds.innerTop &&
-          y < bounds.innerBottom) {
-        return false;
-      }
-    }
-    
-    return true;
+    // 몬스터의 레벨과 일치하는지 확인
+    return positionLevel === this.mapLevel;
   }
 
-  /**
-   * 구역 경계 체크 및 위치 조정
-   */
-  checkBounds() {
-    if (!this.isWithinBounds(this.x, this.y)) {
-      // 경계를 벗어났으면 이전 위치로 되돌리기 위해 속도 반전
-      if (this.x < this.bounds.left) {
-        this.x = this.bounds.left;
-        this.vx = Math.abs(this.vx);
-      }
-      if (this.x + this.size > this.bounds.right) {
-        this.x = this.bounds.right - this.size;
-        this.vx = -Math.abs(this.vx);
-      }
-      if (this.y < this.bounds.top) {
-        this.y = this.bounds.top;
-        this.vy = Math.abs(this.vy);
-      }
-      if (this.y + this.size > this.bounds.bottom) {
-        this.y = this.bounds.bottom - this.size;
-        this.vy = -Math.abs(this.vy);
-      }
-      
-      // 배회 방향도 변경
-      this.wanderDirection = Math.random() * Math.PI * 2;
-    }
-  }
+
 
   /**
    * 공격 시도
@@ -416,7 +314,6 @@ class ServerEnemy {
   tryAttack() {
     const now = Date.now();
     if (now - this.lastAttack > this.attackCooldown && this.target) {
-      console.log(`몬스터 ${this.id} 공격 시도: 타겟 ${this.target.id}`);
       // 타겟이 여전히 유효한지 체크
       if (this.target.isDead || this.target.hp <= 0) {
         this.target = null;
@@ -435,26 +332,14 @@ class ServerEnemy {
             timestamp: Date.now()
           };
           
-          // ServerPlayer의 takeDamage 메서드 사용 (실제 적용된 데미지 반환)
-          const actualDamage = player.takeDamage(this.attack);
+          // 통합 takeDamage 메서드 사용
+          const result = this.gameStateManager.takeDamage(this, player, this.attack);
           
-          // 클라이언트에게 공격 결과 전송 (사망 판정은 서버 메인 루프에서 처리)
-          this.io.emit('monster-attack', {
-            monsterId: this.id,
-            playerId: this.target.id,
-            damage: actualDamage,
-            newHp: player.hp
-          });
+          // 공격 결과는 통합 함수에서 이미 이벤트를 브로드캐스트하므로 
+          // 여기서는 추가 처리 불필요
         }
     }
     return null;
-  }
-
-  /**
-   * 콜라이더 크기 반환 (클라이언트와 동일한 로직)
-   */
-  getColliderSize() {
-    return this.size * gameConfig.ENEMY.COLLIDER.SIZE_RATIO;
   }
 
   /**
@@ -470,9 +355,18 @@ class ServerEnemy {
 
   /**
    * 데미지 처리
+   * @param {number} damage - 받을 데미지
+   * @param {Object} attacker - 공격자 정보 (선택사항)
    */
-  takeDamage(damage) {
+  takeDamage(damage, attacker = null) {
     this.hp = Math.max(0, this.hp - damage);
+    
+    // 피격 시 공격자를 타겟으로 설정 (살아있고 적대적인 경우만)
+    if (attacker && !attacker.isDead && attacker.hp > 0) {
+      this.target = attacker;
+      console.log(`몬스터 ${this.id}가 ${attacker.id}에게 피격당해 타겟으로 설정`);
+    }
+    
     return this.hp <= 0; // 사망 여부 반환
   }
 
@@ -492,7 +386,9 @@ class ServerEnemy {
       color: this.color,
       vx: this.vx,
       vy: this.vy,
-      exp: this.exp
+      exp: this.exp,
+      isStunned: this.isStunned,
+      stunDuration: this.stunDuration
     };
     
     if (this.isAttacking) {
@@ -501,6 +397,49 @@ class ServerEnemy {
     }
     
     return state;
+  }
+
+  /**
+   * 기절 상태 시작
+   */
+  startStun(duration) {
+    this.isStunned = true;
+    this.stunStartTime = Date.now();
+    this.stunDuration = duration;
+    
+    // 기절 지속시간 후 자동 해제
+    setTimeout(() => {
+      if (this.isStunned) {
+        this.endStun();
+      }
+    }, duration);
+    
+    // 기절 상태 변경을 모든 클라이언트에게 즉시 알림
+    if (this.io) {
+      this.io.emit('enemy-stunned', {
+        enemyId: this.id,
+        isStunned: true,
+        duration: duration
+      });
+    }
+  }
+
+  /**
+   * 기절 상태 종료
+   */
+  endStun() {
+    this.isStunned = false;
+    this.stunStartTime = 0;
+    this.stunDuration = 0;
+    
+    // 기절 상태 해제를 모든 클라이언트에게 즉시 알림
+    if (this.io) {
+      this.io.emit('enemy-stunned', {
+        enemyId: this.id,
+        isStunned: false,
+        duration: 0
+      });
+    }
   }
 }
 

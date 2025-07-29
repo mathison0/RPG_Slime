@@ -673,12 +673,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             // 클라이언트에서 관리되는 로컬 정보들을 UI에 표시
             const jobName = this.jobInfo?.name || this.jobClass;
             const attack = this.attack || 0;
-            const defense = this.defense || 0;
             const speed = this.speed || 0;
             
             statsElement.innerHTML = `
                 <div>레벨: ${this.level} | HP: ${this.hp}/${this.maxHp} | 직업: ${jobName}</div>
-                <div>공격력: ${attack} | 방어력: ${defense} | 속도: ${speed}</div>
+                <div>공격력: ${attack} | 속도: ${speed}</div>
             `;
         }
 
@@ -1056,6 +1055,20 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             if (enemy.body) {
                 bodyBox.strokeRect(enemy.body.x, enemy.body.y, enemy.body.width, enemy.body.height);
             }
+
+            // 몬스터 어그로 범위 원 (연한 빨간색)
+            const aggroRange = 300; // MonsterConfig.COMMON_CONFIG.AGGRO_RANGE
+            const aggroCircle = this.scene.add.graphics();
+            aggroCircle.lineStyle(2, 0xff4444, 0.6);
+            aggroCircle.setDepth(999); // 다른 요소들보다 뒤에 표시
+            aggroCircle.strokeCircle(enemy.x, enemy.y, aggroRange);
+
+            // 몬스터 어그로 해제 범위 원 (연한 오렌지색)
+            const maxAggroRange = 600; // MonsterConfig.COMMON_CONFIG.MAX_AGGRO_RANGE
+            const maxAggroCircle = this.scene.add.graphics();
+            maxAggroCircle.lineStyle(2, 0xff8844, 0.4);
+            maxAggroCircle.setDepth(998); // 어그로 범위보다 더 뒤에 표시
+            maxAggroCircle.strokeCircle(enemy.x, enemy.y, maxAggroRange);
             
             // 몬스터 정보 텍스트
             const spriteInfo = `스프라이트: ${enemy.displayWidth}x${enemy.displayHeight}`;
@@ -1064,7 +1077,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             const attackInfo = `공격력: ${enemy.attack}`;
             const typeInfo = `타입: ${enemy.type}`;
             const distanceInfo = `거리: ${Math.round(Math.sqrt(distanceSquared))}`;
-            const debugInfo = `${spriteInfo}\n${bodyInfo}\n${statsInfo}\n${attackInfo}\n${typeInfo}\n${distanceInfo}`;
+            const aggroInfo = `어그로: ${aggroRange} / 해제: ${maxAggroRange}`;
+            const debugInfo = `${spriteInfo}\n${bodyInfo}\n${statsInfo}\n${attackInfo}\n${typeInfo}\n${distanceInfo}\n${aggroInfo}`;
             
             const debugText = this.scene.add.text(enemy.x + 50, enemy.y - 60, debugInfo, {
                 fontSize: '10px',
@@ -1075,7 +1089,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             debugText.setDepth(1002);
             
             // 배열에 저장
-            this.enemyDebugBoxes.push(spriteBox, bodyBox);
+            this.enemyDebugBoxes.push(spriteBox, bodyBox, aggroCircle, maxAggroCircle);
             this.enemyDebugTexts.push(debugText);
         });
         

@@ -3,9 +3,6 @@ const gameConfig = require('../config/GameConfig');
 const MonsterConfig = require('../../shared/MonsterConfig');
 const ServerUtils = require('../utils/ServerUtils');
 
-/**
- * 몬스터 관리 매니저 - 완전히 새로운 시스템
- */
 class EnemyManager {
   constructor(io, gameStateManager, socketEventManager = null) {
     this.io = io;
@@ -54,7 +51,12 @@ class EnemyManager {
 
     const monsterId = uuidv4();
     const type = MonsterConfig.selectMonsterType(level);
-    const spawnPoint = this.getMonsterSpawnPoint(level);
+    
+    // 몬스터 타입에 따른 실제 크기 계산
+    const stats = MonsterConfig.calculateMonsterStats(type, level);
+    const monsterSize = stats.size;
+    
+    const spawnPoint = this.getMonsterSpawnPoint(level, monsterSize);
     
     if (!spawnPoint) {
       console.log(`레벨 ${level} 몬스터 스폰 지점을 찾을 수 없음`);
@@ -73,9 +75,12 @@ class EnemyManager {
   /**
    * 레벨별 몬스터 스폰 지점 계산
    */
-  getMonsterSpawnPoint(level) {
+  getMonsterSpawnPoint(level, monsterSize = 32) {
     let attempts = 0;
     const maxAttempts = 30;
+    
+    // 안전 여유 공간 (몬스터 크기의 절반)
+    const safetyMargin = Math.ceil(monsterSize / 2);
     
     while (attempts < maxAttempts) {
       let x, y;
@@ -83,99 +88,134 @@ class EnemyManager {
       // 레벨별 스폰 구역 설정
       switch (level) {
         case MonsterConfig.MAP_LEVELS.LEVEL_1_RED:
-          // 빨강팀 스폰 배리어 구역 (왼쪽)
+          // 빨강팀 스폰 배리어 구역 (왼쪽) - 몬스터 크기 고려
           x = this.getRandomInRange(
-            gameConfig.SPAWN_WIDTH_TILES * gameConfig.TILE_SIZE,
-            (gameConfig.SPAWN_WIDTH_TILES + gameConfig.SPAWN_BARRIER_EXTRA_TILES) * gameConfig.TILE_SIZE
+            gameConfig.SPAWN_WIDTH_TILES * gameConfig.TILE_SIZE + safetyMargin,
+            (gameConfig.SPAWN_WIDTH_TILES + gameConfig.SPAWN_BARRIER_EXTRA_TILES) * gameConfig.TILE_SIZE - safetyMargin
           );
-          y = this.getRandomInRange(0, gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE);
+          y = this.getRandomInRange(safetyMargin, gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE - safetyMargin);
           break;
           
         case MonsterConfig.MAP_LEVELS.LEVEL_1_BLUE:
-          // 파랑팀 스폰 배리어 구역 (오른쪽)
+          // 파랑팀 스폰 배리어 구역 (오른쪽) - 몬스터 크기 고려
           x = this.getRandomInRange(
-            (gameConfig.MAP_WIDTH_TILES - gameConfig.SPAWN_WIDTH_TILES - gameConfig.SPAWN_BARRIER_EXTRA_TILES) * gameConfig.TILE_SIZE,
-            (gameConfig.MAP_WIDTH_TILES - gameConfig.SPAWN_WIDTH_TILES) * gameConfig.TILE_SIZE
+            (gameConfig.MAP_WIDTH_TILES - gameConfig.SPAWN_WIDTH_TILES - gameConfig.SPAWN_BARRIER_EXTRA_TILES) * gameConfig.TILE_SIZE + safetyMargin,
+            (gameConfig.MAP_WIDTH_TILES - gameConfig.SPAWN_WIDTH_TILES) * gameConfig.TILE_SIZE - safetyMargin
           );
-          y = this.getRandomInRange(0, gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE);
+          y = this.getRandomInRange(safetyMargin, gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE - safetyMargin);
           break;
           
         case MonsterConfig.MAP_LEVELS.LEVEL_2:
-          // 레벨 2 구역 (광장 제외)
+          // 레벨 2 구역 (광장 외부 타일 제외) - 몬스터 크기 고려
           x = this.getRandomInRange(
-            (gameConfig.SPAWN_WIDTH_TILES + gameConfig.SPAWN_BARRIER_EXTRA_TILES) * gameConfig.TILE_SIZE,
-            (gameConfig.MAP_WIDTH_TILES - gameConfig.SPAWN_WIDTH_TILES - gameConfig.SPAWN_BARRIER_EXTRA_TILES) * gameConfig.TILE_SIZE
+            (gameConfig.SPAWN_WIDTH_TILES + gameConfig.SPAWN_BARRIER_EXTRA_TILES) * gameConfig.TILE_SIZE + safetyMargin,
+            (gameConfig.MAP_WIDTH_TILES - gameConfig.SPAWN_WIDTH_TILES - gameConfig.SPAWN_BARRIER_EXTRA_TILES) * gameConfig.TILE_SIZE - safetyMargin
           );
-          y = this.getRandomInRange(0, gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE);
+          y = this.getRandomInRange(safetyMargin, gameConfig.MAP_HEIGHT_TILES * gameConfig.TILE_SIZE - safetyMargin);
           
-          // 광장 구역 피하기
+          // 레벨 3 구역(광장 외부 타일) 완전히 피하기 - 몬스터 크기 고려
           const plazaCenterX = (gameConfig.MAP_WIDTH_TILES / 2) * gameConfig.TILE_SIZE;
           const plazaCenterY = (gameConfig.MAP_HEIGHT_TILES / 2) * gameConfig.TILE_SIZE;
           const plazaHalfSize = (gameConfig.PLAZA_SIZE_TILES / 2) * gameConfig.TILE_SIZE;
           
-          if (x >= plazaCenterX - plazaHalfSize - 4 * gameConfig.TILE_SIZE &&
-              x <= plazaCenterX + plazaHalfSize + 4 * gameConfig.TILE_SIZE &&
-              y >= plazaCenterY - plazaHalfSize - 4 * gameConfig.TILE_SIZE &&
-              y <= plazaCenterY + plazaHalfSize + 4 * gameConfig.TILE_SIZE) {
+          // 몬스터가 레벨 3 구역과 겹치지 않도록 체크 (몬스터 전체 크기 고려)
+          const level3Left = plazaCenterX - plazaHalfSize - gameConfig.PLAZA_LEVEL3_EXTRA_TILES * gameConfig.TILE_SIZE;
+          const level3Right = plazaCenterX + plazaHalfSize + gameConfig.PLAZA_LEVEL3_EXTRA_TILES * gameConfig.TILE_SIZE;
+          const level3Top = plazaCenterY - plazaHalfSize - gameConfig.PLAZA_LEVEL3_EXTRA_TILES * gameConfig.TILE_SIZE;
+          const level3Bottom = plazaCenterY + plazaHalfSize + gameConfig.PLAZA_LEVEL3_EXTRA_TILES * gameConfig.TILE_SIZE;
+          
+          // 몬스터의 바운딩 박스가 레벨 3 구역과 겹치는지 체크
+          if (!(x + monsterSize <= level3Left || x >= level3Right || 
+                y + monsterSize <= level3Top || y >= level3Bottom)) {
             attempts++;
             continue;
           }
           break;
-          
+
         case MonsterConfig.MAP_LEVELS.LEVEL_3:
-          // 광장 외부 4타일
+          // 광장 외부 타일 - 몬스터 크기 고려
           const plaza3CenterX = (gameConfig.MAP_WIDTH_TILES / 2) * gameConfig.TILE_SIZE;
           const plaza3CenterY = (gameConfig.MAP_HEIGHT_TILES / 2) * gameConfig.TILE_SIZE;
           const plaza3HalfSize = (gameConfig.PLAZA_SIZE_TILES / 2) * gameConfig.TILE_SIZE;
           
           x = this.getRandomInRange(
-            plaza3CenterX - plaza3HalfSize - 4 * gameConfig.TILE_SIZE,
-            plaza3CenterX + plaza3HalfSize + 4 * gameConfig.TILE_SIZE
+            plaza3CenterX - plaza3HalfSize - gameConfig.PLAZA_LEVEL3_EXTRA_TILES * gameConfig.TILE_SIZE + safetyMargin,
+            plaza3CenterX + plaza3HalfSize + gameConfig.PLAZA_LEVEL3_EXTRA_TILES * gameConfig.TILE_SIZE - safetyMargin
           );
           y = this.getRandomInRange(
-            plaza3CenterY - plaza3HalfSize - 4 * gameConfig.TILE_SIZE,
-            plaza3CenterY + plaza3HalfSize + 4 * gameConfig.TILE_SIZE
+            plaza3CenterY - plaza3HalfSize - gameConfig.PLAZA_LEVEL3_EXTRA_TILES * gameConfig.TILE_SIZE + safetyMargin,
+            plaza3CenterY + plaza3HalfSize + gameConfig.PLAZA_LEVEL3_EXTRA_TILES * gameConfig.TILE_SIZE - safetyMargin
           );
           
-          // 광장 내부 피하기
-          if (x >= plaza3CenterX - plaza3HalfSize &&
-              x <= plaza3CenterX + plaza3HalfSize &&
-              y >= plaza3CenterY - plaza3HalfSize &&
-              y <= plaza3CenterY + plaza3HalfSize) {
+          // 광장 내부(레벨 4) 완전히 피하기 - 몬스터 크기 고려
+          const level4Left = plaza3CenterX - plaza3HalfSize;
+          const level4Right = plaza3CenterX + plaza3HalfSize;
+          const level4Top = plaza3CenterY - plaza3HalfSize;
+          const level4Bottom = plaza3CenterY + plaza3HalfSize;
+          
+          // 몬스터의 바운딩 박스가 레벨 4 구역과 겹치는지 체크
+          if (!(x + monsterSize <= level4Left || x >= level4Right || 
+                y + monsterSize <= level4Top || y >= level4Bottom)) {
             attempts++;
             continue;
           }
           break;
           
         case MonsterConfig.MAP_LEVELS.LEVEL_4:
-          // 광장 내부
+          // 광장 내부 - 몬스터 크기 고려
           const plaza4CenterX = (gameConfig.MAP_WIDTH_TILES / 2) * gameConfig.TILE_SIZE;
           const plaza4CenterY = (gameConfig.MAP_HEIGHT_TILES / 2) * gameConfig.TILE_SIZE;
           const plaza4HalfSize = (gameConfig.PLAZA_SIZE_TILES / 2) * gameConfig.TILE_SIZE;
           
           x = this.getRandomInRange(
-            plaza4CenterX - plaza4HalfSize,
-            plaza4CenterX + plaza4HalfSize
+            plaza4CenterX - plaza4HalfSize + safetyMargin,
+            plaza4CenterX + plaza4HalfSize - safetyMargin
           );
           y = this.getRandomInRange(
-            plaza4CenterY - plaza4HalfSize,
-            plaza4CenterY + plaza4HalfSize
+            plaza4CenterY - plaza4HalfSize + safetyMargin,
+            plaza4CenterY + plaza4HalfSize - safetyMargin
           );
           break;
       }
       
-      // 벽이 아닌 곳이고, 플레이어 주변이 아니고, 몬스터가 밀집하지 않은 곳에 스폰
+      // 스폰 위치 검증: 벽이 아니고, 플레이어 주변이 아니고, 몬스터가 밀집하지 않은 곳
       if (!ServerUtils.isWallPosition(x, y, this.gameStateManager.mapData) &&
           !this.isNearPlayer(x, y) &&
           !this.isMonsterCrowded(x, y)) {
-        return { x, y };
+        
+        // 추가 검증: 실제 몬스터 크기를 고려한 경계 체크
+        if (this.isValidSpawnPosition(x, y, monsterSize, level)) {
+          return { x, y };
+        }
       }
       
       attempts++;
     }
     
-    // 적절한 위치를 찾지 못한 경우 null 반환
+    console.warn(`레벨 ${level} 몬스터 스폰 지점을 ${maxAttempts}번 시도 후에도 찾지 못함`);
     return null;
+  }
+  
+  /**
+   * 스폰 위치가 유효한지 검증 (몬스터 크기 고려)
+   */
+  isValidSpawnPosition(x, y, monsterSize, expectedLevel) {
+    // 몬스터의 네 모서리가 모두 올바른 레벨에 속하는지 확인
+    const corners = [
+      { x: x, y: y }, // 좌상단
+      { x: x + monsterSize, y: y }, // 우상단
+      { x: x, y: y + monsterSize }, // 좌하단
+      { x: x + monsterSize, y: y + monsterSize } // 우하단
+    ];
+    
+    for (const corner of corners) {
+      const cornerLevel = MonsterConfig.getMapLevelFromPosition(corner.x, corner.y, gameConfig);
+      if (cornerLevel !== expectedLevel) {
+        return false;
+      }
+    }
+    
+    return true;
   }
 
   /**

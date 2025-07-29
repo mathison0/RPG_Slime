@@ -181,6 +181,78 @@ export default class MapManager {
             0xffff00, 
             0.15
         ).setDepth(-1);
+
+        // 레벨별 경계선 그리기
+        this.createLevelBoundaries();
+    }
+
+    /**
+     * 레벨별 경계선 생성 (빨간색)
+     */
+    createLevelBoundaries() {
+        const graphics = this.scene.add.graphics();
+        graphics.lineStyle(3, 0xff0000, 1); // 빨간색, 굵기 3
+        graphics.setDepth(0); // 다른 요소들 위에 표시
+
+        // 서버 설정과 동일한 값들 사용
+        const SPAWN_BARRIER_EXTRA_TILES = 4;
+        const tileSize = this.scene.TILE_SIZE;
+        
+        // 레벨 1과 레벨 2 경계선 (스폰 배리어 구역 경계)
+        const leftBarrierEnd = (this.scene.SPAWN_WIDTH / tileSize + SPAWN_BARRIER_EXTRA_TILES) * tileSize;
+        const rightBarrierStart = this.scene.MAP_WIDTH - (this.scene.SPAWN_WIDTH / tileSize + SPAWN_BARRIER_EXTRA_TILES) * tileSize;
+        
+        // 왼쪽 경계선 (레드팀 스폰 배리어와 레벨2 사이)
+        graphics.beginPath();
+        graphics.moveTo(leftBarrierEnd, 0);
+        graphics.lineTo(leftBarrierEnd, this.scene.MAP_HEIGHT);
+        graphics.strokePath();
+        
+        // 오른쪽 경계선 (블루팀 스폰 배리어와 레벨2 사이)
+        graphics.beginPath();
+        graphics.moveTo(rightBarrierStart, 0);
+        graphics.lineTo(rightBarrierStart, this.scene.MAP_HEIGHT);
+        graphics.strokePath();
+
+        // 레벨 3과 4 경계선 (광장 구역)
+        const plazaCenterX = this.scene.MAP_WIDTH / 2;
+        const plazaCenterY = this.scene.MAP_HEIGHT / 2;
+        const plazaHalfSize = this.scene.PLAZA_SIZE / 2;
+        
+        // 레벨 2와 레벨 3 경계선 (광장 외부 타일)
+        // TODO: 서버 GameConfig의 PLAZA_LEVEL3_EXTRA_TILES와 동기화 필요
+        const PLAZA_LEVEL3_EXTRA_TILES = 6; // GameConfig와 동일한 값 사용
+        const level3Boundary = PLAZA_LEVEL3_EXTRA_TILES * tileSize;
+        
+        // 광장 외부 타일 경계 (레벨 2와 레벨 3 사이)
+        const outerLeft = plazaCenterX - plazaHalfSize - level3Boundary;
+        const outerRight = plazaCenterX + plazaHalfSize + level3Boundary;
+        const outerTop = plazaCenterY - plazaHalfSize - level3Boundary;
+        const outerBottom = plazaCenterY + plazaHalfSize + level3Boundary;
+        
+        // 외부 경계선
+        graphics.beginPath();
+        graphics.moveTo(outerLeft, outerTop);
+        graphics.lineTo(outerRight, outerTop);
+        graphics.lineTo(outerRight, outerBottom);
+        graphics.lineTo(outerLeft, outerBottom);
+        graphics.lineTo(outerLeft, outerTop);
+        graphics.strokePath();
+        
+        // 레벨 3과 레벨 4 경계선 (광장 내부)
+        const innerLeft = plazaCenterX - plazaHalfSize;
+        const innerRight = plazaCenterX + plazaHalfSize;
+        const innerTop = plazaCenterY - plazaHalfSize;
+        const innerBottom = plazaCenterY + plazaHalfSize;
+        
+        // 내부 경계선 (광장)
+        graphics.beginPath();
+        graphics.moveTo(innerLeft, innerTop);
+        graphics.lineTo(innerRight, innerTop);
+        graphics.lineTo(innerRight, innerBottom);
+        graphics.lineTo(innerLeft, innerBottom);
+        graphics.lineTo(innerLeft, innerTop);
+        graphics.strokePath();
     }
 
     /**

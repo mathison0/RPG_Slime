@@ -12,6 +12,7 @@ const gameConfig = {
   SPAWN_WIDTH_TILES: 6,
   SPAWN_BARRIER_EXTRA_TILES: 4, // 스폰 구역보다 추가로 확장할 타일 수
   PLAZA_SIZE_TILES: 30,
+  PLAZA_LEVEL3_EXTRA_TILES: 6, // 광장 주변 레벨 3 구역 확장 타일 수
   
   // 계산된 픽셀 크기 (하위 호환성을 위해 유지)
   get MAP_WIDTH() { 
@@ -67,10 +68,6 @@ const gameConfig = {
       // 모든 레벨의 최대 몬스터 수를 합계
       return Object.values(MAX_MONSTERS_PER_LEVEL).reduce((sum, count) => sum + count, 0);
     },
-    // 콜라이더 관련 설정 (클라이언트와 동기화)
-    COLLIDER: {
-      SIZE_RATIO: 0.8  // 콜라이더 크기 = 엔티티 크기 * 0.8
-    }
   },
   
   // 스폰 배리어 관련 설정

@@ -133,19 +133,35 @@ export default class GameScene extends Phaser.Scene {
             this.player = null;
         }
         
-        // 다른 플레이어들 제거
-        if (this.otherPlayers && this.otherPlayers.active) {
+        // 다른 플레이어들 제거 (안전한 방법으로)
+        if (this.otherPlayers) {
             try {
-                this.otherPlayers.clear(true, true);
+                // 개별 요소들 먼저 안전하게 제거
+                const otherPlayerChildren = this.otherPlayers.getChildren();
+                otherPlayerChildren.forEach(player => {
+                    if (player && player.active) {
+                        player.destroy();
+                    }
+                });
+                // 그룹 자체는 clear(false)로 정리
+                this.otherPlayers.clear(false);
             } catch (e) {
                 console.warn('다른 플레이어 제거 중 오류:', e);
             }
         }
         
-        // 적들 제거
-        if (this.enemies && this.enemies.active) {
+        // 적들 제거 (안전한 방법으로)
+        if (this.enemies) {
             try {
-                this.enemies.clear(true, true);
+                // 개별 요소들 먼저 안전하게 제거
+                const enemyChildren = this.enemies.getChildren();
+                enemyChildren.forEach(enemy => {
+                    if (enemy && enemy.active) {
+                        enemy.destroy();
+                    }
+                });
+                // 그룹 자체는 clear(false)로 정리
+                this.enemies.clear(false);
             } catch (e) {
                 console.warn('적 제거 중 오류:', e);
             }
@@ -873,19 +889,33 @@ export default class GameScene extends Phaser.Scene {
                 this.player = null;
             }
             
-            // 다른 플레이어들 제거
-            if (this.otherPlayers && this.otherPlayers.active) {
+            // 다른 플레이어들 제거 (안전한 방법으로)
+            if (this.otherPlayers) {
                 try {
-                    this.otherPlayers.clear(true, true);
+                    // 개별 요소들 먼저 안전하게 제거
+                    const otherPlayerChildren = this.otherPlayers.getChildren();
+                    otherPlayerChildren.forEach(player => {
+                        if (player && player.active) {
+                            player.destroy();
+                        }
+                    });
+                    this.otherPlayers.clear(false);
                 } catch (e) {
                     console.warn('다른 플레이어 제거 중 오류:', e);
                 }
             }
             
-            // 적들 제거
-            if (this.enemies && this.enemies.active) {
+            // 적들 제거 (안전한 방법으로)
+            if (this.enemies) {
                 try {
-                    this.enemies.clear(true, true);
+                    // 개별 요소들 먼저 안전하게 제거
+                    const enemyChildren = this.enemies.getChildren();
+                    enemyChildren.forEach(enemy => {
+                        if (enemy && enemy.active) {
+                            enemy.destroy();
+                        }
+                    });
+                    this.enemies.clear(false);
                 } catch (e) {
                     console.warn('적 제거 중 오류:', e);
                 }
@@ -973,5 +1003,53 @@ export default class GameScene extends Phaser.Scene {
         } catch (error) {
             console.error('GameScene 강제 초기화 중 오류:', error);
         }
+    }
+
+    /**
+     * 중복된 적들 정리 (GameScene에서 호출 가능한 메서드)
+     */
+    cleanupDuplicateEnemies() {
+        if (this.networkEventManager && this.networkEventManager.cleanupDuplicateEnemies) {
+            console.log('GameScene에서 중복 적 정리 호출');
+            this.networkEventManager.cleanupDuplicateEnemies();
+        }
+    }
+
+    /**
+     * 적 상태 디버그 정보 출력
+     */
+    debugEnemyStatus() {
+        if (!this.enemies) {
+            console.log('적 그룹이 존재하지 않습니다.');
+            return;
+        }
+
+        const enemies = this.enemies.getChildren();
+        const enemyGroups = new Map();
+
+        console.log('=== 적 상태 디버그 정보 ===');
+        console.log(`총 적 수: ${enemies.length}`);
+
+        // ID별로 그룹화
+        enemies.forEach((enemy, index) => {
+            const id = enemy.networkId || '(ID 없음)';
+            if (!enemyGroups.has(id)) {
+                enemyGroups.set(id, []);
+            }
+            enemyGroups.get(id).push({ index, enemy });
+        });
+
+        // 그룹별 정보 출력
+        enemyGroups.forEach((enemyList, id) => {
+            if (enemyList.length > 1) {
+                console.warn(`🔴 중복 적 발견! ID: ${id}, 개수: ${enemyList.length}`);
+                enemyList.forEach((item, idx) => {
+                    const enemy = item.enemy;
+                    console.log(`  ${idx + 1}. 위치: (${Math.round(enemy.x)}, ${Math.round(enemy.y)}), HP: ${enemy.hp}/${enemy.maxHp}, 활성: ${enemy.active}`);
+                });
+            }
+        });
+
+        console.log('=== 디버그 정보 끝 ===');
     }
 }

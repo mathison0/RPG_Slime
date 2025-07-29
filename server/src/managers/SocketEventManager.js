@@ -366,36 +366,33 @@ class SocketEventManager {
       const player = this.gameStateManager.getPlayer(socket.id);
 
       if (enemy && player) {
-        const isDead = enemy.takeDamage(player.attack);
+        const result = this.gameStateManager.takeDamage(player, enemy, player.attack);
         
-        if (isDead) {
-          // 적 제거 및 경험치 지급
-          this.gameStateManager.removeEnemy(data.enemyId);
-          const leveledUp = player.gainExp(25); // 적 처치 시 25 경험치
-          
-          this.io.emit('enemy-destroyed', { enemyId: data.enemyId });
-          
-          if (leveledUp) {
-            this.io.emit('player-level-up', {
-              playerId: socket.id,
-              level: player.level,
-              stats: {
-                hp: player.hp,
-                maxHp: player.maxHp,
-                attack: player.attack
-              }
-            });
+        if (result.success) {
+          // 몬스터 사망 체크
+          if (enemy.hp <= 0) {
+            // 적 제거 및 경험치 지급
+            this.gameStateManager.removeEnemy(data.enemyId);
+            const leveledUp = player.gainExp(25); // 적 처치 시 25 경험치
+            
+            this.io.emit('enemy-destroyed', { enemyId: data.enemyId });
+            
+            if (leveledUp) {
+              this.io.emit('player-level-up', {
+                playerId: socket.id,
+                level: player.level,
+                stats: {
+                  hp: player.hp,
+                  maxHp: player.maxHp,
+                  attack: player.attack
+                }
+              });
+            }
+            
+            // 새로운 적 스폰
+            this.enemyManager.spawnEnemy();
           }
-          
-          // 새로운 적 스폰
-          this.enemyManager.spawnEnemy();
-        } else {
-          // 적 데미지 알림
-          this.io.emit('enemy-damaged', {
-            enemyId: data.enemyId,
-            hp: enemy.hp,
-            maxHp: enemy.maxHp
-          });
+          // 데미지 이벤트는 통합 함수에서 이미 처리됨
         }
       }
     });
@@ -427,21 +424,15 @@ class SocketEventManager {
           const distance = Math.sqrt((enemy.x - explosionX) ** 2 + (enemy.y - explosionY) ** 2);
           if (distance <= explosionRadius) {
             const damage = player.attack;
-            enemy.takeDamage(damage);
+            const result = this.gameStateManager.takeDamage(player, enemy, damage);
             
-            // 모든 클라이언트에게 적 데미지 알림
-            this.io.emit('enemy-damaged', {
-              enemyId: enemy.id,
-              damage: damage,
-              currentHp: enemy.hp,
-              maxHp: enemy.maxHp,
-              isDead: enemy.isDead
-            });
-
-            // 적이 죽었으면 제거
-            if (enemy.isDead) {
-              this.gameStateManager.removeEnemy(enemy.id);
-              this.io.emit('enemy-destroyed', { enemyId: enemy.id });
+            if (result.success) {
+              // 적이 죽었으면 제거
+              if (enemy.hp <= 0) {
+                this.gameStateManager.removeEnemy(enemy.id);
+                this.io.emit('enemy-destroyed', { enemyId: enemy.id });
+              }
+              // 데미지 이벤트는 통합 함수에서 이미 처리됨
             }
           }
         });
@@ -453,16 +444,9 @@ class SocketEventManager {
           const distance = Math.sqrt((targetPlayer.x - explosionX) ** 2 + (targetPlayer.y - explosionY) ** 2);
           if (distance <= explosionRadius) {
             const damage = player.attack;
-            targetPlayer.takeDamage(damage);
+            const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
             
-            // 모든 클라이언트에게 플레이어 데미지 알림
-            this.io.emit('player-damaged', {
-              playerId: targetPlayer.id,
-              damage: damage,
-              currentHp: targetPlayer.hp,
-              maxHp: targetPlayer.maxHp,
-              isDead: targetPlayer.isDead
-            });
+            // 데미지 이벤트는 통합 함수에서 이미 처리됨
           }
         });
         

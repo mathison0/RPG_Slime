@@ -1,5 +1,6 @@
 const { getSkillInfo } = require('../../shared/JobClasses.js');
 const gameConfig = require('../config/GameConfig');
+const MonsterConfig = require('../../shared/MonsterConfig');
 
 /**
  * 스킬 관리 매니저
@@ -260,7 +261,6 @@ class SkillManager {
     }
   }
 
-  
   /**
    * 어쌔신 기본 공격 데미지 적용 (연속 공격)
    */
@@ -335,14 +335,23 @@ class SkillManager {
       if (distance <= range + enemyColliderSize / 2) {
         const enemyAngle = Math.atan2(enemy.y - y, enemy.x - x);
         if (this.isAngleInSweepRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
-          enemy.takeDamage(baseDamage);
-          damageResult.affectedEnemies.push({
-            id: enemy.id,
-            damage: baseDamage,
-            actualDamage: baseDamage,
-            newHp: enemy.hp
-          });
-          damageResult.totalDamage += baseDamage;
+          // 플레이어와 몬스터의 레벨 체크
+          const playerLevel = MonsterConfig.getMapLevelFromPosition(player.x, player.y, gameConfig);
+          const monsterLevel = enemy.mapLevel;
+          
+
+          
+          const result = this.gameStateManager.takeDamage(player, enemy, baseDamage);
+          
+          if (result.success) {
+            damageResult.affectedEnemies.push({
+              id: enemy.id,
+              damage: baseDamage,
+              actualDamage: result.actualDamage,
+              newHp: result.newHp
+            });
+            damageResult.totalDamage += result.actualDamage;
+          }
         }
       }
     });
@@ -356,16 +365,19 @@ class SkillManager {
       const distance = Math.sqrt((targetPlayer.x - x) ** 2 + (targetPlayer.y - y) ** 2);
       if (distance <= range + playerColliderSize / 2) {
         if (this.isAngleInSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
-          targetPlayer.takeDamage(baseDamage);
-          damageResult.affectedPlayers.push({
-            id: targetPlayer.id,
-            damage: baseDamage,
-            actualDamage: baseDamage,
-            newHp: targetPlayer.hp
-          });
-          damageResult.totalDamage += baseDamage;
+          const result = this.gameStateManager.takeDamage(player, targetPlayer, baseDamage);
+          
+          if (result.success) {
+              damageResult.affectedPlayers.push({
+                id: targetPlayer.id,
+                damage: baseDamage,
+                actualDamage: result.actualDamage,
+                newHp: result.newHp
+              });
+              damageResult.totalDamage += result.actualDamage;
+            }
+          }
         }
-      }
     });
 
     return damageResult;
@@ -474,7 +486,6 @@ class SkillManager {
 
     switch (skillType) {
       case 'roar':
-        // 울부짖기는 데미지 없음, 버프 효과만
         break;
 
       case 'sweep':
@@ -695,16 +706,24 @@ class SkillManager {
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
       if (this.isInSweepRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
-        const actualDamage = damage;
-        enemy.takeDamage(actualDamage);
-        damageResult.affectedEnemies.push({
-          id: enemy.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: enemy.x,
-          y: enemy.y
-        });
-        damageResult.totalDamage += actualDamage;
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          // 몬스터에게도 기절 효과 적용
+          console.log(`몬스터 ${enemy.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
+          enemy.startStun(stunDuration);
+          
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y,
+            isStunned: true,
+            stunDuration: stunDuration
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
 
@@ -712,24 +731,25 @@ class SkillManager {
     players.forEach(targetPlayer => {
       if (targetPlayer.id === player.id || targetPlayer.team === player.team || targetPlayer.hp <= 0) return;
       if (this.isInSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
-        const actualDamage = damage;
-        targetPlayer.takeDamage(actualDamage);
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
-        // 기절 효과 적용
-        console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
-        targetPlayer.startStun(stunDuration);
-        
-        damageResult.affectedPlayers.push({
-          id: targetPlayer.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: targetPlayer.x,
-          y: targetPlayer.y,
-          team: targetPlayer.team,
-          isStunned: true,
-          stunDuration: stunDuration
-        });
-        damageResult.totalDamage += actualDamage;
+        if (result.success) {
+          // 기절 효과 적용
+          console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
+          targetPlayer.startStun(stunDuration);
+          
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y,
+            team: targetPlayer.team,
+            isStunned: true,
+            stunDuration: stunDuration
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
   }
@@ -739,16 +759,18 @@ class SkillManager {
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
       if (this.isInThrustRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
-        const actualDamage = damage;
-        enemy.takeDamage(actualDamage);
-        damageResult.affectedEnemies.push({
-          id: enemy.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: enemy.x,
-          y: enemy.y
-        });
-        damageResult.totalDamage += actualDamage;
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
 
@@ -756,17 +778,19 @@ class SkillManager {
     players.forEach(targetPlayer => {
       if (targetPlayer.id === player.id || targetPlayer.team === player.team || targetPlayer.hp <= 0) return;
       if (this.isInThrustRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
-        const actualDamage = damage;
-        targetPlayer.takeDamage(actualDamage);
-        damageResult.affectedPlayers.push({
-          id: targetPlayer.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: targetPlayer.x,
-          y: targetPlayer.y,
-          team: targetPlayer.team
-        });
-        damageResult.totalDamage += actualDamage;
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+        
+        if (result.success) {
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y,
+            team: targetPlayer.team
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
   }
@@ -782,16 +806,18 @@ class SkillManager {
       const enemyColliderSize = enemy.getColliderSize();
       const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
       if (distance <= range + enemyColliderSize / 2) {
-        const actualDamage = damage;
-        enemy.takeDamage(actualDamage);
-        damageResult.affectedEnemies.push({
-          id: enemy.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: enemy.x,
-          y: enemy.y
-        });
-        damageResult.totalDamage += actualDamage;
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
 
@@ -802,17 +828,19 @@ class SkillManager {
       const playerColliderSize = targetPlayer.getColliderSize();
       const distance = Math.sqrt((targetPlayer.x - x) ** 2 + (targetPlayer.y - y) ** 2);
       if (distance <= range + playerColliderSize / 2) {
-        const actualDamage = damage;
-        targetPlayer.takeDamage(actualDamage);
-        damageResult.affectedPlayers.push({
-          id: targetPlayer.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: targetPlayer.x,
-          y: targetPlayer.y,
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+        
+        if (result.success) {
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y,
           team: targetPlayer.team
-        });
-        damageResult.totalDamage += actualDamage;
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
   }

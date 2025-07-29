@@ -299,7 +299,6 @@ class GameServer {
           // 전체 스탯 정보 추가
           stats: {
             attack: player.attack,
-            defense: player.defense || 0,
             speed: player.speed,
             visionRange: player.visionRange
           },
