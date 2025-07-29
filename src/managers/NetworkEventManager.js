@@ -100,8 +100,14 @@ export default class NetworkEventManager {
             this.handleLevelUpError(data);
         });
 
+        // 공격 무효 이벤트
+        this.networkManager.on('attack-invalid', (data) => {
+            this.handleAttackInvalid(data);
+        });
+
         // 적 관련 이벤트
         this.networkManager.on('enemy-spawned', (enemyData) => {
+            // 중복 생성 방지를 위해 createNetworkEnemy 사용 (내부에서 중복 체크)
             this.createNetworkEnemy(enemyData);
         });
 
@@ -120,6 +126,11 @@ export default class NetworkEventManager {
         this.networkManager.on('monster-attack', (data) => {
             this.handleMonsterAttack(data);
         });
+
+        // 몬스터 기절 상태
+        this.networkManager.on('enemy-stunned', (data) => {
+            this.handleEnemyStunned(data);
+        });
         
         // 플레이어 상태 업데이트
         this.networkManager.on('players-state-update', (data) => {
@@ -128,7 +139,6 @@ export default class NetworkEventManager {
 
         // 플레이어 기절 상태
         this.networkManager.on('player-stunned', (data) => {
-            console.log('NetworkEventManager: player-stunned 이벤트 받음:', data);
             this.handlePlayerStunned(data);
         });
         
@@ -137,7 +147,6 @@ export default class NetworkEventManager {
 
         // 연결 해제
         this.networkManager.on('disconnect', () => {
-            console.log('NetworkEventManager: disconnect 이벤트 수신됨');
             this.handleNetworkDisconnect();
         });
 
@@ -169,22 +178,18 @@ export default class NetworkEventManager {
         });
         
         this.networkManager.on('spawn-barrier-damage', (data) => {
-            console.log('spawn-barrier-damage 이벤트 수신:', data);
             this.handleSpawnBarrierDamage(data);
         });
         
         this.networkManager.on('player-died', (data) => {
-            console.log('player-died 이벤트 수신:', data);
             this.handlePlayerDied(data);
         });
         
         this.networkManager.on('player-respawned', (data) => {
-            console.log('player-respawned 이벤트 수신:', data);
             this.handlePlayerRespawned(data);
         });
         
         this.networkManager.on('player-state-sync', (data) => {
-            console.log('player-state-sync 이벤트 수신:', data);
             this.handlePlayerStateSync(data);
         });
         
@@ -201,7 +206,6 @@ export default class NetworkEventManager {
         });
         
         this.networkManager.on('player-invincible-changed', (data) => {
-            console.log('player-invincible-changed 이벤트 수신:', data);
             this.handlePlayerInvincibleChanged(data);
         });
         
@@ -223,12 +227,6 @@ export default class NetworkEventManager {
      */
     handleGameJoined(data) {
         console.log('game-joined 이벤트 수신:', data.playerId);
-        
-        // 중복 처리 방지
-        if (this.gameJoined && this.playerId === data.playerId) {
-            console.log('게임 입장 이미 완료됨, 중복 처리 무시');
-            return;
-        }
         
         if (this.scene.player && this.scene.player.networkId === data.playerId) {
             console.log('같은 플레이어 ID로 이미 플레이어가 존재함, 중복 처리 무시');
@@ -297,10 +295,13 @@ export default class NetworkEventManager {
             }
         });
         
-        // 기존 적들 생성
+        // 기존 적들 생성 (중복 생성 방지 포함)
         data.enemies.forEach(enemyData => {
             this.createNetworkEnemy(enemyData);
         });
+        
+        // 적 생성 후 중복 체크 (만약의 경우를 대비)
+        this.cleanupDuplicateEnemies();
         
         this.isFirstJoin = false;
         
@@ -359,11 +360,9 @@ export default class NetworkEventManager {
                 if (data.isDead) {
                     // 다른 플레이어가 죽었을 때 숨김
                     otherPlayer.setVisible(false);
-                    console.log(`다른 플레이어 ${data.id} 사망으로 숨김`);
                 } else {
                     // 다른 플레이어가 리스폰했을 때 표시
                     otherPlayer.setVisible(true);
-                    console.log(`다른 플레이어 ${data.id} 리스폰으로 표시`);
                 }
             }
             
@@ -409,8 +408,6 @@ export default class NetworkEventManager {
             // 기절 상태 업데이트
             if (data.isStunned !== undefined && data.isStunned !== otherPlayer.isStunned) {
                 otherPlayer.isStunned = data.isStunned;
-                console.log(`다른 플레이어 ${data.id} 기절 상태: ${data.isStunned}`);
-                
                 // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
                 if (data.isStunned) {
                     this.showStunEffect(otherPlayer, 2000); // 2초 기절
@@ -499,7 +496,6 @@ export default class NetworkEventManager {
         
         // 쿨타임 설정
         player.job.setSkillCooldown(skillType, skillInfo.cooldown);
-        console.log(`${skillType} 스킬 쿨타임 설정: ${skillInfo.cooldown}ms`);
     }
 
     /**
@@ -683,19 +679,35 @@ export default class NetworkEventManager {
                 this.scene.player = null;
             }
             
-            // 다른 플레이어들 제거
-            if (this.scene.otherPlayers && this.scene.otherPlayers.active) {
+            // 다른 플레이어들 제거 (안전한 방법으로)
+            if (this.scene.otherPlayers) {
                 try {
-                    this.scene.otherPlayers.clear(true, true);
+                    // 개별 요소들 먼저 안전하게 제거
+                    const otherPlayerChildren = this.scene.otherPlayers.getChildren();
+                    otherPlayerChildren.forEach(player => {
+                        if (player && player.active) {
+                            player.destroy();
+                        }
+                    });
+                    // 그룹 자체는 clear(false)로 정리
+                    this.scene.otherPlayers.clear(false);
                 } catch (e) {
                     console.warn('다른 플레이어 제거 중 오류:', e);
                 }
             }
             
-            // 적들 제거
-            if (this.scene.enemies && this.scene.enemies.active) {
+            // 적들 제거 (안전한 방법으로)
+            if (this.scene.enemies) {
                 try {
-                    this.scene.enemies.clear(true, true);
+                    // 개별 요소들 먼저 안전하게 제거
+                    const enemyChildren = this.scene.enemies.getChildren();
+                    enemyChildren.forEach(enemy => {
+                        if (enemy && enemy.active) {
+                            enemy.destroy();
+                        }
+                    });
+                    // 그룹 자체는 clear(false)로 정리
+                    this.scene.enemies.clear(false);
                 } catch (e) {
                     console.warn('적 제거 중 오류:', e);
                 }
@@ -707,6 +719,12 @@ export default class NetworkEventManager {
             this.playerTeam = null;
             
             console.log('게임 상태 초기화 완료');
+            
+            // 초기화 후 혹시 모를 중복 적들 정리
+            setTimeout(() => {
+                this.cleanupDuplicateEnemies();
+            }, 100); // 100ms 후 정리 (초기화가 완전히 끝난 후)
+            
         } catch (error) {
             console.error('게임 상태 초기화 중 오류:', error);
         }
@@ -728,7 +746,6 @@ export default class NetworkEventManager {
             // 스탯 정보 업데이트 (서버에서 계산된 값 사용)
             if (myPlayerState.stats) {
                 this.scene.player.attack = myPlayerState.stats.attack;
-                this.scene.player.defense = myPlayerState.stats.defense;
                 this.scene.player.speed = myPlayerState.stats.speed;
                 this.scene.player.visionRange = myPlayerState.stats.visionRange;
             }
@@ -759,18 +776,6 @@ export default class NetworkEventManager {
             // 기절 상태 정보 업데이트
             if (myPlayerState.isStunned !== undefined && myPlayerState.isStunned !== this.scene.player.isStunned) {
                 this.scene.player.isStunned = myPlayerState.isStunned;
-                console.log(`본인 플레이어 기절 상태: ${myPlayerState.isStunned}`);
-                
-                // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
-                if (myPlayerState.isStunned) {
-                    this.showStunEffect(this.scene.player, 2000); // 2초 기절
-                }
-            }
-            
-            // 기절 상태 정보 업데이트
-            if (myPlayerState.isStunned !== undefined && myPlayerState.isStunned !== this.scene.player.isStunned) {
-                this.scene.player.isStunned = myPlayerState.isStunned;
-                console.log(`본인 플레이어 기절 상태: ${myPlayerState.isStunned}`);
                 
                 // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
                 if (myPlayerState.isStunned) {
@@ -784,6 +789,9 @@ export default class NetworkEventManager {
         
         // 다른 플레이어들 상태 업데이트
         if (this.scene.otherPlayers?.children) {
+            // 서버에서 받은 플레이어 ID 목록 생성
+            const serverPlayerIds = new Set(playerStates.map(p => p.id));
+            
             playerStates.forEach(playerState => {
                 if (playerState.id === this.networkManager.playerId) return; // 본인 제외
                 
@@ -808,7 +816,6 @@ export default class NetworkEventManager {
                     // 기절 상태 정보 업데이트
                     if (playerState.isStunned !== undefined && playerState.isStunned !== otherPlayer.isStunned) {
                         otherPlayer.isStunned = playerState.isStunned;
-                        console.log(`다른 플레이어 ${playerState.id} 기절 상태: ${playerState.isStunned}`);
                         
                         // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
                         if (playerState.isStunned) {
@@ -817,6 +824,14 @@ export default class NetworkEventManager {
                     }
                     
                     otherPlayer.updateJobSprite();
+                }
+            });
+            
+            // 서버에 없는 다른 플레이어들 제거 (서버와 동기화되지 않은 플레이어 정리)
+            this.scene.otherPlayers.getChildren().forEach(otherPlayer => {
+                if (otherPlayer.networkId && !serverPlayerIds.has(otherPlayer.networkId)) {
+                    console.log(`서버에 존재하지 않는 다른 플레이어 제거: ${otherPlayer.networkId}`);
+                    otherPlayer.destroy();
                 }
             });
         }
@@ -885,8 +900,6 @@ export default class NetworkEventManager {
             
             // UI 업데이트
             this.scene.player.updateUI();
-            
-            console.log(`본인 플레이어 무적 상태 변경: ${data.isInvincible}`);
         }
     }
 
@@ -894,8 +907,6 @@ export default class NetworkEventManager {
      * 플레이어 기절 상태 처리
      */
     handlePlayerStunned(data) {
-        console.log(`플레이어 기절 상태 이벤트 받음: ${data.playerId}, 기절: ${data.isStunned}`);
-        
         const player = data.playerId === this.networkManager.playerId 
             ? this.scene.player 
             : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
@@ -917,8 +928,6 @@ export default class NetworkEventManager {
      * 플레이어 레벨업 처리
      */
     handlePlayerLevelUp(data) {
-        console.log('서버에서 레벨업 처리:', data);
-        
         // 본인 플레이어인 경우
         if (data.playerId === this.networkManager.playerId && this.scene.player) {
             const player = this.scene.player;
@@ -928,13 +937,11 @@ export default class NetworkEventManager {
             if (data.hp !== undefined) player.hp = data.hp;
             if (data.maxHp !== undefined) player.maxHp = data.maxHp;
             if (data.attack !== undefined) player.attack = data.attack;
-            if (data.defense !== undefined) player.defense = data.defense;
             if (data.speed !== undefined) player.speed = data.speed;
             if (data.visionRange !== undefined) player.visionRange = data.visionRange;
             
             // 서버에서 받은 size로 직접 설정 (updateCharacterSize 대신)
             if (data.size !== undefined) {
-                console.log(`서버에서 받은 size로 업데이트: ${player.size} -> ${data.size}`);
                 player.size = data.size;
                 player.updateSize(); // 물리적 크기 업데이트
             } else {
@@ -948,7 +955,6 @@ export default class NetworkEventManager {
             // UI 업데이트
             player.updateUI();
             
-            console.log(`본인 플레이어 레벨업 완료: 레벨 ${player.level}, HP: ${player.hp}/${player.maxHp}, 크기: ${player.size}`);
         }
         
         // 다른 플레이어인 경우 (레벨 정보만 업데이트)
@@ -960,7 +966,6 @@ export default class NetworkEventManager {
                     otherPlayer.size = data.size;
                     otherPlayer.updateSize();
                 }
-                console.log(`다른 플레이어 ${data.playerId} 레벨업: 레벨 ${data.level}, 크기: ${otherPlayer.size}`);
             }
         }
     }
@@ -993,21 +998,37 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 적 상태 업데이트 처리
+     * 적 상태 업데이트 처리 (중복 적 정리 포함)
      */
     handleEnemiesUpdate(enemiesData) {
         if (!this.scene.enemies) return;
 
+        // 먼저 중복된 적들 정리
+        this.cleanupDuplicateEnemies();
+
         // 서버에서 받은 적 데이터로 클라이언트 적들 업데이트
         enemiesData.forEach(enemyData => {
-            let enemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyData.id);
+            // 같은 ID를 가진 모든 적들을 찾기
+            const enemiesWithSameId = this.scene.enemies.getChildren().filter(e => e.networkId === enemyData.id);
             
-            if (!enemy) {
+            if (enemiesWithSameId.length === 0) {
                 // 새로운 적 생성
-                enemy = this.createNetworkEnemy(enemyData);
+                this.createNetworkEnemy(enemyData);
+            } else if (enemiesWithSameId.length === 1) {
+                // 정상적인 경우: 기존 적 상태 업데이트
+                enemiesWithSameId[0].applyServerStats(enemyData);
             } else {
-                // 기존 적 상태 업데이트 - 서버에서 받은 모든 정보 적용
-                enemy.applyServerStats(enemyData);
+                // 중복된 적들이 있는 경우: 첫 번째만 유지하고 나머지 제거
+                console.warn(`중복된 적 발견 (ID: ${enemyData.id}): ${enemiesWithSameId.length}개 → 1개로 정리`);
+                
+                // 첫 번째 적만 업데이트하고 유지
+                enemiesWithSameId[0].applyServerStats(enemyData);
+                
+                // 나머지 중복된 적들 제거
+                for (let i = 1; i < enemiesWithSameId.length; i++) {
+                    console.log(`중복 적 제거: ID ${enemyData.id} (${i + 1}/${enemiesWithSameId.length})`);
+                    enemiesWithSameId[i].destroy();
+                }
             }
         });
 
@@ -1015,6 +1036,7 @@ export default class NetworkEventManager {
         const serverEnemyIds = new Set(enemiesData.map(e => e.id));
         this.scene.enemies.getChildren().forEach(enemy => {
             if (enemy.networkId && !serverEnemyIds.has(enemy.networkId)) {
+                console.log(`서버에 존재하지 않는 적 제거: ${enemy.networkId}`);
                 enemy.destroy();
             }
         });
@@ -1031,7 +1053,6 @@ export default class NetworkEventManager {
             // 직업 변경 후 UI 업데이트
             this.scene.player.updateUI();
             
-            console.log(`본인 직업 변경: ${data.jobClass}`);
             return;
         }
         
@@ -1042,7 +1063,6 @@ export default class NetworkEventManager {
         if (otherPlayer) {
             otherPlayer.jobClass = data.jobClass;
             otherPlayer.updateJobSprite();
-            console.log(`다른 플레이어 ${data.id} 직업 변경: ${data.jobClass}`);
         }
     }
 
@@ -1093,8 +1113,6 @@ export default class NetworkEventManager {
                         this.scene.player.clearTint();
                     }
                 });
-                
-                console.log(`스폰 배리어 데미지 받음: -${data.damage} HP (${data.currentHp}/${data.maxHp})`);
             }
         } else {
             // 다른 플레이어가 데미지를 받은 경우
@@ -1113,8 +1131,6 @@ export default class NetworkEventManager {
      */
     handlePlayerDied(data) {
         if (data.playerId === this.networkManager.playerId) {
-            // 본인이 사망한 경우 - 새로운 사망 처리 로직 사용
-            console.log('본인 사망 이벤트 수신:', data.cause);
             this.scene.handlePlayerDeath(data.cause);
         } else {
             // 다른 플레이어가 사망한 경우
@@ -1149,8 +1165,6 @@ export default class NetworkEventManager {
      * 플레이어 리스폰 처리
      */
     handlePlayerRespawned(data) {
-        console.log('플레이어 리스폰 이벤트 수신:', data);
-        
         if (data.playerId === this.networkManager.playerId) {
             // 본인 리스폰 처리
             if (this.scene.player) {
@@ -1227,8 +1241,6 @@ export default class NetworkEventManager {
                     '리스폰!', 
                     { fill: '#00ff00', fontSize: '20px' }
                 );
-                
-                console.log(`다른 플레이어 ${data.playerId} 리스폰 처리 완료`);
             }
         }
     }
@@ -1240,8 +1252,6 @@ export default class NetworkEventManager {
         if (data.playerId === this.networkManager.playerId && this.scene.player) {
             const player = this.scene.player;
             const playerData = data.playerData;
-            
-            console.log('본인 플레이어 상태 동기화:', playerData);
             
             // 위치 동기화
             player.x = playerData.x;
@@ -1259,7 +1269,6 @@ export default class NetworkEventManager {
             // size는 항상 서버에서 제공되어야 함 (클라이언트에서 계산하지 않음)
             if (playerData.size !== undefined) {
                 player.size = playerData.size;
-                console.log(`handlePlayerStateSync: 서버에서 받은 size 설정: ${playerData.size}`);
             } else {
                 console.warn(`handlePlayerStateSync: 서버에서 size 정보가 누락됨. 기본값 유지: ${player.size}`);
             }
@@ -1271,8 +1280,7 @@ export default class NetworkEventManager {
             player.updateNameTextPosition();
             player.updateUI();
             
-            console.log(`플레이어 상태 동기화 완료: 위치(${player.x}, ${player.y}), HP: ${player.hp}/${player.maxHp}, 사망: ${player.isDead}`);
-        }
+    }
     }
 
     /**
@@ -1291,7 +1299,6 @@ export default class NetworkEventManager {
         // size는 항상 서버에서 제공되어야 함 (클라이언트에서 계산하지 않음)
         if (playerData.size !== undefined) {
             otherPlayer.size = playerData.size;
-            console.log(`createOtherPlayer: 서버에서 받은 size 설정: ${playerData.size}`);
         } else {
             console.warn(`createOtherPlayer: 서버에서 size 정보가 누락됨. 기본값 사용`);
             otherPlayer.size = 32; // 기본 크기로 설정
@@ -1320,9 +1327,19 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 네트워크 적 생성
+     * 네트워크 적 생성 (중복 생성 방지 포함)
      */
     createNetworkEnemy(enemyData) {
+        // 중복 생성 방지: 이미 같은 ID의 적이 있는지 확인
+        if (this.scene.enemies) {
+            const existingEnemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyData.id);
+            if (existingEnemy) {
+                console.warn(`적 중복 생성 방지: ID ${enemyData.id}가 이미 존재합니다. 기존 적 업데이트.`);
+                existingEnemy.applyServerStats(enemyData);
+                return existingEnemy;
+            }
+        }
+
         const enemy = new Enemy(this.scene, enemyData.x, enemyData.y, enemyData.type);
         enemy.setNetworkId(enemyData.id);
         enemy.setDepth(600); // 그림자(700) 아래로 설정
@@ -1334,6 +1351,45 @@ export default class NetworkEventManager {
             this.scene.enemies.add(enemy);
         }
         return enemy;
+    }
+
+    /**
+     * 중복된 적들 정리 (같은 ID를 가진 적이 여러 개 있는 경우)
+     */
+    cleanupDuplicateEnemies() {
+        if (!this.scene.enemies) return;
+
+        const enemies = this.scene.enemies.getChildren();
+        const enemyGroups = new Map(); // ID별로 적들을 그룹화
+
+        // ID별로 적들 그룹화
+        enemies.forEach(enemy => {
+            if (enemy.networkId) {
+                if (!enemyGroups.has(enemy.networkId)) {
+                    enemyGroups.set(enemy.networkId, []);
+                }
+                enemyGroups.get(enemy.networkId).push(enemy);
+            }
+        });
+
+        // 중복된 적들 정리
+        let totalDuplicatesRemoved = 0;
+        enemyGroups.forEach((enemyList, enemyId) => {
+            if (enemyList.length > 1) {
+                console.warn(`중복 적 정리: ID ${enemyId}에 ${enemyList.length}개의 적이 있음`);
+                
+                // 첫 번째 적만 유지하고 나머지 제거
+                for (let i = 1; i < enemyList.length; i++) {
+                    console.log(`중복 적 제거: ID ${enemyId} (${i + 1}/${enemyList.length})`);
+                    enemyList[i].destroy();
+                    totalDuplicatesRemoved++;
+                }
+            }
+        });
+
+        if (totalDuplicatesRemoved > 0) {
+            console.log(`중복 적 정리 완료: 총 ${totalDuplicatesRemoved}개 제거`);
+        }
     }
 
     /**
@@ -1435,8 +1491,6 @@ export default class NetworkEventManager {
         // 서버에서 받은 지속시간 사용 (기본값 400ms)
         const skillInfo = data?.skillInfo || {};
         const duration = skillInfo.duration || 400;
-        
-        console.log(`점프 스킬 정보 (서버에서 받음): duration=${duration}ms`);
         
         this.scene.tweens.add({
             targets: targets,
@@ -1625,5 +1679,68 @@ export default class NetworkEventManager {
                 player.clearTint();
             }
         });
+    }
+
+    /**
+     * 공격 무효 처리
+     */
+    handleAttackInvalid(data) {
+        console.log('attack-invalid 이벤트 수신:', data);
+        
+        // effectManager가 있는지 확인
+        if (!this.scene.effectManager) {
+            console.error('effectManager가 없습니다!');
+            return;
+        }
+        
+        // 빨간색 "공격 무효!" 메시지를 해당 위치에 표시
+        this.scene.effectManager.showMessage(
+            data.x, 
+            data.y - 30, 
+            data.message, 
+            { 
+                fill: '#ff0000',
+                fontSize: '18px',
+                fontStyle: 'bold'
+            },
+            1500 // 1.5초 동안 표시
+        );
+        
+        console.log(`메시지 표시: "${data.message}" at (${data.x}, ${data.y})`);
+    }
+
+    /**
+     * 몬스터 기절 상태 처리
+     */
+    handleEnemyStunned(data) {
+        // 해당 몬스터를 찾아서 기절 상태 업데이트
+        const enemy = this.scene.enemies?.getChildren().find(e => e.networkId === data.enemyId);
+        if (enemy) {
+            // 몬스터의 기절 상태 업데이트
+            if (data.isStunned) {
+                // 기절 시작 - 몬스터 위에 기절 표시
+                this.scene.effectManager.showMessage(
+                    enemy.x, 
+                    enemy.y - 40, 
+                    '기절!', 
+                    { 
+                        fill: '#ffff00',
+                        fontSize: '14px',
+                        fontStyle: 'bold'
+                    },
+                    data.duration || 2000
+                );
+                
+                // 몬스터 색상 변경 (기절 표시)
+                if (enemy.sprite) {
+                    enemy.sprite.setTint(0x888888); // 회색으로 변경
+                }
+            } else {
+                // 기절 해제 - 몬스터 색상 복구
+                if (enemy.sprite) {
+                    enemy.sprite.clearTint();
+                }
+            }
+        }
     }
 }

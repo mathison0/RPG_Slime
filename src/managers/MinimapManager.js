@@ -12,7 +12,7 @@ export default class MinimapManager {
         this.minimapScale = this.minimapSize / this.minimapViewSize;
         
         // 빅맵 설정
-        this.bigMapSize = 800;
+        this.bigMapSize = 600;
         this.bigMapScale = 0;
         
         // 맵 그리드

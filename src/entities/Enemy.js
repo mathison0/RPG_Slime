@@ -51,11 +51,29 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         // 기본 크기 설정 (서버에서 받은 크기로 나중에 업데이트됨)
         this.setDisplaySize(32, 32);
         this.setCollideWorldBounds(true);
-        this.body.setSize(24, 24);
+        
+        // 기본 충돌체 크기 설정
+        this.colliderSize = 32;
+        this.updatePhysicsBody();
         
         // 서버 제어 적 물리 설정
         this.body.pushable = false; // 밀리지 않음
         this.body.immovable = true; // 충돌 시 움직이지 않음
+    }
+
+    /**
+     * 물리 바디 크기 업데이트 (Player와 동일한 방식)
+     */
+    updatePhysicsBody() {
+        if (this.body) {
+            const bodyWidth = this.colliderSize / this.scaleX;
+            const bodyHeight = this.colliderSize / this.scaleY;
+            
+            this.body.setSize(bodyWidth, bodyHeight);
+            
+            // 충돌 박스를 스프라이트 중앙에 맞추기 위한 오프셋 계산
+            this.body.setOffset(0, 0);
+        }
     }
     
     /**
@@ -153,18 +171,31 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
             this.applyServerSize(enemyData.size);
         }
         
+        // 기절 상태 적용
+        if (enemyData.isStunned !== undefined) {
+            this.isStunned = enemyData.isStunned;
+            if (this.isStunned) {
+                // 기절 상태일 때 색상 변경
+                this.setTint(0x888888);
+            } else {
+                // 기절 해제 시 색상 복구
+                this.clearTint();
+            }
+        }
+        
         // 체력바 업데이트
         this.updateHealthBar();
     }
     
     /**
-     * 서버에서 받은 크기 적용
+     * 서버에서 받은 크기 적용 (Player의 updateSize 방식 적용)
      */
     applyServerSize(size) {
+        // 화면 표시 크기와 물리적 충돌 크기를 동일하게 설정
         this.setDisplaySize(size, size);
-        if (this.body) {
-            this.body.setSize(size * 0.8, size * 0.8);
-        }
+        this.colliderSize = size; // 스프라이트 크기와 동일하게 설정
+        
+        this.updatePhysicsBody();
     }
     
     /**

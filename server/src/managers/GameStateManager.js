@@ -1,6 +1,7 @@
 const ServerPlayer = require('../entities/ServerPlayer');
 const ServerEnemy = require('../entities/ServerEnemy');
 const gameConfig = require('../config/GameConfig');
+const MonsterConfig = require('../../shared/MonsterConfig');
 
 /**
  * 게임 상태 관리 매니저
@@ -304,6 +305,125 @@ class GameStateManager {
     this.enemies.clear();
     this.rooms.clear();
     console.log('게임 상태 리셋 완료');
+  }
+
+  /**
+   * 통합 데미지 처리 함수
+   * @param {Object} attacker - 공격자 (플레이어 또는 몬스터)
+   * @param {Object} target - 피격자 (플레이어 또는 몬스터)
+   * @param {number} damage - 데미지 량
+   * @returns {Object} - 처리 결과 { success: boolean, actualDamage: number, reason?: string }
+   */
+  takeDamage(attacker, target, damage) {
+    console.log(`takeDamage 호출: ${attacker.id} → ${target.id}, 데미지: ${damage}`);
+    
+    // 기본 유효성 검사
+    if (!attacker || !target || damage <= 0) {
+      console.log(`takeDamage 실패: 유효하지 않은 파라미터`);
+      return { success: false, actualDamage: 0, reason: 'invalid parameters' };
+    }
+
+    // 타겟이 이미 죽었는지 체크
+    if (target.isDead || target.hp <= 0) {
+      return { success: false, actualDamage: 0, reason: 'target already dead' };
+    }
+
+    // 무적 상태 체크 (플레이어만)
+    if (target.isInvincible) {
+      // 무적 상태일 때 attack-invalid 이벤트 브로드캐스트
+      console.log(`무적 상태로 공격 무효: ${attacker.id} → ${target.id}`);
+      if (this.io) {
+        this.io.to(attacker.id).emit('attack-invalid', {
+          x: target.x,
+          y: target.y,
+          message: '무적!'
+        });
+      }
+      return { success: false, actualDamage: 0, reason: 'invincible' };
+    }
+
+    // 맵 레벨 체크 (플레이어가 몬스터를 공격하는 경우)
+    if (attacker.team !== undefined && target.mapLevel !== undefined) {
+      const attackerLevel = MonsterConfig.getMapLevelFromPosition(attacker.x, attacker.y, gameConfig);
+      const targetLevel = target.mapLevel;
+      
+      if (attackerLevel !== targetLevel) {
+        // 다른 레벨에서의 공격 무효
+        if (this.io) {
+          this.io.to(attacker.id).emit('attack-invalid', {
+            x: target.x,
+            y: target.y,
+            message: '공격 무효!'
+          });
+        }
+        console.log(`레벨 다름으로 공격 무효: 공격자 레벨 ${attackerLevel}, 타겟 레벨 ${targetLevel}`);
+        return { success: false, actualDamage: 0, reason: 'different level' };
+      }
+    }
+
+    // 실제 데미지 적용
+    const actualDamage = damage;
+    target.hp = Math.max(0, target.hp - actualDamage);
+
+    // 몬스터가 피격당한 경우 공격자를 타겟으로 설정
+    if (target.mapLevel !== undefined && attacker.team !== undefined) {
+      target.target = attacker;
+      console.log(`몬스터 ${target.id}가 ${attacker.id}에게 피격당해 타겟으로 설정`);
+    }
+
+    // 플레이어가 피격당한 경우 데미지 소스 추적
+    if (target.team !== undefined && attacker.mapLevel !== undefined) {
+      target.lastDamageSource = {
+        type: 'monster',
+        id: attacker.id,
+        timestamp: Date.now()
+      };
+    } else if (target.team !== undefined && attacker.team !== undefined) {
+      target.lastDamageSource = {
+        type: 'player',
+        id: attacker.id,
+        timestamp: Date.now()
+      };
+    }
+
+    // 이벤트 브로드캐스트
+    if (this.io) {
+      if (target.team !== undefined) {
+        // 플레이어 피격 이벤트
+        if (attacker.mapLevel !== undefined) {
+          // 몬스터가 플레이어를 공격
+          this.io.emit('monster-attack', {
+            monsterId: attacker.id,
+            playerId: target.id,
+            damage: actualDamage,
+            newHp: target.hp
+          });
+        } else {
+          // 플레이어가 플레이어를 공격
+          this.io.emit('player-damaged', {
+            playerId: target.id,
+            attackerId: attacker.id,
+            damage: actualDamage,
+            newHp: target.hp
+          });
+        }
+      } else if (target.mapLevel !== undefined) {
+        // 몬스터 피격 이벤트
+        this.io.emit('enemy-damaged', {
+          enemyId: target.id,
+          hp: target.hp,
+          maxHp: target.maxHp
+        });
+      }
+    }
+
+    console.log(`데미지 처리: ${attacker.id} → ${target.id}, 데미지: ${actualDamage}, 남은 HP: ${target.hp}`);
+    
+    return { 
+      success: true, 
+      actualDamage: actualDamage,
+      newHp: target.hp
+    };
   }
 }
 

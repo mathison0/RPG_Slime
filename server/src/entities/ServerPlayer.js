@@ -60,7 +60,6 @@ class ServerPlayer {
     this.maxHp = stats.hp;
     this.hp = this.maxHp; // 초기에는 풀피로 시작
     this.attack = stats.attack;
-    this.defense = stats.defense;
     this.speed = stats.speed;
     this.visionRange = stats.visionRange;
     
@@ -173,7 +172,6 @@ class ServerPlayer {
     this.maxHp = newStats.hp;
     this.hp = this.maxHp; // 풀피로 회복
     this.attack = newStats.attack;
-    this.defense = newStats.defense;
     this.speed = newStats.speed;
     this.visionRange = newStats.visionRange;
     
@@ -192,7 +190,6 @@ class ServerPlayer {
       hp: this.hp,
       maxHp: this.maxHp,
       attack: this.attack,
-      defense: this.defense,
       speed: this.speed,
       visionRange: this.visionRange,
       size: this.size  // size 정보 추가

@@ -1,5 +1,6 @@
 const { getSkillInfo } = require('../../shared/JobClasses.js');
 const gameConfig = require('../config/GameConfig');
+const MonsterConfig = require('../../shared/MonsterConfig');
 
 /**
  * 스킬 관리 매니저
@@ -261,190 +262,6 @@ class SkillManager {
   }
 
   /**
-   * 원거리 기본 공격 데미지 적용
-   */
-  applyRangedBasicAttack(player, baseDamage, x, y, targetX, targetY) {
-    const damageResult = {
-      affectedEnemies: [],
-      affectedPlayers: [],
-      totalDamage: 0
-    };
-
-    const enemies = this.gameStateManager.enemies;
-    const players = this.gameStateManager.players;
-
-    // 투사체 경로 계산
-    const angle = Math.atan2(targetY - y, targetX - x);
-    const maxDistance = 300; // 투사체 최대 거리
-    
-    // 직업별 최대 사거리 설정
-    let projectileMaxDistance;
-    switch (player.jobClass) {
-      case 'archer':
-        projectileMaxDistance = 400;
-        break;
-      case 'mage':
-        projectileMaxDistance = 350;
-        break;
-      case 'ninja':
-        projectileMaxDistance = 300;
-        break;
-      case 'slime':
-        projectileMaxDistance = 200;
-        break;
-      default:
-        projectileMaxDistance = maxDistance;
-    }
-
-    // 투사체의 실제 최종 위치 계산
-    const finalX = x + Math.cos(angle) * projectileMaxDistance;
-    const finalY = y + Math.sin(angle) * projectileMaxDistance;
-
-    // 투사체 경로상의 충돌 체크 (더 정확한 방법)
-    const checkCollision = (targetX, targetY, targetSize) => {
-      // 투사체 경로를 여러 점으로 나누어 체크
-      const steps = 50;
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const projectileX = x + (finalX - x) * t;
-        const projectileY = y + (finalY - y) * t;
-        
-        // 사각형 충돌 감지
-        const halfSize = targetSize / 2;
-        if (projectileX >= targetX - halfSize && projectileX <= targetX + halfSize &&
-            projectileY >= targetY - halfSize && projectileY <= targetY + halfSize) {
-          return true;
-        }
-      }
-      return false;
-    };
-
-    // 적과의 충돌 체크
-    enemies.forEach(enemy => {
-      if (enemy.isDead) return;
-      
-      // 적의 실제 콜라이더 크기 사용 (클라이언트와 동일)
-      const enemyColliderSize = enemy.getColliderSize();
-      
-      if (checkCollision(enemy.x, enemy.y, enemyColliderSize)) {
-        const damage = baseDamage;
-        enemy.takeDamage(damage);
-        damageResult.affectedEnemies.push({
-          id: enemy.id,
-          damage: damage,
-          actualDamage: damage,
-          newHp: enemy.hp,
-          x: enemy.x,
-          y: enemy.y
-        });
-        damageResult.totalDamage += damage;
-      }
-    });
-
-    // 다른 플레이어와의 충돌 체크 (적팀인 경우)
-    players.forEach(targetPlayer => {
-      if (targetPlayer.id === player.id || targetPlayer.team === player.team) return;
-      
-      // 플레이어의 실제 콜라이더 크기 사용 (클라이언트와 동일)
-      const playerColliderSize = targetPlayer.getColliderSize();
-      
-      if (checkCollision(targetPlayer.x, targetPlayer.y, playerColliderSize)) {
-        const damage = baseDamage;
-        targetPlayer.takeDamage(damage);
-        damageResult.affectedPlayers.push({
-          id: targetPlayer.id,
-          damage: damage,
-          actualDamage: damage,
-          newHp: targetPlayer.hp,
-          x: targetPlayer.x,
-          y: targetPlayer.y
-        });
-        damageResult.totalDamage += damage;
-      }
-    });
-
-    // 마법사의 경우 충돌 시 또는 최대 사거리에 도달했을 때 범위 공격 추가
-    if (player.jobClass === 'mage') {
-      // 충돌이 있었거나 최대 사거리에 도달했을 때 범위 공격 실행
-      const hasCollision = damageResult.affectedEnemies.length > 0 || damageResult.affectedPlayers.length > 0;
-      const explosionRadius = 60;
-      let explosionX, explosionY;
-      
-      if (hasCollision) {
-        // 충돌이 있었으면 충돌 지점에서 범위 공격
-        // 충돌한 첫 번째 대상을 기준으로 함
-        const firstEnemy = damageResult.affectedEnemies[0];
-        const firstPlayer = damageResult.affectedPlayers[0];
-        
-        if (firstEnemy) {
-          explosionX = firstEnemy.x;
-          explosionY = firstEnemy.y;
-        } else if (firstPlayer) {
-          explosionX = firstPlayer.x;
-          explosionY = firstPlayer.y;
-        } else {
-          explosionX = finalX;
-          explosionY = finalY;
-        }
-      } else {
-        // 충돌이 없었으면 최대 사거리에서 범위 공격
-        explosionX = finalX;
-        explosionY = finalY;
-      }
-      
-      // 범위 내 적들에게 데미지 적용 (이미 충돌한 대상 제외)
-      enemies.forEach(enemy => {
-        if (enemy.isDead) return;
-        
-        const distance = Math.sqrt((enemy.x - explosionX) ** 2 + (enemy.y - explosionY) ** 2);
-        if (distance <= explosionRadius) {
-          // 이미 충돌한 대상인지 확인
-          const alreadyHit = damageResult.affectedEnemies.some(hit => hit.id === enemy.id);
-          if (!alreadyHit) {
-            const damage = baseDamage;
-            enemy.takeDamage(damage);
-            damageResult.affectedEnemies.push({
-              id: enemy.id,
-              damage: damage,
-              actualDamage: damage,
-              newHp: enemy.hp,
-              x: enemy.x,
-              y: enemy.y
-            });
-            damageResult.totalDamage += damage;
-          }
-        }
-      });
-      
-      // 범위 내 다른 플레이어들에게 데미지 적용 (적팀만, 이미 충돌한 대상 제외)
-      players.forEach(targetPlayer => {
-        if (targetPlayer.id === player.id || targetPlayer.team === player.team) return;
-        
-        const distance = Math.sqrt((targetPlayer.x - explosionX) ** 2 + (targetPlayer.y - explosionY) ** 2);
-        if (distance <= explosionRadius) {
-          // 이미 충돌한 대상인지 확인
-          const alreadyHit = damageResult.affectedPlayers.some(hit => hit.id === targetPlayer.id);
-          if (!alreadyHit) {
-            const damage = baseDamage;
-            targetPlayer.takeDamage(damage);
-            damageResult.affectedPlayers.push({
-              id: targetPlayer.id,
-              damage: damage,
-              actualDamage: damage,
-              newHp: targetPlayer.hp,
-              x: targetPlayer.x,
-              y: targetPlayer.y
-            });
-            damageResult.totalDamage += damage;
-          }
-        }
-      });
-    }
-
-    return damageResult;
-  }
-
-  /**
    * 어쌔신 기본 공격 데미지 적용 (연속 공격)
    */
   applyAssassinBasicAttack(player, baseDamage, x, y, targetX, targetY) {
@@ -518,14 +335,23 @@ class SkillManager {
       if (distance <= range + enemyColliderSize / 2) {
         const enemyAngle = Math.atan2(enemy.y - y, enemy.x - x);
         if (this.isAngleInSweepRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
-          enemy.takeDamage(baseDamage);
-          damageResult.affectedEnemies.push({
-            id: enemy.id,
-            damage: baseDamage,
-            actualDamage: baseDamage,
-            newHp: enemy.hp
-          });
-          damageResult.totalDamage += baseDamage;
+          // 플레이어와 몬스터의 레벨 체크
+          const playerLevel = MonsterConfig.getMapLevelFromPosition(player.x, player.y, gameConfig);
+          const monsterLevel = enemy.mapLevel;
+          
+
+          
+          const result = this.gameStateManager.takeDamage(player, enemy, baseDamage);
+          
+          if (result.success) {
+            damageResult.affectedEnemies.push({
+              id: enemy.id,
+              damage: baseDamage,
+              actualDamage: result.actualDamage,
+              newHp: result.newHp
+            });
+            damageResult.totalDamage += result.actualDamage;
+          }
         }
       }
     });
@@ -539,16 +365,19 @@ class SkillManager {
       const distance = Math.sqrt((targetPlayer.x - x) ** 2 + (targetPlayer.y - y) ** 2);
       if (distance <= range + playerColliderSize / 2) {
         if (this.isAngleInSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
-          targetPlayer.takeDamage(baseDamage);
-          damageResult.affectedPlayers.push({
-            id: targetPlayer.id,
-            damage: baseDamage,
-            actualDamage: baseDamage,
-            newHp: targetPlayer.hp
-          });
-          damageResult.totalDamage += baseDamage;
+          const result = this.gameStateManager.takeDamage(player, targetPlayer, baseDamage);
+          
+          if (result.success) {
+              damageResult.affectedPlayers.push({
+                id: targetPlayer.id,
+                damage: baseDamage,
+                actualDamage: result.actualDamage,
+                newHp: result.newHp
+              });
+              damageResult.totalDamage += result.actualDamage;
+            }
+          }
         }
-      }
     });
 
     return damageResult;
@@ -666,7 +495,6 @@ class SkillManager {
 
     switch (skillType) {
       case 'roar':
-        // 울부짖기는 데미지 없음, 버프 효과만
         break;
 
       case 'sweep':
@@ -887,16 +715,24 @@ class SkillManager {
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
       if (this.isInSweepRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
-        const actualDamage = damage;
-        enemy.takeDamage(actualDamage);
-        damageResult.affectedEnemies.push({
-          id: enemy.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: enemy.x,
-          y: enemy.y
-        });
-        damageResult.totalDamage += actualDamage;
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          // 몬스터에게도 기절 효과 적용
+          console.log(`몬스터 ${enemy.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
+          enemy.startStun(stunDuration);
+          
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y,
+            isStunned: true,
+            stunDuration: stunDuration
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
 
@@ -904,24 +740,25 @@ class SkillManager {
     players.forEach(targetPlayer => {
       if (targetPlayer.id === player.id || targetPlayer.team === player.team || targetPlayer.hp <= 0) return;
       if (this.isInSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
-        const actualDamage = damage;
-        targetPlayer.takeDamage(actualDamage);
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
-        // 기절 효과 적용
-        console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
-        targetPlayer.startStun(stunDuration);
-        
-        damageResult.affectedPlayers.push({
-          id: targetPlayer.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: targetPlayer.x,
-          y: targetPlayer.y,
-          team: targetPlayer.team,
-          isStunned: true,
-          stunDuration: stunDuration
-        });
-        damageResult.totalDamage += actualDamage;
+        if (result.success) {
+          // 기절 효과 적용
+          console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
+          targetPlayer.startStun(stunDuration);
+          
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y,
+            team: targetPlayer.team,
+            isStunned: true,
+            stunDuration: stunDuration
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
   }
@@ -931,16 +768,18 @@ class SkillManager {
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
       if (this.isInThrustRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
-        const actualDamage = damage;
-        enemy.takeDamage(actualDamage);
-        damageResult.affectedEnemies.push({
-          id: enemy.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: enemy.x,
-          y: enemy.y
-        });
-        damageResult.totalDamage += actualDamage;
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
 
@@ -948,17 +787,19 @@ class SkillManager {
     players.forEach(targetPlayer => {
       if (targetPlayer.id === player.id || targetPlayer.team === player.team || targetPlayer.hp <= 0) return;
       if (this.isInThrustRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
-        const actualDamage = damage;
-        targetPlayer.takeDamage(actualDamage);
-        damageResult.affectedPlayers.push({
-          id: targetPlayer.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: targetPlayer.x,
-          y: targetPlayer.y,
-          team: targetPlayer.team
-        });
-        damageResult.totalDamage += actualDamage;
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+        
+        if (result.success) {
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y,
+            team: targetPlayer.team
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
   }
@@ -974,16 +815,18 @@ class SkillManager {
       const enemyColliderSize = enemy.getColliderSize();
       const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
       if (distance <= range + enemyColliderSize / 2) {
-        const actualDamage = damage;
-        enemy.takeDamage(actualDamage);
-        damageResult.affectedEnemies.push({
-          id: enemy.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: enemy.x,
-          y: enemy.y
-        });
-        damageResult.totalDamage += actualDamage;
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
 
@@ -994,17 +837,19 @@ class SkillManager {
       const playerColliderSize = targetPlayer.getColliderSize();
       const distance = Math.sqrt((targetPlayer.x - x) ** 2 + (targetPlayer.y - y) ** 2);
       if (distance <= range + playerColliderSize / 2) {
-        const actualDamage = damage;
-        targetPlayer.takeDamage(actualDamage);
-        damageResult.affectedPlayers.push({
-          id: targetPlayer.id,
-          damage: damage,
-          actualDamage: actualDamage,
-          x: targetPlayer.x,
-          y: targetPlayer.y,
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+        
+        if (result.success) {
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y,
           team: targetPlayer.team
-        });
-        damageResult.totalDamage += actualDamage;
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
       }
     });
   }
