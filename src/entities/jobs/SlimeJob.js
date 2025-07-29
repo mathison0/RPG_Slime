@@ -75,7 +75,7 @@ export default class SlimeJob extends BaseJob {
         // 본인도 이펙트를 볼 수 있도록 수정
         const isOwnPlayer = this.player === this.player.scene.player;
         const startTime = Date.now();
-        console.log(`슬라임 퍼지기 이펙트 시작 (본인: ${isOwnPlayer}, 시작시간: ${startTime})`);
+        console.log(`[${startTime}] 슬라임 퍼지기 이펙트 시작 (본인: ${isOwnPlayer})`);
         
         // 기존 슬라임 스킬 이펙트가 있다면 제거
         if (this.player.slimeSkillEffect) {
@@ -127,7 +127,7 @@ export default class SlimeJob extends BaseJob {
         const range = skillInfo.range || 50; // 서버에서 받은 범위
         const effectDuration = skillInfo.duration || 1000; // 서버에서 받은 지속시간
         
-        console.log(`슬라임 퍼지기 스킬 정보 (서버에서 받음): range=${range}, duration=${effectDuration}ms`);
+        console.log(`[${startTime}] 슬라임 퍼지기 스킬 정보 (서버에서 받음): range=${range}, duration=${effectDuration}ms`);
         
         // 초록색 범위 효과 생성
         const effect = this.player.scene.add.circle(this.player.x, this.player.y, range, 0x00ff00, 0.3);
@@ -141,7 +141,7 @@ export default class SlimeJob extends BaseJob {
             // 범위 효과 제거
             if (effect.active) {
                 effect.destroy();
-                console.log(`슬라임 퍼지기 범위 효과 제거 (실제 지속시간: ${actualDuration}ms)`);
+                console.log(`[${endTime}] 슬라임 퍼지기 범위 효과 제거 (실제 지속시간: ${actualDuration}ms)`);
             }
             
             // 플레이어 참조 정리
@@ -155,7 +155,7 @@ export default class SlimeJob extends BaseJob {
             // 스프라이트 복원
             if (this.player.active) {
                 this.player.updateJobSprite();
-                console.log(`슬라임 퍼지기 스프라이트 복원 완료 (실제 지속시간: ${actualDuration}ms)`);
+                console.log(`[${endTime}] 슬라임 퍼지기 스프라이트 복원 완료 (실제 지속시간: ${actualDuration}ms)`);
             }
             
             // 타이머 참조 정리

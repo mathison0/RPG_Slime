@@ -207,6 +207,9 @@ export default class WarriorJob extends BaseJob {
      * 울부짖기 이펙트
      */
     showRoarEffect(data = null) {
+        const startTime = Date.now();
+        console.log(`[${startTime}] 울부짖기 이펙트 시작`);
+        
         // 기존 울부짖기 이펙트가 있다면 제거
         if (this.player.roarEffectTimer) {
             this.player.scene.time.removeEvent(this.player.roarEffectTimer);
@@ -224,7 +227,7 @@ export default class WarriorJob extends BaseJob {
         const skillInfo = data?.skillInfo || {};
         const effectDuration = skillInfo.duration || 1000;
         
-        console.log(`울부짖기 스킬 정보 (서버에서 받음): duration=${effectDuration}ms`);
+        console.log(`[${startTime}] 울부짖기 스킬 정보 (서버에서 받음): duration=${effectDuration}ms`);
         
         // 울부짖기 효과 메시지 (1초 후 제거)
         const roarText = this.player.scene.add.text(
@@ -247,6 +250,9 @@ export default class WarriorJob extends BaseJob {
         
         // 스프라이트는 지속시간 후 복원 (정확한 타이밍)
         this.player.roarEffectTimer = this.player.scene.time.delayedCall(effectDuration, () => {
+            const endTime = Date.now();
+            const actualDuration = endTime - startTime;
+            
             // 울부짖기 스킬 상태 해제
             this.player.isUsingRoarSkill = false;
             this.player.isUsingWarriorSkill = false;
@@ -254,24 +260,27 @@ export default class WarriorJob extends BaseJob {
             // WarriorJob의 isRoaring 상태도 해제
             if (this.player.job && this.player.job.isRoaring) {
                 this.player.job.isRoaring = false;
-                console.log('울부짖기 상태 해제 완료');
+                console.log(`[${endTime}] 울부짖기 상태 해제 완료 (실제 지속시간: ${actualDuration}ms)`);
             }
             
             if (this.player.active) {
                 // 원래 직업 스프라이트로 복원
                 this.player.updateJobSprite();
-                console.log(`울부짖기 스프라이트 복원 완료 (지속시간: ${effectDuration}ms)`);
+                console.log(`[${endTime}] 울부짖기 스프라이트 복원 완료 (실제 지속시간: ${actualDuration}ms)`);
             }
             this.player.roarEffectTimer = null;
         });
         
-        console.log('울부짖기 스프라이트 변경 완료');
+        console.log(`[${startTime}] 울부짖기 스프라이트 변경 완료`);
     }
 
     /**
      * 휩쓸기 이펙트 (서버에서 스킬 승인 시 호출)
      */
     showSweepEffect(data = null) {
+        const startTime = Date.now();
+        console.log(`[${startTime}] 휩쓸기 이펙트 시작`);
+        
         // 휩쓸기 상태 활성화 (서버 승인 시)
         this.isSweeping = true;
         
@@ -291,7 +300,7 @@ export default class WarriorJob extends BaseJob {
         const angleOffset = skillInfo.angleOffset || (Math.PI / 3); // 서버에서 받은 각도 오프셋
         const range = skillInfo.range || 80; // 서버에서 받은 범위
         
-        console.log(`휩쓸기 스킬 정보 (서버에서 받음): delay=${delay}ms, angleOffset=${angleOffset}, range=${range}`);
+        console.log(`[${startTime}] 휩쓸기 스킬 정보 (서버에서 받음): delay=${delay}ms, angleOffset=${angleOffset}, range=${range}`);
         
         // 부채꼴 모양의 휩쓸기 그래픽 생성 (처음에는 덜 진한 색상)
         const sweepGraphics = this.player.scene.add.graphics();
@@ -315,6 +324,9 @@ export default class WarriorJob extends BaseJob {
         
         // 지연 시간 동안 이펙트 유지 후 색상 변경 및 페이드 아웃
         this.player.scene.time.delayedCall(delay, () => {
+            const damageTime = Date.now();
+            console.log(`[${damageTime}] 휩쓸기 데미지 적용 시점 (지연시간: ${damageTime - startTime}ms)`);
+            
             // 지연 시간 후 색상을 진하게 변경 (데미지 적용 시점)
             sweepGraphics.clear();
             sweepGraphics.fillStyle(0xff0000, 0.8); // 진한 색상으로 변경
@@ -334,6 +346,10 @@ export default class WarriorJob extends BaseJob {
                 alpha: 0,
                 duration: 300,
                 onComplete: () => {
+                    const endTime = Date.now();
+                    const totalDuration = endTime - startTime;
+                    console.log(`[${endTime}] 휩쓸기 이펙트 완료 (총 지속시간: ${totalDuration}ms)`);
+                    
                     sweepGraphics.destroy();
                     if (this.player.active) {
                         this.player.clearTint();
@@ -368,6 +384,9 @@ export default class WarriorJob extends BaseJob {
      * 찌르기 이펙트 (서버에서 스킬 승인 시 호출)
      */
     showThrustEffect(data = null) {
+        const startTime = Date.now();
+        console.log(`[${startTime}] 찌르기 이펙트 시작`);
+        
         // 찌르기 상태 활성화 (서버 승인 시)
         this.isThrusting = true;
         
@@ -387,7 +406,7 @@ export default class WarriorJob extends BaseJob {
         const width = skillInfo.width || 80; // 서버에서 받은 가로 길이
         const delay = skillInfo.delay || 1500; // 서버에서 받은 지연시간
         
-        console.log(`찌르기 스킬 정보 (서버에서 받음): height=${height}, width=${width}, delay=${delay}ms`);
+        console.log(`[${startTime}] 찌르기 스킬 정보 (서버에서 받음): height=${height}, width=${width}, delay=${delay}ms`);
         
         // 직사각형 모양의 찌르기 그래픽 생성 (처음에는 덜 진한 색상)
         const thrustGraphics = this.player.scene.add.graphics();
@@ -440,6 +459,9 @@ export default class WarriorJob extends BaseJob {
         
         // 지연 시간 동안 이펙트 유지 후 색상 변경 및 페이드 아웃
         this.player.scene.time.delayedCall(delay, () => {
+            const damageTime = Date.now();
+            console.log(`[${damageTime}] 찌르기 데미지 적용 시점 (지연시간: ${damageTime - startTime}ms)`);
+            
             // 지연 시간 후 색상을 진하게 변경 (데미지 적용 시점)
             thrustGraphics.clear();
             thrustGraphics.fillStyle(0xff0000, 0.8); // 진한 색상으로 변경
@@ -461,6 +483,10 @@ export default class WarriorJob extends BaseJob {
                 alpha: 0,
                 duration: 300,
                 onComplete: () => {
+                    const endTime = Date.now();
+                    const totalDuration = endTime - startTime;
+                    console.log(`[${endTime}] 찌르기 이펙트 완료 (총 지속시간: ${totalDuration}ms)`);
+                    
                     thrustGraphics.destroy();
                     if (this.player.active) {
                         this.player.clearTint();

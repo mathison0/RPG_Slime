@@ -1101,20 +1101,16 @@ export default class NetworkEventManager {
         // 본인 플레이어 직업 변경 처리
         if (data.id === this.networkManager.playerId && this.scene.player) {
             this.scene.player.setJobClass(data.jobClass);
-            
             // 직업 변경 후 UI 업데이트
             this.scene.player.updateUI();
-            
             return;
         }
-        
         // 다른 플레이어 직업 변경 처리
         if (!this.scene.otherPlayers?.children) return;
-        
         const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === data.id);
         if (otherPlayer) {
             otherPlayer.jobClass = data.jobClass;
-            otherPlayer.updateJobSprite();
+            otherPlayer.updateJobClass(); // updateJobSprite -> updateJobClass로 변경
         }
     }
 
