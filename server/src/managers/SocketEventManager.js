@@ -244,6 +244,12 @@ class SocketEventManager {
         damageResult: damageResult // 데미지 결과 추가
       };
 
+      // 와드 스킬의 경우 크기 정보 추가
+      if (skillResult.skillType === 'ward') {
+        broadcastData.wardScale = 0.2; // 와드 크기 정보
+        broadcastData.wardBodySize = 125; // 와드 물리 바디 크기
+      }
+
       // 타겟 위치가 있는 경우 추가
       if (skillResult.targetX !== null) {
         broadcastData.targetX = skillResult.targetX;

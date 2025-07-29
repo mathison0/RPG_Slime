@@ -146,12 +146,17 @@ export default class MageJob extends BaseJob {
     showWardEffect(data = null) {
         // 와드 생성
         const ward = this.player.scene.add.sprite(this.player.x, this.player.y, 'ward');
-        ward.setScale(0.02);
+        
+        // 서버에서 받은 크기 정보 사용 (기본값: 0.05)
+        const wardScale = data?.wardScale || 0.05;
+        const wardBodySize = data?.wardBodySize || 125;
+        
+        ward.setScale(wardScale);
         
         // 와드에 물리 바디 추가
         this.player.scene.physics.add.existing(ward);
         ward.body.setImmovable(true);
-        ward.body.setSize(50, 50);
+        ward.body.setSize(wardBodySize, wardBodySize);
         
         // 와드 체력 시스템
         ward.hp = 40;
