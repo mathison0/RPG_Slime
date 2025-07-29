@@ -111,4 +111,45 @@ export default class MechanicJob extends BaseJob {
             return angle >= startAngle && angle <= endAngle;
         }
     }
+
+    /**
+     * 메카닉 기본 공격 애니메이션 (근접 부채꼴)
+     */
+    showBasicAttackEffect(targetX, targetY) {
+        // 부채꼴 공격 범위 설정
+        const attackRange = 50;
+        const angleOffset = Math.PI / 6; // 30도 (π/6)
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const centerX = this.player.x;
+        const centerY = this.player.y;
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, targetX, targetY);
+        
+        // 부채꼴의 시작과 끝 각도 계산
+        const startAngle = angleToMouse - angleOffset;
+        const endAngle = angleToMouse + angleOffset;
+        
+        // 부채꼴 근접 공격 이펙트 (카키색 부채꼴)
+        const graphics = this.player.scene.add.graphics();
+        graphics.fillStyle(0x556B2F, 0.7);
+        graphics.lineStyle(2, 0x556B2F, 1);
+        
+        // 부채꼴 그리기
+        graphics.beginPath();
+        graphics.moveTo(centerX, centerY);
+        graphics.arc(centerX, centerY, attackRange, startAngle, endAngle);
+        graphics.closePath();
+        graphics.fill();
+        graphics.stroke();
+        
+        // 이펙트 애니메이션
+        this.player.scene.tweens.add({
+            targets: graphics,
+            alpha: 0,
+            duration: 380,
+            onComplete: () => {
+                graphics.destroy();
+            }
+        });
+    }
 } 

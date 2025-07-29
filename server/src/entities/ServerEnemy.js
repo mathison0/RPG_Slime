@@ -214,23 +214,34 @@ class ServerEnemy {
   }
 
   /**
-   * 가장 가까운 타겟 찾기 (타겟이 없을 때만 새로 탐지)
+   * 가장 가까운 타겟 찾기 (매 프레임마다 더 가까운 타겟으로 어그로 변경)
    */
   findTarget(players) {
-    // 기존 타겟이 있으면 유효성 체크
+    let closestPlayer = null;
+    let closestDistance = this.aggroRange;
+    let currentTargetDistance = Infinity;
+    
+    // 현재 타겟이 있으면 그 거리를 계산
     if (this.target) {
-      // 플레이어가 여전히 존재하고 활성 상태인지 확인
       const targetExists = [...players.values()].find(p => p.id === this.target.id);
       if (!targetExists || targetExists.isDead) {
-        this.target = null; // 타겟이 없거나 죽었으면 해제
+        // 타겟이 없거나 죽었으면 해제
+        this.target = null;
       } else {
-        return; // 유효한 타겟이면 유지
+        // 현재 타겟과의 거리 계산
+        const dx = this.target.x - this.x;
+        const dy = this.target.y - this.y;
+        currentTargetDistance = Math.sqrt(dx * dx + dy * dy);
+        
+        // 현재 타겟이 최대 어그로 범위를 벗어났으면 타겟 해제
+        if (currentTargetDistance > this.maxAggroRange) {
+          this.target = null;
+          currentTargetDistance = Infinity;
+        }
       }
     }
     
-    let closestPlayer = null;
-    let closestDistance = this.aggroRange;
-    
+    // 모든 플레이어를 확인하여 가장 가까운 플레이어 찾기
     for (const player of players.values()) {
       // 죽은 플레이어는 타겟에서 제외
       if (player.isDead || player.hp <= 0) continue;
@@ -239,13 +250,29 @@ class ServerEnemy {
       const dy = player.y - this.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
       
+      // 어그로 범위 내에 있고, 현재 가장 가까운 거리보다 더 가까우면 업데이트
       if (distance < closestDistance) {
         closestPlayer = player;
         closestDistance = distance;
       }
     }
     
-    this.target = closestPlayer;
+    // 새로 찾은 가장 가까운 플레이어로 타겟 업데이트
+    // (현재 타겟이 없거나, 더 가까운 플레이어가 있을 때)
+    if (closestPlayer && (!this.target || closestDistance < currentTargetDistance)) {
+      const previousTarget = this.target ? this.target.id : 'none';
+      this.target = closestPlayer;
+      
+      // 타겟이 변경되었을 때만 로그 출력
+      if (previousTarget !== this.target.id) {
+        console.log(`몬스터 ${this.id} 타겟 변경: ${previousTarget} -> ${this.target.id} (거리: ${Math.round(closestDistance)})`);
+      }
+    }
+    
+    // 어그로 범위 내에 아무도 없으면 타겟 해제
+    if (!closestPlayer) {
+      this.target = null;
+    }
   }
 
   /**
@@ -254,7 +281,7 @@ class ServerEnemy {
   chaseTarget(walls, delta) {
     if (!this.target) return;
     
-    // 타겟이 여전히 유효한지 체크
+    // 타겟이 여전히 유효한지 체크 (findTarget에서 이미 체크하지만 안전장치)
     if (this.target.isDead || this.target.hp <= 0) {
       this.target = null;
       this.vx = 0;
@@ -265,14 +292,6 @@ class ServerEnemy {
     const dx = this.target.x - this.x;
     const dy = this.target.y - this.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // 최대 어그로 범위를 벗어나면 타겟 해제
-    if (distance > this.maxAggroRange) {
-      this.target = null;
-      this.vx = 0;
-      this.vy = 0;
-      return;
-    }
 
     const edgeDistance = this.calculateEdgeDistance(this, this.target);
     

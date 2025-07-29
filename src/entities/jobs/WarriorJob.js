@@ -319,6 +319,325 @@ export default class WarriorJob extends BaseJob {
     }
 
     /**
+     * 전사 기본 공격 이펙트 (근접 부채꼴)
+     */
+    showBasicAttackEffect(targetX, targetY) {
+        // 부채꼴 공격 범위 설정
+        const attackRange = 60;
+        const angleOffset = Math.PI / 6; // 30도 (π/6)
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const centerX = this.player.x;
+        const centerY = this.player.y;
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, targetX, targetY);
+        
+        // 부채꼴의 시작과 끝 각도 계산
+        const startAngle = angleToMouse - angleOffset;
+        const endAngle = angleToMouse + angleOffset;
+        
+        // 부채꼴 근접 공격 이펙트 (빨간색 부채꼴)
+        const graphics = this.player.scene.add.graphics();
+        graphics.fillStyle(0xff0000, 0.8);
+        graphics.lineStyle(3, 0xff0000, 1);
+        
+        // 부채꼴 그리기
+        graphics.beginPath();
+        graphics.moveTo(centerX, centerY);
+        graphics.arc(centerX, centerY, attackRange, startAngle, endAngle);
+        graphics.closePath();
+        graphics.fill();
+        graphics.stroke();
+        
+        // 이펙트 애니메이션
+        this.player.scene.tweens.add({
+            targets: graphics,
+            alpha: 0,
+            duration: 400,
+            onComplete: () => {
+                graphics.destroy();
+            }
+        });
+    }
+
+    /**
+     * 울부짖기 이펙트
+     */
+    showRoarEffect(data = null) {
+        // 기존 울부짖기 이펙트가 있다면 제거
+        if (this.player.roarEffectTimer) {
+            this.player.scene.time.removeEvent(this.player.roarEffectTimer);
+            this.player.roarEffectTimer = null;
+        }
+        
+        // 울부짖기 스킬 상태 설정
+        this.player.isUsingRoarSkill = true;
+        this.player.isUsingWarriorSkill = true;
+        
+        // 울부짖기 스프라이트로 변경
+        this.player.setTexture('warrior_skill');
+        
+        // 서버에서 받은 지속시간 사용 (기본값 1000ms)
+        const skillInfo = data?.skillInfo || {};
+        const effectDuration = skillInfo.duration || 1000;
+        
+        console.log(`울부짖기 스킬 정보 (서버에서 받음): duration=${effectDuration}ms`);
+        
+        // 울부짖기 효과 메시지 (1초 후 제거)
+        const roarText = this.player.scene.add.text(
+            this.player.x, 
+            this.player.y - 80, 
+            '울부짖기!', 
+            {
+                fontSize: '18px',
+                fill: '#ff0000',
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5);
+        
+        // 텍스트는 1초 후 제거
+        this.player.scene.time.delayedCall(1000, () => {
+            if (roarText.active) {
+                roarText.destroy();
+            }
+        });
+        
+        // 스프라이트는 지속시간 후 복원 (정확한 타이밍)
+        this.player.roarEffectTimer = this.player.scene.time.delayedCall(effectDuration, () => {
+            // 울부짖기 스킬 상태 해제
+            this.player.isUsingRoarSkill = false;
+            this.player.isUsingWarriorSkill = false;
+            
+            // WarriorJob의 isRoaring 상태도 해제
+            if (this.player.job && this.player.job.isRoaring) {
+                this.player.job.isRoaring = false;
+                console.log('울부짖기 상태 해제 완료');
+            }
+            
+            if (this.player.active) {
+                // 원래 직업 스프라이트로 복원
+                this.player.updateJobSprite();
+                console.log(`울부짖기 스프라이트 복원 완료 (지속시간: ${effectDuration}ms)`);
+            }
+            this.player.roarEffectTimer = null;
+        });
+        
+        console.log('울부짖기 스프라이트 변경 완료');
+    }
+
+    /**
+     * 휩쓸기 이펙트
+     */
+    showSweepEffect(data = null) {
+        // 휩쓸기 스킬 상태 설정
+        this.player.isUsingWarriorSkill = true;
+        
+        // 휩쓸기 시각적 효과
+        this.player.setTint(0xff0000);
+        
+        // 마우스 커서 위치 가져오기 (서버 데이터에서)
+        const mouseX = data?.targetX || this.player.x;
+        const mouseY = data?.targetY || this.player.y;
+        
+        // 서버에서 받은 스킬 정보 사용 (하드코딩 제거)
+        const skillInfo = data?.skillInfo || {};
+        const delay = skillInfo.delay || 1000; // 서버에서 받은 지연시간
+        const angleOffset = skillInfo.angleOffset || (Math.PI / 3); // 서버에서 받은 각도 오프셋
+        const range = skillInfo.range || 80; // 서버에서 받은 범위
+        
+        console.log(`휩쓸기 스킬 정보 (서버에서 받음): delay=${delay}ms, angleOffset=${angleOffset}, range=${range}`);
+        
+        // 부채꼴 모양의 휩쓸기 그래픽 생성 (처음에는 덜 진한 색상)
+        const sweepGraphics = this.player.scene.add.graphics();
+        sweepGraphics.fillStyle(0xff0000, 0.1); // 덜 진한 색상
+        sweepGraphics.lineStyle(2, 0xff0000, 0.3); // 덜 진한 테두리
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const centerX = this.player.x;
+        const centerY = this.player.y;
+        
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
+        const startAngle = angleToMouse - angleOffset;
+        const endAngle = angleToMouse + angleOffset;
+        
+        sweepGraphics.beginPath();
+        sweepGraphics.moveTo(centerX, centerY);
+        sweepGraphics.arc(centerX, centerY, range, startAngle, endAngle);
+        sweepGraphics.closePath();
+        sweepGraphics.fill();
+        sweepGraphics.stroke();
+        
+        // 지연 시간 동안 이펙트 유지 후 색상 변경 및 페이드 아웃
+        this.player.scene.time.delayedCall(delay, () => {
+            // 지연 시간 후 색상을 진하게 변경 (데미지 적용 시점)
+            sweepGraphics.clear();
+            sweepGraphics.fillStyle(0xff0000, 0.8); // 진한 색상으로 변경
+            sweepGraphics.lineStyle(3, 0xff0000, 1); // 진한 테두리로 변경
+            
+            // 부채꼴 다시 그리기
+            sweepGraphics.beginPath();
+            sweepGraphics.moveTo(centerX, centerY);
+            sweepGraphics.arc(centerX, centerY, range, startAngle, endAngle);
+            sweepGraphics.closePath();
+            sweepGraphics.fill();
+            sweepGraphics.stroke();
+            
+            // 지연 시간 후 이펙트 페이드 아웃
+            this.player.scene.tweens.add({
+                targets: sweepGraphics,
+                alpha: 0,
+                duration: 300,
+                onComplete: () => {
+                    sweepGraphics.destroy();
+                    if (this.player.active) {
+                        this.player.clearTint();
+                        // 휩쓸기 스킬 상태 해제
+                        this.player.isUsingWarriorSkill = false;
+                    }
+                }
+            });
+        });
+        
+        // 휩쓸기 효과 메시지
+        const sweepText = this.player.scene.add.text(
+            this.player.x, 
+            this.player.y - 60, 
+            '휩쓸기!', 
+            {
+                fontSize: '16px',
+                fill: '#ff0000'
+            }
+        ).setOrigin(0.5);
+        
+        this.player.scene.time.delayedCall(1000, () => {
+            if (sweepText.active) {
+                sweepText.destroy();
+            }
+        });
+    }
+
+    /**
+     * 찌르기 이펙트
+     */
+    showThrustEffect(data = null) {
+        // 찌르기 스킬 상태 설정
+        this.player.isUsingWarriorSkill = true;
+        
+        // 찌르기 시각적 효과
+        this.player.setTint(0xff0000);
+        
+        // 마우스 커서 위치 가져오기 (서버 데이터에서)
+        const mouseX = data?.targetX || this.player.x;
+        const mouseY = data?.targetY || this.player.y;
+        
+        // 서버에서 받은 스킬 정보 사용 (하드코딩 제거)
+        const skillInfo = data?.skillInfo || {};
+        const height = skillInfo.range || 100; // 서버에서 받은 사정거리 (직사각형 높이)
+        const width = skillInfo.width || 80; // 서버에서 받은 가로 길이
+        const delay = skillInfo.delay || 1500; // 서버에서 받은 지연시간
+        
+        console.log(`찌르기 스킬 정보 (서버에서 받음): height=${height}, width=${width}, delay=${delay}ms`);
+        
+        // 직사각형 모양의 찌르기 그래픽 생성 (처음에는 덜 진한 색상)
+        const thrustGraphics = this.player.scene.add.graphics();
+        thrustGraphics.fillStyle(0xff0000, 0.1); // 덜 진한 색상
+        thrustGraphics.lineStyle(2, 0xff0000, 0.3); // 덜 진한 테두리
+        
+        // 플레이어에서 마우스 커서까지의 각도 계산
+        const centerX = this.player.x;
+        const centerY = this.player.y;
+        
+        const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, mouseX, mouseY);
+        
+        // 직사각형의 시작점 (플레이어 위치에서 아래변 중심)
+        const startX = centerX;
+        const startY = centerY;
+        
+        // 직사각형의 끝점 (마우스 방향으로 height만큼 이동한 윗변 중심)
+        const endX = centerX + Math.cos(angleToMouse) * height;
+        const endY = centerY + Math.sin(angleToMouse) * height;
+        
+        // 직사각형의 네 꼭지점 계산
+        const halfWidth = width / 2;
+        
+        // width 방향의 수직 벡터 계산 (마우스 방향에 수직)
+        const perpendicularAngle = angleToMouse + Math.PI / 2;
+        const widthVectorX = Math.cos(perpendicularAngle) * halfWidth;
+        const widthVectorY = Math.sin(perpendicularAngle) * halfWidth;
+        
+        // 아래변의 두 꼭지점 (플레이어 위치에서)
+        const bottomLeftX = startX - widthVectorX;
+        const bottomLeftY = startY - widthVectorY;
+        const bottomRightX = startX + widthVectorX;
+        const bottomRightY = startY + widthVectorY;
+        
+        // 윗변의 두 꼭지점 (마우스 방향으로)
+        const topLeftX = endX - widthVectorX;
+        const topLeftY = endY - widthVectorY;
+        const topRightX = endX + widthVectorX;
+        const topRightY = endY + widthVectorY;
+        
+        // 직사각형 그리기 (플레이어에서 마우스 방향으로)
+        thrustGraphics.beginPath();
+        thrustGraphics.moveTo(bottomLeftX, bottomLeftY);
+        thrustGraphics.lineTo(topLeftX, topLeftY);
+        thrustGraphics.lineTo(topRightX, topRightY);
+        thrustGraphics.lineTo(bottomRightX, bottomRightY);
+        thrustGraphics.closePath();
+        thrustGraphics.fill();
+        thrustGraphics.stroke();
+        
+        // 지연 시간 동안 이펙트 유지 후 색상 변경 및 페이드 아웃
+        this.player.scene.time.delayedCall(delay, () => {
+            // 지연 시간 후 색상을 진하게 변경 (데미지 적용 시점)
+            thrustGraphics.clear();
+            thrustGraphics.fillStyle(0xff0000, 0.8); // 진한 색상으로 변경
+            thrustGraphics.lineStyle(3, 0xff0000, 1); // 진한 테두리로 변경
+            
+            // 직사각형 다시 그리기
+            thrustGraphics.beginPath();
+            thrustGraphics.moveTo(bottomLeftX, bottomLeftY);
+            thrustGraphics.lineTo(topLeftX, topLeftY);
+            thrustGraphics.lineTo(topRightX, topRightY);
+            thrustGraphics.lineTo(bottomRightX, bottomRightY);
+            thrustGraphics.closePath();
+            thrustGraphics.fill();
+            thrustGraphics.stroke();
+            
+            // 지연 시간 후 이펙트 페이드 아웃
+            this.player.scene.tweens.add({
+                targets: thrustGraphics,
+                alpha: 0,
+                duration: 300,
+                onComplete: () => {
+                    thrustGraphics.destroy();
+                    if (this.player.active) {
+                        this.player.clearTint();
+                        // 찌르기 스킬 상태 해제
+                        this.player.isUsingWarriorSkill = false;
+                    }
+                }
+            });
+        });
+        
+        // 찌르기 효과 메시지
+        const thrustText = this.player.scene.add.text(
+            this.player.x, 
+            this.player.y - 60, 
+            '찌르기!', 
+            {
+                fontSize: '16px',
+                fill: '#ff0000'
+            }
+        ).setOrigin(0.5);
+        
+        this.player.scene.time.delayedCall(1000, () => {
+            if (thrustText.active) {
+                thrustText.destroy();
+            }
+        });
+    }
+
+    /**
      * 찌르기 데미지 적용 (서버에서 처리됨)
      * 클라이언트에서는 시각적 효과만 처리
      */

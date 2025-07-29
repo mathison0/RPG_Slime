@@ -1,115 +1,24 @@
 import BaseJob from './BaseJob.js';
 
+/**
+ * 궁수 직업 클래스
+ */
 export default class ArcherJob extends BaseJob {
     constructor(player) {
         super(player);
-        this.jobClass = 'archer';
         this.lastBasicAttackTime = 0;
         this.basicAttackCooldown = 500; // 기본 공격 쿨다운 (밀리초)
     }
 
-    update(delta) {
-        super.update(delta);
+    useSkill(skillNumber, options = {}) {
+        // 궁수는 스킬이 없거나 특별한 스킬이 있으면 여기에 추가
+        console.log('ArcherJob: 스킬 사용 요청', skillNumber);
     }
 
-    useJump() {
-        // 궁수는 기본 점프 사용
-        super.useJump();
-    }
-
-    useSkill(skillType) {
-        switch (skillType) {
-            case 1:
-                this.useRoll();
-                break;
-            case 2:
-                this.useFocus();
-                break;
-            default:
-                console.warn('알 수 없는 스킬 타입:', skillType);
-        }
-    }
-
-    useRoll() {
-        if (this.isSkillAvailable('skill1')) {
-            this.showCooldownMessage('구르기');
-            return;
-        }
-
-        console.log('궁수 구르기 사용');
-        
-        // 구르기 방향 계산 (현재 이동 방향)
-        const direction = this.player.direction;
-        let rollDistance = 100;
-        
-        let targetX = this.player.x;
-        let targetY = this.player.y;
-        
-        switch (direction) {
-            case 'front':
-                targetY += rollDistance;
-                break;
-            case 'back':
-                targetY -= rollDistance;
-                break;
-            case 'left':
-                targetX -= rollDistance;
-                break;
-            case 'right':
-                targetX += rollDistance;
-                break;
-        }
-
-        // 구르기 애니메이션
-        this.player.scene.tweens.add({
-            targets: this.player,
-            x: targetX,
-            y: targetY,
-            duration: 300,
-            ease: 'Power2.easeOut',
-            onComplete: () => {
-                console.log('구르기 완료');
-            }
-        });
-
-        // 스킬 쿨다운 시작
-        this.startSkillCooldown('roll', 2000);
-        
-        // 네트워크 동기화
-        if (this.player.networkManager && !this.player.isOtherPlayer) {
-            this.player.networkManager.useSkill(1, this.player.x, this.player.y, targetX, targetY);
-        }
-    }
-
-    useFocus() {
-        if (this.isSkillAvailable('skill2')) {
-            this.showCooldownMessage('궁사의 집중');
-            return;
-        }
-
-        console.log('궁사의 집중 사용');
-        
-        // 공격 속도 증가 효과
-        this.player.activateSpeedBoost(1.5); // 1.5배 속도 증가
-        
-        // 5초 후 효과 해제
-        this.player.scene.time.delayedCall(5000, () => {
-            this.player.deactivateSpeedBoost();
-            console.log('궁사의 집중 효과 종료');
-        });
-
-        // 스킬 쿨다운 시작
-        this.startSkillCooldown('focus', 8000);
-        
-        // 네트워크 동기화
-        if (this.player.networkManager && !this.player.isOtherPlayer) {
-            this.player.networkManager.useSkill(2, this.player.x, this.player.y);
-        }
-    }
-
-    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
-
-    createProjectile(targetX, targetY) {
+    /**
+     * 궁수 기본 공격 애니메이션 (원거리 투사체)
+     */
+    showBasicAttackEffect(targetX, targetY) {
         // 투사체 생성 (화살 스프라이트 사용)
         const projectile = this.player.scene.add.sprite(this.player.x, this.player.y, 'archer_basic_attack');
         this.player.scene.physics.add.existing(projectile);
@@ -118,10 +27,10 @@ export default class ArcherJob extends BaseJob {
         projectile.setDisplaySize(16, 16);
         
         // 투사체 콜라이더 설정
-        projectile.body.setCircle(24); // 원형 콜라이더 설정
-        projectile.body.setCollideWorldBounds(false); // 월드 경계 충돌 비활성화
-        projectile.body.setBounce(0, 0); // 튕김 없음
-        projectile.body.setDrag(0, 0); // 저항 없음
+        projectile.body.setCircle(24);
+        projectile.body.setCollideWorldBounds(false);
+        projectile.body.setBounce(0, 0);
+        projectile.body.setDrag(0, 0);
         
         // 커서 방향으로 특정 거리까지 날아가도록 계산
         const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, targetX, targetY);
@@ -155,7 +64,6 @@ export default class ArcherJob extends BaseJob {
             }
         });
         
-        // 투사체 이펙트
         const effectTween = this.player.scene.tweens.add({
             targets: projectile,
             yoyo: true,
@@ -177,23 +85,49 @@ export default class ArcherJob extends BaseJob {
         
         // 투사체와 벽 충돌 체크 (시각적 효과만)
         this.player.scene.physics.add.collider(projectile, this.player.scene.walls, (projectile, wall) => {
-            console.log('궁수 투사체가 벽과 충돌!');
             if (projectile && projectile.active) {
-                // 벽 충돌 시 폭발 이펙트 생성
                 this.createArrowExplosion(projectile.x, projectile.y);
                 projectile.destroyProjectile();
             }
         });
         
         // 다른 플레이어와의 충돌 (시각적 효과만, 데미지는 서버에서 처리)
-        this.player.scene.physics.add.overlap(projectile, this.player.scene.otherPlayers, (projectile, otherPlayer) => {
-            if (otherPlayer && otherPlayer.team !== this.player.team) {
-                console.log('궁수 투사체가 다른 팀 플레이어와 충돌!');
-                if (projectile && projectile.active) {
-                    // 다른 플레이어 충돌 시 폭발 이펙트 생성
-                    this.createArrowExplosion(projectile.x, projectile.y);
-                    projectile.destroyProjectile();
+        if (this.player.scene.otherPlayers && this.player.scene.otherPlayers.getChildren) {
+            this.player.scene.physics.add.overlap(projectile, this.player.scene.otherPlayers, (projectile, otherPlayer) => {
+                // 발사한 플레이어 자신과는 충돌하지 않도록 제외
+                if (otherPlayer && otherPlayer.networkId === this.player.networkId) {
+                    return;
                 }
+                
+                // 다른 팀 플레이어와만 충돌 처리
+                if (otherPlayer && otherPlayer.team && this.player.team && otherPlayer.team !== this.player.team) {
+                    if (projectile && projectile.active) {
+                        this.createArrowExplosion(projectile.x, projectile.y);
+                        projectile.destroyProjectile();
+                    }
+                }
+            });
+        }
+        
+        // 로컬 플레이어와의 충돌 (다른 팀 투사체만)
+        if (this.player.scene.player && this.player.networkId !== this.player.scene.player.networkId) {
+            this.player.scene.physics.add.overlap(projectile, this.player.scene.player, (projectile, localPlayer) => {
+                const localPlayerTeam = this.player.scene.player?.team;
+                const shooterTeam = this.player?.team;
+                
+                if (shooterTeam && localPlayerTeam && shooterTeam !== localPlayerTeam) {
+                    if (projectile && projectile.active) {
+                        this.createArrowExplosion(projectile.x, projectile.y);
+                        projectile.destroyProjectile();
+                    }
+                }
+            });
+        }
+        
+        // 투사체 수명 설정 (3초 후 자동 제거)
+        this.player.scene.time.delayedCall(3000, () => {
+            if (projectile.active) {
+                projectile.destroy();
             }
         });
     }
@@ -213,23 +147,5 @@ export default class ArcherJob extends BaseJob {
                 explosion.destroy();
             }
         });
-    }
-
-
-
-    /**
-     * 쿨타임 정보 반환
-     */
-    getSkillCooldowns() {
-        return {
-            1: {
-                remaining: this.getRemainingCooldown('roll'),
-                max: 2000
-            },
-            2: {
-                remaining: this.getRemainingCooldown('focus'),
-                max: 8000
-            }
-        };
     }
 } 

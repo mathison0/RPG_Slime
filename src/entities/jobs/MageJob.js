@@ -319,6 +319,265 @@ export default class MageJob extends BaseJob {
     }
 
     /**
+     * 마법사 기본 공격 이펙트 (원거리 투사체)
+     */
+    showBasicAttackEffect(targetX, targetY) {
+        // 투사체 생성 (파란색 빛나는 점)
+        const projectile = this.player.scene.add.circle(this.player.x, this.player.y, 4, 0x0000ff, 1);
+        this.player.scene.physics.add.existing(projectile);
+        
+        // 투사체 콜라이더 설정
+        projectile.body.setCircle(4);
+        projectile.body.setCollideWorldBounds(false);
+        projectile.body.setBounce(0, 0);
+        projectile.body.setDrag(0, 0);
+        
+        // 커서 방향으로 특정 거리까지 날아가도록 계산
+        const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, targetX, targetY);
+        const maxDistance = 350; // 최대 사정거리
+        const finalX = this.player.x + Math.cos(angle) * maxDistance;
+        const finalY = this.player.y + Math.sin(angle) * maxDistance;
+        
+        // 투사체 이동 (Tween 사용 + 물리 바디 위치 업데이트)
+        const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, finalX, finalY);
+        const duration = (distance / 280) * 1000; // 280은 투사체 속도
+        
+        const moveTween = this.player.scene.tweens.add({
+            targets: projectile,
+            x: finalX,
+            y: finalY,
+            duration: duration,
+            ease: 'Linear',
+            onUpdate: () => {
+                // 물리 바디 위치를 스프라이트 위치와 동기화
+                if (projectile.body) {
+                    projectile.body.reset(projectile.x, projectile.y);
+                }
+            },
+            onComplete: () => {
+                if (projectile.active) {
+                    // 최대 사거리에 도달했을 때 범위 공격 실행
+                    this.createMagicExplosion(projectile.x, projectile.y);
+                    projectile.destroy();
+                }
+            }
+        });
+        
+        // 투사체 이펙트 (빛나는 효과)
+        const effectTween = this.player.scene.tweens.add({
+            targets: projectile,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            alpha: 0.5,
+            duration: 200,
+            yoyo: true,
+            repeat: -1
+        });
+        
+        // 투사체 파괴 함수
+        const destroyProjectile = () => {
+            if (projectile.active) {
+                // 모든 Tween 애니메이션 중지
+                moveTween.stop();
+                effectTween.stop();
+                projectile.destroy();
+            }
+        };
+        
+        // 투사체에 파괴 함수 저장
+        projectile.destroyProjectile = destroyProjectile;
+        
+        // 투사체와 벽 충돌 체크 (시각적 효과만)
+        this.player.scene.physics.add.collider(projectile, this.player.scene.walls, (projectile, wall) => {
+            if (projectile && projectile.active) {
+                // 마법사는 벽 충돌 시에도 범위 공격 실행
+                this.createMagicExplosion(projectile.x, projectile.y);
+                projectile.destroyProjectile();
+            }
+        });
+        
+        // 다른 플레이어와의 충돌 (시각적 효과만, 데미지는 서버에서 처리)
+        if (this.player.scene.otherPlayers && this.player.scene.otherPlayers.getChildren) {
+            this.player.scene.physics.add.overlap(projectile, this.player.scene.otherPlayers, (projectile, otherPlayer) => {
+                // 발사한 플레이어 자신과는 충돌하지 않도록 제외
+                if (otherPlayer && otherPlayer.networkId === this.player.networkId) {
+                    return;
+                }
+                
+                // 다른 팀 플레이어와만 충돌 처리 (발사한 플레이어 팀과 충돌 대상 플레이어 팀 비교)
+                if (otherPlayer && otherPlayer.team && this.player.team && otherPlayer.team !== this.player.team) {
+                    if (projectile && projectile.active) {
+                        // 마법사는 충돌 시 범위 공격 실행
+                        this.createMagicExplosion(projectile.x, projectile.y);
+                        projectile.destroyProjectile();
+                    }
+                }
+            });
+        }
+        
+        // 로컬 플레이어와의 충돌 (다른 팀 투사체만)
+        if (this.player.scene.player && this.player.networkId !== this.player.scene.player.networkId) {
+            this.player.scene.physics.add.overlap(projectile, this.player.scene.player, (projectile, localPlayer) => {
+                // 발사한 플레이어와 로컬 플레이어가 다른 팀인지 확인
+                const localPlayerTeam = this.player.scene.player?.team;
+                const shooterTeam = this.player?.team;
+                
+                if (shooterTeam && localPlayerTeam && shooterTeam !== localPlayerTeam) {
+                    if (projectile && projectile.active) {
+                        console.log('마법사 투사체가 다른 팀 로컬 플레이어와 충돌 - 폭발 효과 생성');
+                        this.createMagicExplosion(projectile.x, projectile.y);
+                        projectile.destroyProjectile();
+                    }
+                }
+            });
+        }
+        
+        // 투사체 수명 설정 (3초 후 자동 제거)
+        this.player.scene.time.delayedCall(3000, () => {
+            if (projectile.active) {
+                projectile.destroy();
+            }
+        });
+    }
+
+    /**
+     * 와드 이펙트
+     */
+    showWardEffect(data) {
+        if (!this.player.isOtherPlayer) return;
+        
+        const ward = this.player.scene.add.sprite(this.player.x, this.player.y, 'ward');
+        ward.setScale(0.02);
+        ward.isOtherPlayerWard = true;
+        ward.wardOwnerId = data.playerId;
+        
+        this.player.scene.tweens.add({
+            targets: ward,
+            alpha: 0.8,
+            duration: 1000,
+            yoyo: true,
+            repeat: -1
+        });
+    }
+
+    /**
+     * 얼음 장판 이펙트
+     */
+    showIceFieldEffect() {
+        if (!this.player.isOtherPlayer) return;
+        
+        const iceField = this.player.scene.add.circle(this.player.x, this.player.y, 100, 0x87ceeb, 0.4);
+        this.player.scene.tweens.add({
+            targets: iceField,
+            scaleX: 1.2,
+            scaleY: 1.2,
+            duration: 2000,
+            yoyo: true,
+            repeat: 2
+        });
+        this.player.scene.time.delayedCall(6000, () => {
+            iceField.destroy();
+        });
+    }
+
+    /**
+     * 마법 투사체 이펙트
+     */
+    showMagicMissileEffect(data) {
+        if (!this.player.isOtherPlayer || !data) return;
+        
+        let finalTargetX = data.targetX;
+        let finalTargetY = data.targetY;
+        const maxRange = data.skillInfo?.range || 400;
+        
+        const distance = Phaser.Math.Distance.Between(data.x, data.y, data.targetX, data.targetY);
+        
+        if (distance > maxRange) {
+            const angle = Phaser.Math.Angle.Between(data.x, data.y, data.targetX, data.targetY);
+            finalTargetX = data.x + Math.cos(angle) * maxRange;
+            finalTargetY = data.y + Math.sin(angle) * maxRange;
+        }
+        
+        const missile = this.player.scene.add.circle(data.x, data.y, 8, 0xff00ff, 0.3);
+        missile.team = data.team;
+        
+        this.player.scene.physics.add.existing(missile);
+        missile.body.setSize(8, 8);
+        
+        // 투사체 이펙트
+        this.player.scene.tweens.add({
+            targets: missile,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            duration: 500,
+            yoyo: true,
+            repeat: -1
+        });
+        
+        // 투사체 이동
+        const finalDistance = Phaser.Math.Distance.Between(data.x, data.y, finalTargetX, finalTargetY);
+        const velocity = 400;
+        const duration = (finalDistance / velocity) * 1000;
+        
+        this.player.scene.tweens.add({
+            targets: missile,
+            x: finalTargetX,
+            y: finalTargetY,
+            duration: duration,
+            ease: 'Linear',
+            onComplete: () => {
+                this.player.scene.effectManager.showExplosion(finalTargetX, finalTargetY);
+                missile.destroy();
+            }
+        });
+        
+        // 충돌 처리 설정
+        this.setupMissileCollisions(missile);
+        
+        // 안전장치: 3초 후 제거
+        this.player.scene.time.delayedCall(3000, () => {
+            if (missile.active) {
+                missile.destroy();
+            }
+        });
+    }
+
+    /**
+     * 투사체 충돌 설정
+     */
+    setupMissileCollisions(missile) {
+        // 상대팀 플레이어와 충돌
+        const allPlayers = [this.player.scene.player, ...this.player.scene.otherPlayers.getChildren()];
+        allPlayers.forEach(targetPlayer => {
+            if (!targetPlayer || missile.team === targetPlayer.team) return;
+            
+            this.player.scene.physics.add.overlap(missile, targetPlayer, (missile, hitPlayer) => {
+                const damage = 30;
+                if (typeof hitPlayer.takeDamage === 'function') {
+                    hitPlayer.takeDamage(damage);
+                }
+                this.player.scene.effectManager.showExplosion(missile.x, missile.y);
+                missile.destroy();
+            });
+        });
+        
+        // 적과 충돌
+        this.player.scene.physics.add.overlap(missile, this.player.scene.enemies, (missile, enemy) => {
+            if (this.player.networkManager && enemy.networkId) {
+                this.player.networkManager.hitEnemy(enemy.networkId);
+            }
+            this.player.scene.effectManager.showExplosion(missile.x, missile.y);
+            missile.destroy();
+        });
+        
+        // 벽과 충돌
+        this.player.scene.physics.add.collider(missile, this.player.scene.walls, (missile, wall) => {
+            this.player.scene.effectManager.showExplosion(missile.x, missile.y);
+            missile.destroy();
+        });
+    }
+
+    /**
      * 마법 폭발 이펙트 생성
      */
     createMagicExplosion(x, y) {

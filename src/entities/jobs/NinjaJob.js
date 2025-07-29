@@ -1,149 +1,24 @@
 import BaseJob from './BaseJob.js';
 
+/**
+ * 닌자 직업 클래스
+ */
 export default class NinjaJob extends BaseJob {
     constructor(player) {
         super(player);
-        
-        // 닌자 특성 설정
-        this.basicAttackCooldown = 500; // 기본 공격 쿨다운 (0.5초)
         this.lastBasicAttackTime = 0;
-        
-        // 은신 관련
-        this.isStealth = false;
-        this.stealthStartTime = 0;
-        this.stealthDuration = 8000; // 8초
-        
-        // 스킬 쿨다운 (Map 사용)
-        this.skillCooldowns = new Map();
-        this.skillCooldowns.set('stealth', 0);
-        this.skillCooldowns.set('triple_throw', 0);
-        this.skillCooldowns.set('blink', 0);
-        
-        console.log('닌자 직업 생성 완료');
+        this.basicAttackCooldown = 500; // 기본 공격 쿨다운 (밀리초)
     }
 
-    update(delta) {
-        // 은신 상태 업데이트
-        if (this.isStealth) {
-            const currentTime = this.player.scene.time.now;
-            if (currentTime - this.stealthStartTime > this.stealthDuration) {
-                this.endStealth();
-            }
-        }
+    useSkill(skillNumber, options = {}) {
+        // 닌자의 스킬들을 여기에 추가
+        console.log('NinjaJob: 스킬 사용 요청', skillNumber);
     }
 
-    useSkill(skillType) {
-        const currentTime = this.player.scene.time.now;
-        
-        switch (skillType) {
-            case 1: // Q - 은신
-                if (this.isSkillAvailable('stealth')) {
-                    this.useStealth();
-                }
-                break;
-            case 2: // E - 트리플 스로우
-                if (this.isSkillAvailable('triple_throw')) {
-                    this.useTripleThrow();
-                }
-                break;
-            case 3: // R - 점멸
-                if (this.isSkillAvailable('blink')) {
-                    this.useBlink();
-                }
-                break;
-        }
-    }
-
-    useStealth() {
-        if (this.isStealth) return;
-        
-        this.isStealth = true;
-        this.stealthStartTime = this.player.scene.time.now;
-        this.setSkillCooldown('stealth', 12000); // 12초 쿨다운
-        
-        // 시각적 효과
-        this.player.setAlpha(0.3);
-        
-        // 네트워크 동기화
-        if (this.player.networkManager && !this.player.isOtherPlayer) {
-            this.player.networkManager.useSkill(1);
-        }
-        
-        console.log('닌자 은신 시작');
-    }
-
-    endStealth() {
-        if (!this.isStealth) return;
-        
-        this.isStealth = false;
-        this.player.setAlpha(1);
-        
-        console.log('닌자 은신 종료');
-    }
-
-    useTripleThrow() {
-        // 스킬 쿨다운 시작
-        this.setSkillCooldown('triple_throw', 8000);
-        
-        // 네트워크 동기화
-        if (this.player.networkManager && !this.player.isOtherPlayer) {
-            this.player.networkManager.useSkill(2, this.player.x, this.player.y);
-        }
-    }
-
-    useBlink() {
-        // 스킬 쿨다운 시작
-        this.setSkillCooldown('blink', 6000);
-        
-        // 네트워크 동기화
-        if (this.player.networkManager && !this.player.isOtherPlayer) {
-            this.player.networkManager.useSkill(3, this.player.x, this.player.y);
-        }
-    }
-
-    getAttackDamage() {
-        let damage = this.player.attack;
-        
-        // 은신 중 공격력 증가
-        if (this.isStealth) {
-            damage = Math.floor(damage * 2.5);
-        }
-        
-        return damage;
-    }
-
-    isStealthed() {
-        return this.isStealth;
-    }
-
-    getSkillCooldowns() {
-        return {
-            1: {
-                remaining: this.getRemainingCooldown('stealth'),
-                max: 12000
-            },
-            2: {
-                remaining: this.getRemainingCooldown('triple_throw'),
-                max: 8000
-            },
-            3: {
-                remaining: this.getRemainingCooldown('blink'),
-                max: 6000
-            }
-        };
-    }
-
-    destroy() {
-        if (this.isStealth) {
-            this.endStealth();
-        }
-        super.destroy();
-    }
-
-    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
-
-    // 닌자용 투사체 생성
-    createProjectile(targetX, targetY) {
+    /**
+     * 닌자 기본 공격 애니메이션 (원거리 투사체)
+     */
+    showBasicAttackEffect(targetX, targetY) {
         // 투사체 생성 (수리검 스프라이트 사용)
         const projectile = this.player.scene.add.sprite(this.player.x, this.player.y, 'ninja_basic_attack');
         this.player.scene.physics.add.existing(projectile);
@@ -152,10 +27,10 @@ export default class NinjaJob extends BaseJob {
         projectile.setDisplaySize(18, 18);
         
         // 투사체 콜라이더 설정
-        projectile.body.setCircle(20); // 원형 콜라이더 설정
-        projectile.body.setCollideWorldBounds(false); // 월드 경계 충돌 비활성화
-        projectile.body.setBounce(0, 0); // 튕김 없음
-        projectile.body.setDrag(0, 0); // 저항 없음
+        projectile.body.setCircle(20);
+        projectile.body.setCollideWorldBounds(false);
+        projectile.body.setBounce(0, 0);
+        projectile.body.setDrag(0, 0);
         
         // 커서 방향으로 특정 거리까지 날아가도록 계산
         const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, targetX, targetY);
@@ -210,31 +85,53 @@ export default class NinjaJob extends BaseJob {
         // 투사체에 파괴 함수 저장
         projectile.destroyProjectile = destroyProjectile;
         
-        console.log('닌자 표창 투사체 생성');
-        
         // 투사체와 벽 충돌 체크 (시각적 효과만)
         this.player.scene.physics.add.collider(projectile, this.player.scene.walls, (projectile, wall) => {
-            console.log('닌자 투사체가 벽과 충돌!');
             if (projectile && projectile.active) {
-                // 벽 충돌 시 폭발 이펙트 생성
                 this.createShurikenExplosion(projectile.x, projectile.y);
                 projectile.destroyProjectile();
             }
         });
         
         // 다른 플레이어와의 충돌 (시각적 효과만, 데미지는 서버에서 처리)
-        this.player.scene.physics.add.overlap(projectile, this.player.scene.otherPlayers, (projectile, otherPlayer) => {
-            if (otherPlayer && otherPlayer.team !== this.player.team) {
-                console.log('닌자 투사체가 다른 팀 플레이어와 충돌!');
-                if (projectile && projectile.active) {
-                    // 다른 플레이어 충돌 시 폭발 이펙트 생성
-                    this.createShurikenExplosion(projectile.x, projectile.y);
-                    projectile.destroyProjectile();
+        if (this.player.scene.otherPlayers && this.player.scene.otherPlayers.getChildren) {
+            this.player.scene.physics.add.overlap(projectile, this.player.scene.otherPlayers, (projectile, otherPlayer) => {
+                // 발사한 플레이어 자신과는 충돌하지 않도록 제외
+                if (otherPlayer && otherPlayer.networkId === this.player.networkId) {
+                    return;
                 }
+                
+                // 다른 팀 플레이어와만 충돌 처리
+                if (otherPlayer && otherPlayer.team && this.player.team && otherPlayer.team !== this.player.team) {
+                    if (projectile && projectile.active) {
+                        this.createShurikenExplosion(projectile.x, projectile.y);
+                        projectile.destroyProjectile();
+                    }
+                }
+            });
+        }
+        
+        // 로컬 플레이어와의 충돌 (다른 팀 투사체만)
+        if (this.player.scene.player && this.player.networkId !== this.player.scene.player.networkId) {
+            this.player.scene.physics.add.overlap(projectile, this.player.scene.player, (projectile, localPlayer) => {
+                const localPlayerTeam = this.player.scene.player?.team;
+                const shooterTeam = this.player?.team;
+                
+                if (shooterTeam && localPlayerTeam && shooterTeam !== localPlayerTeam) {
+                    if (projectile && projectile.active) {
+                        this.createShurikenExplosion(projectile.x, projectile.y);
+                        projectile.destroyProjectile();
+                    }
+                }
+            });
+        }
+        
+        // 투사체 수명 설정 (3초 후 자동 제거)
+        this.player.scene.time.delayedCall(3000, () => {
+            if (projectile.active) {
+                projectile.destroy();
             }
         });
-        
-        return projectile;
     }
 
     /**
@@ -253,6 +150,4 @@ export default class NinjaJob extends BaseJob {
             }
         });
     }
-
-
 } 
