@@ -319,8 +319,10 @@ export default class VisionManager {
      */
     setPlayerDepthWithNameTag(player, playerDepth, isFullyVisible) {
         player.setDepth(playerDepth);
+        const nameTagDepth = playerDepth + 10; // 플레이어보다 약간 위에 표시
+        
         if (player.nameText) {
-            player.nameText.setDepth(960);
+            player.nameText.setDepth(nameTagDepth);
             
             const isEnemyTeam = this.scene.player && player.team !== this.scene.player.team;
             if (isEnemyTeam && !isFullyVisible) {
@@ -328,6 +330,11 @@ export default class VisionManager {
             } else {
                 player.nameText.setVisible(true);
             }
+        }
+        
+        // 체력바도 이름표와 같은 depth로 설정
+        if (player.healthBar && player.healthBar.container) {
+            player.healthBar.container.setDepth(nameTagDepth);
         }
     }
 

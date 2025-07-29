@@ -682,6 +682,16 @@ export default class GameScene extends Phaser.Scene {
         this.player.setVisible(false);
         this.player.setActive(false);
         
+        // 스킬 관련 상태 초기화
+        this.player.isCasting = false;
+        this.player.isUsingSlimeSkill = false;
+        this.player.isUsingWarriorSkill = false;
+        this.player.isStunned = false;
+        this.player.isStealth = false;
+        
+        // 지연된 스킬 이펙트들 정리
+        this.player.clearDelayedSkillEffects();
+        
         // 색상 초기화 (데미지로 인한 빨간색 제거)
         this.player.clearTint();
         

@@ -37,6 +37,9 @@ class ServerPlayer {
       skills: new Map() // skillType -> { startTime, duration, endTime, skillInfo }
     };
     
+    // 지연된 액션들 (setTimeout ID 저장)
+    this.delayedActions = new Map(); // actionId -> timeoutId
+    
     // 어쌔신 은신 상태
     this.isStealth = false;
     this.stealthStartTime = 0;
@@ -83,6 +86,79 @@ class ServerPlayer {
     this.direction = data.direction;
     this.isJumping = data.isJumping;
     this.lastUpdate = Date.now();
+  }
+
+  /**
+   * 서버 스킬 타입을 클라이언트 스킬 키로 역매핑
+   */
+  getSkillKeyFromType(skillType) {
+    const skillMappings = {
+      slime: {
+        spread: 'skill1'
+      },
+      assassin: {
+        stealth: 'skill1'
+      },
+      ninja: {
+        stealth: 'skill1'
+      },
+      warrior: {
+        roar: 'skill1',
+        sweep: 'skill2',
+        thrust: 'skill3'
+      },
+      mage: {
+        ward: 'skill1',
+        ice_field: 'skill2',
+        magic_missile: 'skill3'
+      },
+      mechanic: {
+        repair: 'skill1'
+      },
+      archer: {
+        roll: 'skill1',
+        focus: 'skill2'
+      },
+      supporter: {
+        ward: 'skill1',
+        buff_field: 'skill2',
+        heal_field: 'skill3'
+      }
+    };
+    
+    const jobSkills = skillMappings[this.jobClass];
+    if (!jobSkills) return null;
+    
+    return jobSkills[skillType] || null;
+  }
+
+  /**
+   * 클라이언트용 스킬 쿨타임 정보 생성
+   */
+  getClientSkillCooldowns() {
+    const now = Date.now();
+    const clientCooldowns = {};
+    
+    // 서버의 스킬 쿨타임을 클라이언트 스킬 키로 변환
+    for (const [serverSkillType, lastUsed] of Object.entries(this.skillCooldowns)) {
+      const clientSkillKey = this.getSkillKeyFromType(serverSkillType);
+      if (clientSkillKey) {
+        // 스킬 정보 가져오기
+        const skillInfo = getSkillInfo(this.jobClass, serverSkillType);
+        if (skillInfo && skillInfo.cooldown) {
+          const elapsed = now - lastUsed;
+          const remaining = Math.max(0, skillInfo.cooldown - elapsed);
+          
+          clientCooldowns[clientSkillKey] = {
+            remaining: remaining,
+            total: skillInfo.cooldown,
+            lastUsed: lastUsed
+          };
+        }
+      }
+    }
+    
+    return clientCooldowns;
   }
 
   /**
@@ -147,7 +223,8 @@ class ServerPlayer {
       nickname: this.nickname,
       isDead: this.isDead, // 사망 상태 추가
       isInvincible: this.isInvincible, // 무적 상태 추가
-      activeActions: activeActions  // 액션 상태 정보 추가
+      activeActions: activeActions,  // 액션 상태 정보 추가
+      skillCooldowns: this.getClientSkillCooldowns() // 클라이언트용 스킬 쿨타임 정보 추가
     };
   }
 
@@ -226,6 +303,20 @@ class ServerPlayer {
     this.hp = this.maxHp;
     // 데미지 소스 추적 정보 리셋
     this.lastDamageSource = null;
+    
+    // 스킬 관련 상태 초기화
+    this.currentActions.skills.clear();
+    this.isStunned = false;
+    this.isStealth = false;
+    
+    // 스킬 쿨타임 초기화
+    this.skillCooldowns = {};
+    
+    // 지연된 액션들 정리
+    for (const [actionId, timeoutId] of this.delayedActions) {
+      clearTimeout(timeoutId);
+    }
+    this.delayedActions.clear();
   }
 
   /**

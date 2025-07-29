@@ -79,6 +79,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.skillCooldownUI = null;
         this.cooldownMessageActive = false;
         
+        // 지연된 스킬 이펙트 타이머들 추적
+        this.delayedSkillTimers = new Set();
+        
         // 디버그 관련
         this.debugMode = false;
         this.debugGraphics = null;
@@ -132,6 +135,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 본인 플레이어만 UI 생성
         if (!this.isOtherPlayer) {
             this.skillCooldownUI = new SkillCooldownUI(this.scene, this);
+            // createUI에서 이미 직업에 맞는 스킬이 생성되므로 중복 호출 불필요
         }
         
         // 체력바 생성 (모든 플레이어에 적용)
@@ -209,8 +213,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // 스킬 쿨다운 UI 갱신
         if (this.skillCooldownUI) {
-            this.skillCooldownUI.destroyUI();
-            this.skillCooldownUI.createUI();
+            // updateVisibleSkills에서 직업 변경을 감지하여 자동으로 UI를 재생성하므로
+            // 여기서는 직업 정보만 업데이트하고 update()에서 처리되도록 함
+            console.log(`[Player] 직업 변경: ${newJobClass}`);
         }
         
         // 전체 UI 업데이트 (직업 정보 반영)
@@ -323,6 +328,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
         
+        // 스킬 시전 중이면 이동 불가 (시전시간이 있는 스킬들만)
+        if (this.isCasting) {
+            return;
+        }
+        
         // 기절 상태면 이동 불가
         if (this.isStunned) {
             return;
@@ -419,15 +429,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 스킬 입력 처리 (서버 권한 방식)
      */
     handleSkills() {
-        // 죽은 상태에서는 스킬과 점프 사용 불가
-        if (this.isDead) {
-            return;
-        }
-
-        // 기절 상태에서는 스킬과 점프 사용 불가
-        if (this.isStunned) {
-            return;
-        }
+        // 서버에서 모든 조건을 검증하므로 클라이언트에서는 조건 체크 없이 요청만 전송
 
         // 스페이스바로 점프 (모든 직업 공통)
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
@@ -660,6 +662,42 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     /**
+     * 지연된 스킬 이펙트들을 모두 정리
+     */
+    clearDelayedSkillEffects() {
+        // 지연된 타이머들 모두 제거
+        for (const timer of this.delayedSkillTimers) {
+            if (timer && timer.remove) {
+                timer.remove();
+            }
+        }
+        this.delayedSkillTimers.clear();
+        
+        // 기존 스킬 이펙트들 정리
+        if (this.slimeSkillEffect) {
+            this.slimeSkillEffect.destroy();
+            this.slimeSkillEffect = null;
+        }
+        
+        if (this.slimeSkillTimer) {
+            this.scene.time.removeEvent(this.slimeSkillTimer);
+            this.slimeSkillTimer = null;
+        }
+        
+        if (this.wardEffect) {
+            this.wardEffect.destroy();
+            this.wardEffect = null;
+        }
+        
+        // 직업별 스킬 이펙트 정리
+        if (this.job && this.job.clearSkillEffects) {
+            this.job.clearSkillEffects();
+        }
+        
+        console.log(`플레이어 ${this.networkId || 'local'}의 지연된 스킬 이펙트들 정리 완료`);
+    }
+
+    /**
      * 플레이어의 현재 상태를 UI에 반영 (본인 플레이어에게만 적용)
      */
     updateUI() {
@@ -769,7 +807,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             lowHealthColor: 0xff0000,
             lowHealthThreshold: 0.3,
             yOffsetFromTop: -10, // 엔티티 위쪽 가장자리에서 10px 위에
-            depth: 110
+            depth: 960 // 초기값, NetworkEventManager와 VisionManager에서 동적으로 재설정됨
         };
         
         this.healthBar = new HealthBar(this.scene, this, healthBarConfig);

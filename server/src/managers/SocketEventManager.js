@@ -186,12 +186,6 @@ class SocketEventManager {
         return;
       }
 
-      // 죽은 플레이어는 스킬 사용 불가
-      if (player.isDead) {
-        socket.emit('skill-error', { error: 'Cannot use skills while dead' });
-        return;
-      }
-
       // 점프는 기본 능력이므로 별도 처리
       if (data.skillType === 'jump') {
         this.handleJumpAction(socket, player);
@@ -210,7 +204,7 @@ class SocketEventManager {
         return;
       }
 
-      // 서버에서 스킬 사용 검증 및 처리
+      // 서버에서 스킬 사용 검증 및 처리 (모든 조건 체크는 SkillManager에서 수행)
       const skillResult = this.skillManager.useSkill(
         player,
         actualSkillType, 
@@ -317,6 +311,19 @@ class SocketEventManager {
     // 죽은 플레이어는 점프 불가
     if (player.isDead) {
       socket.emit('skill-error', { error: 'Cannot jump while dead' });
+      return;
+    }
+
+    // 기절 상태에서는 점프 불가
+    if (player.isStunned) {
+      socket.emit('skill-error', { error: 'Cannot jump while stunned' });
+      return;
+    }
+
+    // 시전시간이 있는 스킬 사용 중인지 체크
+    const castingSkills = this.skillManager.getCastingSkills(player);
+    if (castingSkills.length > 0) {
+      socket.emit('skill-error', { error: 'Cannot jump while casting a skill' });
       return;
     }
 

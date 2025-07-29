@@ -232,6 +232,9 @@ class GameServer {
         // 사망 플래그 설정
         player.isDead = true;
         
+        // 시전 중인 스킬 모두 취소
+        this.skillManager.cancelAllCasting(player);
+        
         // 사망 원인 판단 (간단한 로직)
         let deathCause = 'unknown';
         let killerId = null;
@@ -285,6 +288,10 @@ class GameServer {
     const players = this.gameStateManager.getAllPlayers();
     if (players.length > 0) {
       const playerStates = players.map(player => {
+        // 스킬 시전 중인지 확인 (시전시간이 있는 스킬들만)
+        const castingSkills = this.skillManager.getCastingSkills(player);
+        const isCasting = castingSkills.length > 0;
+        
         // 기본 상태 정보
         const state = {
           id: player.id,
@@ -312,7 +319,9 @@ class GameServer {
           // 활성 효과들
           activeEffects: Array.from(player.activeEffects || []),
           // 은신 상태
-          isStealth: player.isStealth || false
+          isStealth: player.isStealth || false,
+          // 스킬 시전 중 여부 (시전시간이 있는 스킬들만)
+          isCasting: isCasting
         };
         
         return state;
@@ -344,28 +353,8 @@ class GameServer {
    * 플레이어의 스킬 쿨타임 정보 조회
    */
   getPlayerSkillCooldowns(player) {
-    const { getJobInfo } = require('./shared/JobClasses');
-    const jobInfo = getJobInfo(player.jobClass);
-    const cooldowns = {};
-    
-    if (jobInfo && jobInfo.skills) {
-      const now = Date.now();
-      
-      jobInfo.skills.forEach(skill => {
-        const skillType = skill.type;
-        const lastUsed = player.skillCooldowns[skillType] || 0;
-        const remainingTime = Math.max(0, (lastUsed + skill.cooldown) - now);
-        
-        cooldowns[skillType] = {
-          remaining: remainingTime,
-          total: skill.cooldown,
-          name: skill.name,
-          key: skill.key
-        };
-      });
-    }
-    
-    return cooldowns;
+    // ServerPlayer의 getClientSkillCooldowns 메서드 사용
+    return player.getClientSkillCooldowns();
   }
 
   /**
