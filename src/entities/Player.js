@@ -77,10 +77,13 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 매니저들 초기화
         this.effectManager = new EffectManager(scene);
         this.skillCooldownUI = null;
-        this.cooldownMessageActive = false;
         
         // 지연된 스킬 이펙트 타이머들 추적
         this.delayedSkillTimers = new Set();
+        
+        // 후딜레이 관련
+        this.isInAfterDelay = false;
+        this.afterDelayEndTime = 0;
         
         // 디버그 관련
         this.debugMode = false;
@@ -280,6 +283,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      */
     update(time, delta) {
         if (!this.isOtherPlayer) {
+            // 후딜레이 상태 체크
+            this.updateAfterDelayStatus();
+            
             this.handleMovement();
             this.handleSkills();
             
@@ -297,6 +303,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.syncNetworkPosition();
         }
         
+        // 매 프레임마다 이름표와 체력바 위치 업데이트 (모든 플레이어)
         this.updateNameTextPosition();
         this.updateHealthBar();
         
@@ -307,6 +314,20 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
+     * 후딜레이 상태 업데이트
+     */
+    updateAfterDelayStatus() {
+        if (this.isInAfterDelay) {
+            const now = Date.now();
+            if (now >= this.afterDelayEndTime) {
+                this.isInAfterDelay = false;
+                this.afterDelayEndTime = 0;
+                console.log('후딜레이 종료 [time: ' + Date.now() + ']');
+            }
+        }
+    }
+
+    /**
      * 이동 처리 (클라이언트에서 처리)
      */
     handleMovement() {
@@ -315,26 +336,17 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.setVelocity(0);
             return;
         }
+
+        // 후딜레이 중일 때는 이동 불가
+        if (this.isInAfterDelay) {
+            this.setVelocity(0);
+            return;
+        }
         
         const speed = this.speed;
         this.setVelocity(0);
         
-        if (this.isUsingSlimeSkill || this.isJumping) {
-            return;
-        }
-        
-        // 전사 스킬 사용 중이면 이동 불가
-        if (this.isUsingWarriorSkill) {
-            return;
-        }
-        
-        // 스킬 시전 중이면 이동 불가 (시전시간이 있는 스킬들만)
-        if (this.isCasting) {
-            return;
-        }
-        
-        // 기절 상태면 이동 불가
-        if (this.isStunned) {
+        if (this.isJumping || this.isCasting || this.isStunned) {
             return;
         }
         
@@ -397,27 +409,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 마우스 클릭 처리
      */
     handleMouseClick(worldX, worldY) {
-        // 다른 플레이어면 실행하지 않음
         if (this.isOtherPlayer) {
             return;
         }
 
-        // 기절 상태에서는 기본 공격 사용 불가
-        if (this.isStunned) {
-            return;
-        }
-
-        // 기본 공격 쿨타임 체크
-        if (this.job && this.job.isBasicAttackOnCooldown && this.job.isBasicAttackOnCooldown()) {
-            return; // 쿨다운 중이면 기본 공격 사용 불가
-        }
-
-        // 중복 실행 방지 (마지막 클릭 시간 체크)
-        const currentTime = this.scene.time.now;
-        if (this.lastClickTime && currentTime - this.lastClickTime < 100) {
-            return; // 100ms 내에 중복 클릭 방지
-        }
-        this.lastClickTime = currentTime;
+        this.lastClickTime = Date.now();
 
         // 서버로 투사체 발사 요청 전송
         if (this.job && this.job.useBasicAttack) {
@@ -568,11 +564,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 스프라이트 업데이트
      */
     updateJobSprite() {
-        // 스킬 사용 중일 때는 스프라이트 변경하지 않음
-        if (this.isUsingSlimeSkill || this.isUsingRoarSkill || this.isUsingWarriorSkill) {
-            return;
-        }
-        
         const spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
         
         if (this.scene.textures.exists(spriteKey)) {
@@ -631,7 +622,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     testLevelUp() {
         if (this.networkManager && !this.isOtherPlayer) {
             this.networkManager.requestLevelUp();
-            this.effectManager.showMessage(this.x, this.y - 100, '레벨업 요청 전송!', { fill: '#ffff00' });
         }
     }
 
@@ -875,33 +865,46 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         }
     }
     
-    // 위치 설정 오버라이드
+    // 위치 설정 오버라이드 - 이제는 update에서 처리하므로 즉시 업데이트만
     setPosition(x, y) {
+        const changed = (this.x !== x || this.y !== y);
         super.setPosition(x, y);
-        this.updateNameTextPosition();
-        this.updateHealthBar();
-        if (this.debugMode) {
-            this.updateDebugBoxes();
+        
+        if (changed) {
+            // 즉시 업데이트 (중요한 위치 변경의 경우)
+            this.updateNameTextPosition();
+            this.updateHealthBar();
+            if (this.debugMode) {
+                this.updateDebugBoxes();
+            }
         }
         return this;
     }
     
     setX(x) {
+        const changed = (this.x !== x);
         super.setX(x);
-        this.updateNameTextPosition();
-        this.updateHealthBar();
-        if (this.debugMode) {
-            this.updateDebugBoxes();
+        
+        if (changed) {
+            this.updateNameTextPosition();
+            this.updateHealthBar();
+            if (this.debugMode) {
+                this.updateDebugBoxes();
+            }
         }
         return this;
     }
     
     setY(y) {
+        const changed = (this.y !== y);
         super.setY(y);
-        this.updateNameTextPosition();
-        this.updateHealthBar();
-        if (this.debugMode) {
-            this.updateDebugBoxes();
+        
+        if (changed) {
+            this.updateNameTextPosition();
+            this.updateHealthBar();
+            if (this.debugMode) {
+                this.updateDebugBoxes();
+            }
         }
         return this;
     }

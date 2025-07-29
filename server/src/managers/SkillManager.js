@@ -53,24 +53,36 @@ class SkillManager {
       return { success: false, error: 'Cannot use skill while casting another skill' };
     }
 
+    // 후딜레이 중인지 체크 (전체 스킬 완료까지)
+    const inAfterDelay = this.isInAfterDelay(player);
+    if (inAfterDelay) {
+      return { success: false, error: 'Cannot use skill while in after delay' };
+    }
+
     // 스킬 사용 처리
     player.skillCooldowns[skillType] = now;
     
     // 액션 상태 업데이트
     const duration = skillInfo.duration || 0;
     const delay = skillInfo.delay || 0;
+    const afterDelay = skillInfo.afterDelay || 0;
     
-    if (duration > 0 || delay > 0) {
+    // 전체 스킬 완료 시간 = 시전시간 + 지속시간 + 후딜레이
+    const totalSkillTime = Math.max(duration, delay) + afterDelay;
+    
+    if (duration > 0 || delay > 0 || afterDelay > 0) {
       player.currentActions.skills.set(skillType, {
         startTime: now,
         duration: duration,
         delay: delay, // 시전시간 정보 추가
-        endTime: now + Math.max(duration, delay),
+        afterDelay: afterDelay, // 후딜레이 시간 추가
+        endTime: now + totalSkillTime, // 후딜레이까지 포함한 전체 완료 시간
         skillInfo: {
           range: this.calculateSkillRange(player, skillType, skillInfo.range),
           damage: this.calculateSkillDamage(player, skillType, skillInfo.damage),
           duration: duration,
           delay: delay,
+          afterDelay: afterDelay,
           heal: skillInfo.heal || 0
         }
       });
@@ -83,6 +95,7 @@ class SkillManager {
       damage: this.calculateSkillDamage(player, skillType, skillInfo.damage),
       duration: duration,
       delay: delay, // 시전시간 정보 추가
+      afterDelay: afterDelay, // 후딜레이 시간 추가
       heal: skillInfo.heal || 0,
       cooldown: skillInfo.cooldown || 0,
       
@@ -107,7 +120,7 @@ class SkillManager {
     return {
       success: true,
       skillType,
-      timestamp: now,
+      endTime: now + totalSkillTime, // 스킬 완료 시간 (후딜레이 포함)
       playerId: player.id,
       x: player.x,
       y: player.y,
@@ -184,6 +197,78 @@ class SkillManager {
     }
     
     return castingSkills;
+  }
+
+  /**
+   * 플레이어가 현재 캐스팅 중인지 확인 (이동 및 다른 스킬 사용 불가 상태)
+   * 시전중, 발동중(버프/장판 제외), 후딜레이중일 때 true 반환
+   */
+  isCasting(player) {
+    const now = Date.now();
+    
+    // 만료된 액션들 먼저 정리
+    this.cleanupExpiredActions(player);
+    
+    for (const [skillType, skillAction] of player.currentActions.skills) {
+      // 1. 시전시간 중 (delay > 0이고 아직 시전시간이 끝나지 않음)
+      if (skillAction.delay > 0 && now < skillAction.startTime + skillAction.delay) {
+        return true;
+      }
+      
+      // 2. 발동 중이지만 버프기나 장판기가 아닌 스킬들
+      // 버프기/장판기는 지속시간이 있어도 이동 가능해야 함
+      const isBuffOrFieldSkill = this.isBuffOrFieldSkill(skillType);
+      if (!isBuffOrFieldSkill && skillAction.duration > 0 && 
+          now >= skillAction.startTime + skillAction.delay && 
+          now < skillAction.startTime + skillAction.delay + skillAction.duration) {
+        return true;
+      }
+      
+      // 3. 후딜레이 중 (전체 스킬 완료까지)
+      if (skillAction.afterDelay > 0 && now < skillAction.endTime) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /**
+   * 버프기나 장판기인지 확인
+   * 이런 스킬들은 지속시간이 있어도 플레이어가 자유롭게 이동할 수 있어야 함
+   */
+  isBuffOrFieldSkill(skillType) {
+    const buffOrFieldSkills = [
+      'stealth',      // 은신 (어쌔신, 닌자)
+      'shield',       // 보호막 (마법사)
+      'focus',        // 집중 (궁수)
+      'ward',         // 와드 (서포터)
+      'buff_field',   // 버프 장판 (서포터)
+      'heal_field',   // 힐 장판 (서포터)
+      'ice_field',    // 얼음 장판 (마법사)
+      'roar'          // 전사 포효 (버프 효과)
+    ];
+    
+    return buffOrFieldSkills.includes(skillType);
+  }
+
+  /**
+   * 후딜레이 중인지 확인 (전체 스킬 완료까지)
+   */
+  isInAfterDelay(player) {
+    const now = Date.now();
+    
+    // 만료된 액션들 먼저 정리
+    this.cleanupExpiredActions(player);
+    
+    for (const [skillType, skillAction] of player.currentActions.skills) {
+      // 스킬이 아직 완전히 끝나지 않았다면 (후딜레이 포함)
+      if (now < skillAction.endTime) {
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   /**

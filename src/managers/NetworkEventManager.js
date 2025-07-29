@@ -1,6 +1,10 @@
+import Phaser from 'phaser';
 import Player from '../entities/Player.js';
 import Enemy from '../entities/Enemy.js';
 import AssetLoader from '../utils/AssetLoader.js';
+import PingManager from './PingManager.js';
+import MinimapManager from './MinimapManager.js';
+import EffectManager from '../effects/EffectManager.js';
 
 /**
  * 네트워크 이벤트 처리 매니저
@@ -13,7 +17,7 @@ export default class NetworkEventManager {
         this.otherPlayers = null;
         this.enemies = null;
         this.cheatManager = null;
-        this.effectManager = null;
+        this.effectManager = new EffectManager(scene);
         
         // 게임 상태
         this.gameJoined = false;
@@ -415,6 +419,7 @@ export default class NetworkEventManager {
                     ease: 'Linear',
                     onUpdate: () => {
                         otherPlayer.updateNameTextPosition();
+                        otherPlayer.updateHealthBar();
                     }
                 });
                 
@@ -461,43 +466,166 @@ export default class NetworkEventManager {
             ? this.scene.player 
             : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
         
-        const isOwnPlayer = data.playerId === this.networkManager.playerId;
+        if (!player) {
+            console.warn(`플레이어를 찾을 수 없음: ${data.playerId}`);
+            return;
+        }
+
+        // 플레이어가 사망한 경우 스킬 이펙트 무시
+        if (player.isDead) {
+            console.log(`스킬 이펙트 취소: 플레이어가 사망함 (${data.skillType})`);
+            return;
+        }
+
+        // 서버 스킬 정보 추출
+        const skillInfo = data.skillInfo;
+        const delay = skillInfo.delay || 0;           // 시전시간 (예: 전사 휩쓸기 1초)
+        const duration = skillInfo.duration || 0;     // 지속시간 (예: 은신 3초)
+        const afterDelay = skillInfo.afterDelay || 0; // 후딜레이 시간
         
-        if (player) {
-            // 타임스탬프 기반 이펙트 동기화 (모든 스킬 타입 통일 처리)
-            const currentTime = Date.now();
-            const skillDelay = currentTime - data.timestamp;
+        // endTime 기준으로 타이밍 계산
+        const currentTime = Date.now();
+        const endTime = data.endTime;
+        const timeUntilEnd = endTime - currentTime;
+        
+        // 후딜레이 완료 시간 계산
+        const effectEndTime = endTime - afterDelay; // 실제 스킬 효과 종료 시간
+        
+        console.log(`스킬 사용: ${data.skillType}, 전체완료까지: ${timeUntilEnd}ms, 효과완료까지: ${effectEndTime - currentTime}ms, 시전시간: ${delay}ms, 지속시간: ${duration}ms, 후딜레이: ${afterDelay}ms, endTime: ${endTime}`);
+
+        // 스킬이 이미 완료된 경우 스킵
+        if (timeUntilEnd < 0) {
+            console.log(`스킬 이펙트 스킵: 이미 완료됨 (${timeUntilEnd}ms, ${data.skillType})`);
+            return;
+        }
+
+        if (delay > 0) {
+            // 시전시간이 있는 스킬 (전사 휩쓸기, 찌르기 등)
+            this.handleDelayedSkill(player, data, delay, duration, afterDelay, endTime, effectEndTime);
+        } else if (duration > 0) {
+            // 즉시 시작되는 지속 스킬 (은신, 와드 등)
+            this.handleDurationSkill(player, data, duration, afterDelay, endTime, effectEndTime);
+        } else {
+            // 즉시 실행되는 스킬 (기본 공격 등)
+            this.handleInstantSkill(player, data, afterDelay, endTime, effectEndTime);
+        }
+    }
+
+    /**
+     * 시전시간이 있는 스킬 처리 (전사 휩쓸기, 찌르기 등)
+     */
+    handleDelayedSkill(player, data, delay, duration, afterDelay, endTime, effectEndTime) {
+        const currentTime = Date.now();
+        const timeUntilCastEnd = effectEndTime - currentTime;
+
+        // 후딜레이가 있는 스킬이면 플레이어 상태 설정
+        if (afterDelay > 0) {
+            player.isInAfterDelay = true;
+            player.afterDelayEndTime = endTime; // 전체 스킬 완료 시간 (후딜레이 포함)
+        }
+        
+        if (timeUntilCastEnd > 0) {
+            // 즉시 시전 애니메이션 시작
+            this.showSkillCastingEffect(player, data.skillType, {
+                ...data,
+                effectEndTime: effectEndTime,
+                endTime: endTime,
+            });
+        } else {
+            console.log(`스킬 효과 완료됨: ${data.skillType}`);
+        }
+    }
+
+    /**
+     * 즉시 시작되는 지속 스킬 처리 (은신, 와드 등)
+     */
+    handleDurationSkill(player, data, duration, afterDelay, endTime, effectEndTime) {
+        const currentTime = Date.now();
+        const timeUntilEffectEnd = effectEndTime - currentTime;
+        
+        if (timeUntilEffectEnd > 0) {
+            // 아직 지속 중 - 남은 시간만큼 효과 시작
+            console.log(`지속 스킬 시작: ${data.skillType}, 남은 지속시간: ${timeUntilEffectEnd}ms`);
             
-            // 지연시간이 너무 크면 (1초 이상) 이펙트 스킵
-            if (skillDelay > 1000) {
-                return;
+            this.showSkillEffect(player, data.skillType, {
+                ...data,
+                isDelayed: false,
+                endTime: endTime,
+                effectEndTime: effectEndTime
+            });
+        } else {
+            // 스킬 효과는 끝났지만 아직 후딜레이 진행 중일 수 있음
+            console.log(`지속 스킬 효과 완료됨: ${data.skillType}`);
+        }
+    }
+
+    /**
+     * 즉시 실행되는 스킬 처리 (기본 공격 등)
+     */
+    handleInstantSkill(player, data, afterDelay, endTime, effectEndTime) {
+        console.log(`즉시 스킬 실행: ${data.skillType}`);
+        this.showSkillEffect(player, data.skillType, {
+            ...data,
+            endTime: endTime,
+            effectEndTime: effectEndTime
+        });
+    }
+
+    /**
+     * 스킬 시전 이펙트 표시 (시전시간 동안의 애니메이션)
+     */
+    showSkillCastingEffect(player, skillType, data) {
+        // 플레이어 job이 없는 경우 처리
+        if (!player.job) {
+            console.warn(`플레이어 ${player.networkId || 'local'}의 job이 null입니다. 직업: ${player.jobClass}`);
+            // job 인스턴스 강제 생성 시도
+            if (player.updateJobClass) {
+                player.updateJobClass();
+                console.log(`플레이어 ${player.networkId || 'local'}의 job 강제 생성 완료`);
             }
-            
-            // 지연시간만큼 조정해서 이펙트 재생
-            const adjustedDelay = skillDelay;
-            
-            if (adjustedDelay > 0) {
-                // 지연해서 재생
-                const delayedTimer = this.scene.time.delayedCall(adjustedDelay, () => {
-                    // 플레이어가 죽었는지 확인
-                    if (player.isDead) {
-                        console.log(`스킬 이펙트 취소: 플레이어가 사망함 (${data.skillType})`);
-                        return;
+        }
+        
+        // 각 직업별 시전 이펙트 처리
+        if (player.job) {
+            switch (skillType) {
+                case 'sweep':
+                    if (player.job.showSweepCastingEffect) {
+                        const mouseX = data.targetX;
+                        const mouseY = data.targetY;
+                        const skillInfo = data.skillInfo;
+                        const angleOffset = skillInfo.angleOffset;
+                        const range = skillInfo.range;
+                        
+                        player.job.showSweepCastingEffect(mouseX, mouseY, angleOffset, range, data.effectEndTime, data.endTime);
+                    } else {
+                        console.warn(`플레이어 ${player.networkId || 'local'}의 job에 showSweepCastingEffect 메서드가 없습니다`);
                     }
-                    this.showSkillEffect(player, data.skillType, data);
-                    player.delayedSkillTimers.delete(delayedTimer);
-                });
-                
-                // 타이머를 추적하여 사망 시 취소할 수 있도록 함
-                if (player.delayedSkillTimers) {
-                    player.delayedSkillTimers.add(delayedTimer);
-                }
-            } else {
-                // 즉시 재생 (플레이어 상태 확인 후)
-                if (!player.isDead) {
-                    this.showSkillEffect(player, data.skillType, data);
-                }
+                    break;
+                    
+                case 'thrust':
+                    // 전사 찌르기 시전 이펙트
+                    if (player.job.showThrustCastingEffect) {
+                        const mouseX = data.targetX;
+                        const mouseY = data.targetY;
+                        const skillInfo = data.skillInfo;
+                        const height = skillInfo.range;
+                        const width = skillInfo.width;
+                        
+                        player.job.showThrustCastingEffect(mouseX, mouseY, height, width, data.effectEndTime, data.endTime);
+                    } else {
+                        console.warn(`플레이어 ${player.networkId || 'local'}의 job에 showThrustCastingEffect 메서드가 없습니다`);
+                    }
+                    break;
+                    
+                default:
+                    // 기타 직업의 시전 이펙트가 있다면 여기서 처리
+                    if (player.job.showCastingEffect) {
+                        player.job.showCastingEffect(skillType, data);
+                    }
+                    break;
             }
+        } else {
+            console.error(`플레이어 ${player.networkId || 'local'}의 job 생성에 실패했습니다. 스킬 이펙트를 표시할 수 없습니다.`);
         }
     }
 
@@ -609,11 +737,6 @@ export default class NetworkEventManager {
             console.warn('Player not found 에러 감지! 게임을 초기화하고 로그인 화면으로 돌아갑니다.');
             this.handlePlayerNotFoundError();
             return;
-        }
-        
-        // 일반적인 스킬 에러 처리
-        if (this.scene.player && this.scene.player.job) {
-            this.scene.player.job.showCooldownMessage(data.error);
         }
     }
 
@@ -824,7 +947,12 @@ export default class NetworkEventManager {
                     otherPlayer.hp = playerState.hp;
                     otherPlayer.maxHp = playerState.maxHp;
                     otherPlayer.level = playerState.level;
-                    otherPlayer.jobClass = playerState.jobClass;
+                    
+                    // 직업 변경 시 job 인스턴스 업데이트
+                    if (otherPlayer.jobClass !== playerState.jobClass) {
+                        otherPlayer.jobClass = playerState.jobClass;
+                        otherPlayer.updateJobClass();
+                    }
                     
                     // 스킬 시전 중 상태
                     otherPlayer.isCasting = playerState.isCasting;
@@ -1047,7 +1175,7 @@ export default class NetworkEventManager {
             enemy.hp = data.hp;
             enemy.maxHp = data.maxHp;
             
-            this.scene.effectManager.showDamageText(enemy.x, enemy.y, `${enemy.hp}/${enemy.maxHp}`, '#ff0000');
+            this.scene.effectManager.showDamageText(enemy.x, enemy.y, data.damage, '#ff0000');
         }
     }
 
@@ -1152,7 +1280,7 @@ export default class NetworkEventManager {
                 this.scene.effectManager.showDamageText(
                     this.scene.player.x, 
                     this.scene.player.y - 60, 
-                    `-${data.damage} (스폰 배리어)`, 
+                    `${data.damage} (스폰 배리어)`, 
                     '#ff0000'
                 );
                 
@@ -1235,8 +1363,6 @@ export default class NetworkEventManager {
                 
                 // 스킬 관련 상태 초기화
                 this.scene.player.isCasting = false;
-                this.scene.player.isUsingSlimeSkill = false;
-                this.scene.player.isUsingWarriorSkill = false;
                 this.scene.player.isStunned = false;
                 this.scene.player.isStealth = false;
                 
@@ -1391,6 +1517,9 @@ export default class NetworkEventManager {
         // 무적 상태 설정
         otherPlayer.isInvincible = playerData.isInvincible || false;
         
+        // 직업 클래스 인스턴스 생성 (스킬 애니메이션을 위해 필수)
+        otherPlayer.updateJobClass();
+        
         otherPlayer.updateSize(); // 크기 업데이트 적용
         otherPlayer.updateJobSprite();
         
@@ -1518,19 +1647,7 @@ export default class NetworkEventManager {
                 }
                 break;
             case 'roar':
-                if (player.job.showRoarEffect) {
-                    player.job.showRoarEffect(data);
-                }
-                break;
-            case 'sweep':
-                if (player.job.showSweepEffect) {
-                    player.job.showSweepEffect(data);
-                }
-                break;
-            case 'thrust':
-                if (player.job.showThrustEffect) {
-                    player.job.showThrustEffect(data);
-                }
+                player.job.showRoarEffect();
                 break;
         }
     }
@@ -1567,11 +1684,15 @@ export default class NetworkEventManager {
         
         const originalY = player.y;
         const originalNameY = player.nameText ? player.nameText.y : null;
+        const originalHealthBarY = player.healthBar?.container ? player.healthBar.container.y : null;
         player.isJumping = true;
         
         const targets = [player];
         if (player.nameText) {
             targets.push(player.nameText);
+        }
+        if (player.healthBar?.container) {
+            targets.push(player.healthBar.container);
         }
         
         // 서버에서 받은 지속시간 사용 (기본값 400ms)
@@ -1590,8 +1711,12 @@ export default class NetworkEventManager {
                     if (player.nameText && originalNameY !== null) {
                         player.nameText.y = originalNameY;
                     }
+                    if (player.healthBar?.container && originalHealthBarY !== null) {
+                        player.healthBar.container.y = originalHealthBarY;
+                    }
                     player.isJumping = false;
                     player.updateNameTextPosition();
+                    player.updateHealthBar();
                 }
             }
         });
@@ -1604,32 +1729,22 @@ export default class NetworkEventManager {
         // 기절 상태 표시 (회색으로 변색)
         player.setTint(0x888888);
         
-        // 기절 텍스트 표시
-        const stunText = this.scene.add.text(
+        // EffectManager를 사용한 기절 텍스트 표시
+        this.effectManager.showStatusMessage(
             player.x, 
-            player.y - 80, 
+            player.y, 
             '기절!', 
             {
                 fontSize: '16px',
                 fill: '#888888',
                 fontStyle: 'bold'
             }
-        ).setOrigin(0.5);
+        );
         
         // 기절 지속시간 후 효과 제거
         this.scene.time.delayedCall(duration, () => {
             if (player.active) {
                 player.clearTint();
-            }
-            if (stunText.active) {
-                stunText.destroy();
-            }
-        });
-        
-        // 기절 텍스트는 1초 후 제거
-        this.scene.time.delayedCall(1000, () => {
-            if (stunText.active) {
-                stunText.destroy();
             }
         });
     }
@@ -1782,16 +1897,16 @@ export default class NetworkEventManager {
         const color = data.message === '공격 무효!' ? '#ff0000' : '#00ff00';
         
         // 빨간색 "공격 무효!" 메시지를 해당 위치에 표시
-        this.scene.effectManager.showMessage(
+        this.scene.effectManager.showSkillMessage(
             data.x, 
-            data.y - 30, 
+            data.y,
             data.message, 
-            { 
+            {
                 fill: color,
-                fontSize: '18px',
+                fontSize: '16px',
                 fontStyle: 'bold'
             },
-            500 // 1.5초 동안 표시
+            500 // 0.5초 동안 표시
         );
         
         console.log(`메시지 표시: "${data.message}" at (${data.x}, ${data.y})`);

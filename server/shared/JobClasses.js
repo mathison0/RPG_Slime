@@ -138,6 +138,7 @@ const JobClasses = {
                 range: 100,
                 angleOffset: Math.PI / 4, 
                 delay: 1000, // 1초 시전 시간
+                afterDelay: 400, // 후딜레이 시간
                 stunDuration: 2000, // 2초 기절 지속시간
                 key: 'E',
                 type: 'sweep'
@@ -150,6 +151,7 @@ const JobClasses = {
                 range: 200,
                 width: 50, // 직사각형의 가로 길이
                 delay: 1500, // 1.5초 지연 데미지
+                afterDelay: 800, // 후딜레이 시간
                 key: 'R',
                 type: 'thrust'
             }
@@ -199,8 +201,9 @@ const JobClasses = {
                 name: '마법 투사체',
                 description: '마우스 방향으로 마법 투사체를 발사합니다.',
                 cooldown: 3000,
-                damage: 'attack * 1.2',
+                damage: 'attack * 2',
                 range: 400,
+                afterDelay: 200,
                 key: '3',
                 type: 'magic_missile'
             }
@@ -231,6 +234,7 @@ const JobClasses = {
                 cooldown: 5000,
                 damage: 0,
                 heal: 50,
+                afterDelay: 600, // 수리 후 짧은 후딜레이
                 key: '1',
                 type: 'repair'
             }
@@ -261,6 +265,7 @@ const JobClasses = {
                 cooldown: 2000,
                 damage: 0,
                 range: 100,
+                afterDelay: 200,
                 key: '1',
                 type: 'roll'
             },

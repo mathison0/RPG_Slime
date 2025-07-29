@@ -236,7 +236,7 @@ class SocketEventManager {
       const broadcastData = {
         playerId: socket.id,
         skillType: skillResult.skillType,
-        timestamp: skillResult.timestamp,
+        endTime: skillResult.endTime, // 스킬 완료 시간 (후딜레이 포함)
         x: skillResult.x,
         y: skillResult.y,
         team: player.team,
@@ -333,6 +333,13 @@ class SocketEventManager {
       return;
     }
 
+    // 후딜레이 중인지 체크
+    const inAfterDelay = this.skillManager.isInAfterDelay(player);
+    if (inAfterDelay) {
+      socket.emit('skill-error', { error: 'Cannot jump while in after delay' });
+      return;
+    }
+
     // 점프 시작 처리
     const jumpDuration = 400;
     if (!this.skillManager.startJump(player, jumpDuration)) {
@@ -340,10 +347,11 @@ class SocketEventManager {
     }
 
     // 모든 클라이언트에게 점프 알림
+    const now = Date.now();
     this.io.emit('player-skill-used', {
       playerId: socket.id,
       skillType: 'jump',
-      timestamp: Date.now(),
+      endTime: now + jumpDuration,
       x: player.x,
       y: player.y,
       team: player.team,

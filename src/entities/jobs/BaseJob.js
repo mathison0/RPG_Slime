@@ -1,26 +1,34 @@
-// JobClasses는 서버에서 관리하므로 import 제거
+import EffectManager from '../../effects/EffectManager.js';
 
 /**
- * 기본 직업 클래스
- * 모든 직업 클래스의 기본이 되는 클래스
+ * 모든 직업의 기본 클래스
  */
 export default class BaseJob {
     constructor(player) {
         this.player = player;
         this.scene = player.scene;
+        this.effectManager = new EffectManager(player.scene);
         
         this.skillCooldowns = new Map();
         this.effects = new Map();
     }
 
     /**
-     * 스킬 사용
+     * 직업별 스킬 사용 메서드
      * @param {number} skillNumber - 스킬 번호 (1, 2, 3)
-     * @param {Object} options - 추가 옵션
+     * @param {Object} options - 스킬 사용 옵션
      */
     useSkill(skillNumber, options = {}) {
-        // 기본 구현 - 각 직업에서 오버라이드
-        console.log(`BaseJob: 스킬 ${skillNumber} 사용`);
+        console.log(`BaseJob: 스킬 ${skillNumber} 사용됨`);
+        // 각 직업에서 오버라이드해야 함
+    }
+
+    /**
+     * 기본 공격 이펙트
+     */
+    showBasicAttackEffect(targetX, targetY) {
+        console.log('BaseJob: 기본 공격 이펙트');
+        // 각 직업에서 오버라이드해야 함
     }
 
     /**
@@ -121,51 +129,26 @@ export default class BaseJob {
     }
 
     /**
-     * 스킬의 최대 쿨타임 반환 (서버에서 받은 정보 사용)
-     * @param {number} skillNumber - 스킬 번호
-     * @returns {number} - 최대 쿨타임 (ms)
+     * 스킬의 최대 쿨타임을 반환 (정확한 값은 서버 설정을 따라감)
      */
     getSkillMaxCooldown(skillNumber) {
-        // 서버에서 받은 스킬 쿨타임 정보 사용
-        if (this.player.serverSkillCooldowns) {
-            for (const [skillType, cooldownInfo] of Object.entries(this.player.serverSkillCooldowns)) {
-                if (cooldownInfo.key === skillNumber.toString() || cooldownInfo.key === `${skillNumber}`) {
-                    return cooldownInfo.total;
-                }
-            }
-        }
+        const jobType = this.player.job || 'slime';
         
-        // 기본값
-        return 3000;
+        // 기본값들 (서버와 동기화 필요)
+        const defaultCooldowns = {
+            slime: { 1: 2000 },
+            warrior: { 1: 3000, 2: 5000, 3: 7000 },
+            archer: { 1: 2000, 2: 4000, 3: 6000 },
+            mage: { 1: 2500, 2: 4500, 3: 8000 },
+            assassin: { 1: 1500, 2: 3500, 3: 9000 },
+            supporter: { 1: 3000, 2: 4000, 3: 6000 },
+            mechanic: { 1: 2000, 2: 5000, 3: 7500 },
+            ninja: { 1: 1800, 2: 3000, 3: 5000 }
+        };
+        
+        return defaultCooldowns[jobType]?.[skillNumber] || 1000;
     }
 
-    /**
-     * 쿨타임 메시지 표시
-     */
-    showCooldownMessage(message = '쿨타임 대기 중!') {
-        if (this.player.cooldownMessageActive) return;
-        
-        this.player.cooldownMessageActive = true;
-        
-        const cooldownText = this.scene.add.text(
-            this.player.x, 
-            this.player.y - 80, 
-            message, 
-            {
-                fontSize: '14px',
-                fill: '#ffff00',
-                stroke: '#000000',
-                strokeThickness: 2
-            }
-        ).setOrigin(0.5);
-        
-        this.scene.time.delayedCall(1500, () => {
-            if (cooldownText.active) {
-                cooldownText.destroy();
-            }
-            this.player.cooldownMessageActive = false;
-        });
-    }
 
     /**
      * 점프 기능 (모든 직업 공통) - 서버에 요청만 전송
@@ -285,8 +268,28 @@ export default class BaseJob {
      * 스킬 이펙트 정리 (사망 시 호출)
      */
     clearSkillEffects() {
-        // 기본 구현 - 각 직업에서 필요시 오버라이드
-        console.log(`${this.constructor.name}: 스킬 이펙트 정리`);
+        console.log('BaseJob: 스킬 효과 정리');
+        // 각 직업에서 필요에 따라 오버라이드
+    }
+
+    /**
+     * 스킬 이펙트 표시
+     */
+    showSkillEffect(skillType, data = null) {
+        console.log('BaseJob: 스킬 이펙트 표시', skillType, data);
+        // 각 직업에서 오버라이드해야 함
+    }
+
+    /**
+     * 스킬 번호로 스킬명을 반환
+     */
+    getSkillName(skillNumber) {
+        switch (skillNumber) {
+            case 1: return 'skill1';
+            case 2: return 'skill2';
+            case 3: return 'skill3';
+            default: return 'unknown';
+        }
     }
 
     /**

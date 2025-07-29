@@ -28,12 +28,6 @@ export default class MechanicJob extends BaseJob {
     useRepair() {
         const skillKey = 'skill1'; // 통일된 스킬 키 사용
         
-        // 쿨타임 체크
-        if (!this.isSkillAvailable(skillKey)) {
-            this.showCooldownMessage();
-            return;
-        }
-        
         // 다른 플레이어면 실행하지 않음
         if (this.player.isOtherPlayer) {
             return;
