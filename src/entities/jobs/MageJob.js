@@ -153,11 +153,13 @@ export default class MageJob extends BaseJob {
         
         ward.setScale(wardScale);
         
-        // 다른 플레이어의 와드인지 확인
-        const isOtherPlayer = this.player.isOtherPlayer;
+        // 다른 플레이어의 와드인지 확인 
+        const isOtherPlayer = data?.playerId && data.playerId !== this.player.networkManager?.playerId;
+        
         if (isOtherPlayer) {
             ward.isOtherPlayerWard = true;
-            ward.wardOwnerId = this.player.networkId;
+            ward.wardOwnerId = data.playerId;
+            ward.wardOwnerTeam = data.playerTeam; // 와드 소유자 팀 정보 저장
         }
         
         // 모든 와드는 같은 depth로 설정
@@ -178,87 +180,46 @@ export default class MageJob extends BaseJob {
         
         console.log(`와드 스킬 정보 (서버에서 받음): range=${range}`);
         
-        // 와드 정보 저장 (서버에서 받은 범위값 사용)
-        this.player.scene.activeWard = { 
-            x: this.player.x, 
-            y: this.player.y, 
-            radius: range,
-            sprite: ward,
-            hp: ward.hp,
-            maxHp: ward.maxHp
-        };
+        // 와드 정보 저장 (서버에서 받은 범위값 사용) - 와드 설치자만 activeWard 설정
+        if (!isOtherPlayer) {
+            this.player.scene.activeWard = { 
+                x: this.player.x, 
+                y: this.player.y, 
+                radius: range,
+                sprite: ward,
+                hp: ward.hp,
+                maxHp: ward.maxHp
+            };
+        }
         
-        // 와드 이펙트
-        this.player.scene.tweens.add({
-            targets: ward,
-            alpha: 0.8,
-            duration: 1000,
-            yoyo: true,
-            repeat: -1
-        });
+
         
-        // 와드 범위 내 적 탐지
-        const wardDetection = this.player.scene.time.addEvent({
-            delay: 1000,
-            callback: () => {
-                if (!ward.active || ward.hp <= 0) {
-                    wardDetection.destroy();
-                    return;
-                }
-                
-                try {
-                    this.player.scene.enemies.getChildren().forEach(enemy => {
-                        if (enemy && !enemy.isDead) {
-                            const distance = Phaser.Math.Distance.Between(ward.x, ward.y, enemy.x, enemy.y);
-                            if (distance <= range) {
-                                if (!enemy.wardDetected) {
-                                    enemy.wardDetected = true;
-                                    enemy.setTint(0xff0000);
-                                    enemy.setAlpha(0.8);
-                                    this.showEnemyOnMinimap(enemy);
-                                }
-                            } else {
-                                if (enemy.wardDetected) {
-                                    enemy.clearTint();
-                                    enemy.wardDetected = false;
-                                    enemy.setAlpha(1.0);
-                                    this.hideEnemyFromMinimap(enemy);
-                                }
-                            }
-                        }
-                    });
-                } catch (error) {
-                    console.error('와드 탐지 중 오류:', error);
-                    wardDetection.destroy();
-                }
-            },
-            loop: true
-        });
+        // 와드 범위 표시 (하얀색 반투명 원형, 거의 투명)
+        const rangeIndicator = this.player.scene.add.circle(ward.x, ward.y, range, 0xffffff, 0.1);
+        rangeIndicator.setDepth(1000);
+        
+        // 와드와 함께 파괴되도록 설정
+        ward.rangeIndicator = rangeIndicator;
+        
+        // 와드 소유자 정보 설정 (서버에서 받은 설치자 ID 사용)
+        ward.ownerId = data?.playerId || this.player.networkId;
+        
+
         
         // 와드 파괴 함수
         const destroyWard = () => {
             if (ward.active) {
+                // 범위 표시도 함께 제거
+                if (ward.rangeIndicator) {
+                    ward.rangeIndicator.destroy();
+                }
                 ward.destroy();
             }
             
-            if (wardDetection) {
-                wardDetection.destroy();
+            // 와드 설치자만 activeWard 해제
+            if (!isOtherPlayer) {
+                this.player.scene.activeWard = null;
             }
-            
-            try {
-                this.player.scene.enemies.getChildren().forEach(enemy => {
-                    if (enemy && enemy.wardDetected) {
-                        enemy.clearTint();
-                        enemy.wardDetected = false;
-                        enemy.setAlpha(1.0);
-                        this.hideEnemyFromMinimap(enemy);
-                    }
-                });
-            } catch (error) {
-                console.error('와드 정리 중 오류:', error);
-            }
-            
-            this.player.scene.activeWard = null;
         };
         
         ward.destroyWard = destroyWard;

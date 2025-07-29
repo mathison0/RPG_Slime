@@ -93,6 +93,8 @@ export default class NetworkEventManager {
         this.networkManager.on('ward-destroyed', (data) => {
             this.handleWardDestroyed(data);
         });
+        
+
 
         // 플레이어 레벨업
         this.networkManager.on('player-level-up', (data) => {
@@ -245,8 +247,7 @@ export default class NetworkEventManager {
      * 게임 입장 처리
      */
     handleGameJoined(data) {
-        console.log('game-joined 이벤트 수신:', data.playerId);
-        
+    
         if (this.scene.player && this.scene.player.networkId === data.playerId) {
             console.log('같은 플레이어 ID로 이미 플레이어가 존재함, 중복 처리 무시');
             return;
@@ -462,12 +463,6 @@ export default class NetworkEventManager {
             : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
         
         const isOwnPlayer = data.playerId === this.networkManager.playerId;
-        
-        // 디버깅: 다른 플레이어를 찾지 못하는 경우 로그 출력
-        if (!player && !isOwnPlayer) {
-            console.warn(`다른 플레이어 스킬 사용 처리 실패: playerId=${data.playerId}, skillType=${data.skillType}`);
-            console.log('현재 otherPlayers:', this.scene.otherPlayers?.getChildren().map(p => ({ id: p.networkId, jobClass: p.jobClass })));
-        }
         
         if (player) {
             // 타임스탬프 기반 이펙트 동기화 (모든 스킬 타입 통일 처리)
@@ -911,6 +906,8 @@ export default class NetworkEventManager {
             }
         });
     }
+
+
 
     /**
      * 플레이어 무적 상태 변경 처리

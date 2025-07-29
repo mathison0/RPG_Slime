@@ -30,6 +30,7 @@ class SocketEventManager {
       this.setupPlayerUpdateHandler(socket);
       this.setupPlayerJobChangeHandler(socket);
       this.setupPlayerSkillHandler(socket);
+      this.setupWardDetectionHandler(socket); // 와드 감지 핸들러 추가
       this.setupPlayerLevelUpHandler(socket); // 레벨업 요청 핸들러 추가
       this.setupPlayerSuicideHandler(socket); // 자살 치트 요청 핸들러 추가
       this.setupPlayerInvincibleHandler(socket); // 무적 상태 토글 치트 요청 핸들러 추가
@@ -248,6 +249,8 @@ class SocketEventManager {
       if (skillResult.skillType === 'ward') {
         broadcastData.wardScale = 0.2; // 와드 크기 정보
         broadcastData.wardBodySize = 125; // 와드 물리 바디 크기
+        broadcastData.playerId = socket.id; // 와드 설치자 ID 추가
+        broadcastData.playerTeam = player.team; // 와드 설치자 팀 정보 추가
       }
 
       // 타겟 위치가 있는 경우 추가
@@ -260,6 +263,28 @@ class SocketEventManager {
       this.io.emit('player-skill-used', broadcastData);
       
       console.log(`Player ${socket.id} used skill: ${skillResult.skillType}`);
+    });
+  }
+
+  /**
+   * 와드 감지 정보 처리
+   */
+  setupWardDetectionHandler(socket) {
+    socket.on('ward-detection', (data) => {
+      const player = this.gameStateManager.getPlayer(socket.id);
+      if (!player) return;
+
+      // 같은 팀 플레이어들에게만 브로드캐스트
+      const teamPlayers = this.gameStateManager.getPlayersByTeam(player.team);
+      const teamPlayerIds = teamPlayers.map(p => p.id);
+      
+      this.emitToPlayers(teamPlayerIds, 'ward-detection-update', {
+        wardOwnerId: socket.id,
+        wardOwnerTeam: player.team,
+        ...data
+      });
+      
+      console.log(`Ward detection: ${data.type} ${data.targetId} ${data.detected ? 'detected' : 'undetected'} by ${socket.id}`);
     });
   }
 
