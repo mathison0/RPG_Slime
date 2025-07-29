@@ -371,7 +371,9 @@ class ServerEnemy {
       vy: this.vy,
       exp: this.exp,
       isStunned: this.isStunned,
-      stunDuration: this.stunDuration
+      stunDuration: this.stunDuration,
+      // 어그로 대상 정보 추가
+      targetId: this.target ? this.target.id : null
     };
     
     if (this.isAttacking) {
