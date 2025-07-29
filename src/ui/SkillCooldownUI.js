@@ -57,7 +57,7 @@ export default class SkillCooldownUI {
             const config = skillConfigs[i];
             
             const background = this.scene.add.graphics();
-            background.fillStyle(0x333333, 0.8);
+            background.fillStyle(0x0066ff, 0.8); // 파란색 배경 (사용 가능 상태)
             background.fillCircle(config.x, config.y, radius);
             background.setScrollFactor(0);
             background.setDepth(1000);
@@ -140,6 +140,10 @@ export default class SkillCooldownUI {
             } else {
                 // 쿨타임이 끝난 스킬의 UI 초기화
                 ui.cooldown.clear();
+                // 쿨타임이 끝나면 배경을 파란색으로 복원
+                ui.background.clear();
+                ui.background.fillStyle(0x0066ff, 0.8);
+                ui.background.fillCircle(ui.x, ui.y, ui.radius);
             }
         });
     }
@@ -161,14 +165,24 @@ export default class SkillCooldownUI {
             const startAngle = -Math.PI / 2; // 12시 방향부터 시작
             const endAngle = startAngle - (2 * Math.PI * progress); // 시계방향으로 변경
             
-            // 쿨타임 원형 그래프
-            ui.cooldown.fillStyle(0xff0000, 0.6);
+            // 쿨타임 원형 그래프 (회색 + 파란색 혼합)
+            ui.cooldown.fillStyle(0x8888aa, 0.6);
             ui.cooldown.slice(ui.x, ui.y, ui.radius, startAngle, endAngle);
             ui.cooldown.fillPath();
             
-            // 경계선
-            ui.cooldown.lineStyle(2, 0xff0000, 0.8);
+            // 경계선 (파란색)
+            ui.cooldown.lineStyle(2, 0x0066ff, 0.8);
             ui.cooldown.strokeCircle(ui.x, ui.y, ui.radius);
+            
+            // 배경을 회색으로 변경 (쿨타임 중)
+            ui.background.clear();
+            ui.background.fillStyle(0x666666, 0.8);
+            ui.background.fillCircle(ui.x, ui.y, ui.radius);
+        } else {
+            // 쿨타임이 끝나면 배경을 파란색으로 복원
+            ui.background.clear();
+            ui.background.fillStyle(0x0066ff, 0.8);
+            ui.background.fillCircle(ui.x, ui.y, ui.radius);
         }
     }
 
@@ -204,6 +218,10 @@ export default class SkillCooldownUI {
                 this.drawCooldown(skillKey, cooldownInfo.remaining, cooldownInfo.max);
             } else {
                 ui.cooldown.clear();
+                // 쿨타임이 끝나면 배경을 파란색으로 복원
+                ui.background.clear();
+                ui.background.fillStyle(0x0066ff, 0.8);
+                ui.background.fillCircle(ui.x, ui.y, ui.radius);
             }
         });
     }
