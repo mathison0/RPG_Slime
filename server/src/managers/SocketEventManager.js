@@ -220,50 +220,6 @@ class SocketEventManager {
         rotationDirection: data.rotationDirection // 회전 방향 정보 추가
       };
       console.log(`스킬 사용 옵션:`, skillOptions);
-      // direction 정보가 있으면 추가
-      if (skillResult.direction) {
-        broadcastData.direction = skillResult.direction;
-        console.log(`방향 정보 추가: ${skillResult.direction}`);
-      } else {
-        console.log(`방향 정보 없음: skillResult=`, skillResult);
-      }
-
-      // rotationDirection 정보가 있으면 추가
-      if (skillResult.rotationDirection) {
-        broadcastData.rotationDirection = skillResult.rotationDirection;
-        console.log(`회전 방향 정보 추가: ${skillResult.rotationDirection}`);
-      }
-
-      // 구르기 스킬의 경우 시작 위치와 최종 위치 정보 추가
-      if (skillResult.skillType === 'roll') {
-        broadcastData.startX = skillResult.startX;
-        broadcastData.startY = skillResult.startY;
-        broadcastData.endX = skillResult.endX;
-        broadcastData.endY = skillResult.endY;
-        console.log(`구르기 위치 정보 추가: 시작(${skillResult.startX}, ${skillResult.startY}) -> 끝(${skillResult.endX}, ${skillResult.endY})`);
-      }
-
-      // 와드 스킬의 경우 크기 정보 추가 (서포터만)
-      if (skillResult.skillType === 'ward') {
-        broadcastData.wardScale = 0.2; // 와드 크기 정보
-        broadcastData.wardBodySize = 125; // 와드 물리 바디 크기
-        broadcastData.playerId = socket.id; // 와드 설치자 ID 추가
-        broadcastData.playerTeam = player.team; // 와드 설치자 팀 정보 추가
-        // 와드 설치 위치 정보 추가 (플레이어 위치와 별도로)
-        broadcastData.wardX = data.targetX || player.x;
-        broadcastData.wardY = data.targetY || player.y;
-        // 와드 ID 추가
-        broadcastData.wardId = skillResult.wardId;
-        
-        // 와드가 제거된 경우 제거 이벤트도 브로드캐스트
-        if (skillResult.removedWard) {
-          this.io.emit('ward-destroyed', {
-            playerId: socket.id,
-            wardId: skillResult.removedWard.id,
-            reason: 'replaced'
-          });
-        }
-      }
 
       const skillResult = this.skillManager.useSkill(
         player,
@@ -459,6 +415,39 @@ class SocketEventManager {
     if (skillType === 'ice_field') {
       broadcastData.x = skillResult.x || player.x;
       broadcastData.y = skillResult.y || player.y;
+    }
+
+    // 구르기 스킬의 경우 시작 위치와 최종 위치 정보 추가
+    if (skillType === 'roll') {
+      broadcastData.startX = skillResult.startX;
+      broadcastData.startY = skillResult.startY;
+      broadcastData.endX = skillResult.endX;
+      broadcastData.endY = skillResult.endY;
+      broadcastData.direction = skillResult.direction;
+      broadcastData.rotationDirection = skillResult.rotationDirection;
+      console.log(`구르기 위치 정보 추가: 시작(${skillResult.startX}, ${skillResult.startY}) -> 끝(${skillResult.endX}, ${skillResult.endY})`);
+    }
+
+    // 와드 스킬의 경우 크기 정보 추가 (서포터만)
+    if (skillType === 'ward') {
+      broadcastData.wardScale = 0.2; // 와드 크기 정보
+      broadcastData.wardBodySize = 125; // 와드 물리 바디 크기
+      broadcastData.playerId = player.id; // 와드 설치자 ID 추가
+      broadcastData.playerTeam = player.team; // 와드 설치자 팀 정보 추가
+      // 와드 설치 위치 정보 추가 (플레이어 위치와 별도로)
+      broadcastData.wardX = skillResult.targetX || player.x;
+      broadcastData.wardY = skillResult.targetY || player.y;
+      // 와드 ID 추가
+      broadcastData.wardId = skillResult.wardId;
+      
+      // 와드가 제거된 경우 제거 이벤트도 브로드캐스트
+      if (skillResult.removedWard) {
+        this.io.emit('ward-destroyed', {
+          playerId: player.id,
+          wardId: skillResult.removedWard.id,
+          reason: 'replaced'
+        });
+      }
     }
 
     // 타겟 위치 정보
