@@ -178,17 +178,6 @@ const JobClasses = {
         },
         skills: [
             {
-                name: '와드',
-                description: '적을 탐지하는 보호막을 설치합니다.',
-                cooldown: 8000,
-                damage: 0,
-                range: 120,
-                duration: 30000,
-                afterDelay: 0,
-                key: '1',
-                type: 'ward'
-            },
-            {
                 name: '얼음 장판',
                 description: '범위 내 적들의 속도를 감소시킵니다.',
                 cooldown: 12000,
@@ -196,7 +185,7 @@ const JobClasses = {
                 range: 100,
                 duration: 6000,
                 effect: 'slow',
-                key: '2',
+                key: '1',
                 type: 'ice_field'
             },
             {
@@ -206,8 +195,18 @@ const JobClasses = {
                 damage: 'attack * 2',
                 range: 400,
                 afterDelay: 200,
-                key: '3',
+                key: '2',
                 type: 'magic_missile'
+            },
+            {
+                name: '보호막',
+                description: '일정 시간 동안 보호막을 생성합니다.',
+                cooldown: 15000,
+                damage: 0,
+                duration: 8000,
+                effect: 'shield',
+                key: '3',
+                type: 'shield'
             }
         ],
         basicAttackCooldown: 700,
@@ -309,6 +308,7 @@ const JobClasses = {
                 damage: 0,
                 range: 150,
                 duration: 20000,
+                afterDelay: 0,
                 key: '1',
                 type: 'ward'
             },

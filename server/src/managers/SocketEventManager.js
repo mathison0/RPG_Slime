@@ -246,7 +246,7 @@ class SocketEventManager {
         damageResult: damageResult // 데미지 결과 추가
       };
 
-      // 와드 스킬의 경우 크기 정보 추가
+      // 와드 스킬의 경우 크기 정보 추가 (서포터만)
       if (skillResult.skillType === 'ward') {
         broadcastData.wardScale = 0.2; // 와드 크기 정보
         broadcastData.wardBodySize = 125; // 와드 물리 바디 크기
@@ -323,9 +323,9 @@ class SocketEventManager {
         skill3: 'thrust'
       },
       mage: {
-        skill1: 'ward',
-        skill2: 'ice_field',
-        skill3: 'magic_missile'
+        skill1: 'ice_field',
+        skill2: 'magic_missile',
+        skill3: 'shield'
       },
       mechanic: {
         skill1: 'repair'

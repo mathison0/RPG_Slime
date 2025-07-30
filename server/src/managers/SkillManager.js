@@ -69,6 +69,7 @@ class SkillManager {
 
     // 스킬 사용 처리
     player.skillCooldowns[skillType] = now;
+    console.log(`스킬 쿨타임 설정: ${player.jobClass}의 ${skillType} 스킬, 쿨타임: ${skillInfo.cooldown}ms`);
     
     // 액션 상태 업데이트 (와드 스킬은 설치형이므로 액션 상태 설정하지 않음)
     const duration = skillInfo.duration || 0;
@@ -78,7 +79,7 @@ class SkillManager {
     // 전체 스킬 완료 시간 = 시전시간 + 지속시간 + 후딜레이
     const totalSkillTime = Math.max(duration, delay) + afterDelay;
     
-    // 와드 스킬은 설치형이므로 액션 상태를 설정하지 않음
+    // 와드 스킬은 설치형이므로 액션 상태를 설정하지 않음 (서포터와 마법사 모두)
     if (skillType !== 'ward' && (duration > 0 || delay > 0 || afterDelay > 0)) {
       player.currentActions.skills.set(skillType, {
         startTime: now,
@@ -138,7 +139,7 @@ class SkillManager {
       skillInfo: completeSkillInfo
     };
     
-    // 와드 스킬의 경우 추가 정보 설정
+    // 와드 스킬의 경우 추가 정보 설정 (서포터만)
     if (skillType === 'ward') {
       // 와드 개수 제한 체크 (최대 2개)
       if (!player.wardList) {
@@ -166,7 +167,7 @@ class SkillManager {
       player.wardList.push(newWard);
       result.wardId = newWard.id;
       
-      console.log(`마법사 와드 설치! 위치: (${newWard.x}, ${newWard.y}), 현재 와드 개수: ${player.wardList.length}`);
+      console.log(`서포터 와드 설치! 위치: (${newWard.x}, ${newWard.y}), 현재 와드 개수: ${player.wardList.length}`);
     }
     
     return result;

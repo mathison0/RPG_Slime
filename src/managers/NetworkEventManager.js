@@ -928,6 +928,9 @@ export default class NetworkEventManager {
             
             // 스킬 쿨타임 정보 저장
             this.scene.player.serverSkillCooldowns = myPlayerState.skillCooldowns;
+            if (myPlayerState.skillCooldowns && Object.keys(myPlayerState.skillCooldowns).length > 0) {
+                console.log('서버에서 받은 쿨타임 정보:', myPlayerState.skillCooldowns);
+            }
             
             // 활성 효과 정보
             this.scene.player.activeEffects = new Set(myPlayerState.activeEffects || []);
