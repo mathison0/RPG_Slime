@@ -202,9 +202,12 @@ class NetworkManager {
             this.emit('player-stunned', data);
         });
 
-        // 투사체 관련 이벤트 (스킬로 통합된 이후에도 필요)
         this.socket.on('projectiles-update', (data) => {
             this.emit('projectiles-update', data);
+        });
+
+        this.socket.on('wards-update', (data) => {
+            this.emit('wards-update', data);
         });
 
         this.socket.on('projectile-removed', (data) => {

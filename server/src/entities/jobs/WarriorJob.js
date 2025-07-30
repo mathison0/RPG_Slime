@@ -134,37 +134,8 @@ class WarriorJob extends BaseJob {
         const range = skillInfo.range;
         const affectedTargets = [];
 
-        if (options.gameStateManager) {
-            const otherPlayers = options.gameStateManager.getAllPlayers();
-            
-            otherPlayers.forEach(targetPlayer => {
-                if (targetPlayer.id !== this.player.id && 
-                    targetPlayer.team !== this.player.team && 
-                    !targetPlayer.isDead) {
-                    
-                    const distance = this.calculateDistance(
-                        this.player.x, this.player.y,
-                        targetPlayer.x, targetPlayer.y
-                    );
-                    
-                    if (distance <= range) {
-                        // 부채꼴 범위 내 체크 (간단화: 일단 원형으로 처리)
-                        const actualDamage = Math.max(1, damage);
-                        const result = options.gameStateManager.takeDamage(this.player, targetPlayer, actualDamage);
-                        
-                        if (result.success) {
-                            affectedTargets.push({
-                                playerId: targetPlayer.id,
-                                damage: result.actualDamage,
-                                newHp: result.newHp,
-                                isDead: result.newHp <= 0,
-                                effect: 'stun' // 기절 효과
-                            });
-                        }
-                    }
-                }
-            });
-        }
+        // 휩쓸기는 지연 데미지이므로 즉시 데미지를 적용하지 않음
+        // 실제 데미지는 SkillManager에서 지연시간 후 처리됨
 
         console.log(`전사 휩쓸기 발동! 데미지: ${damage}, 범위: ${range}, 적중: ${affectedTargets.length}명`);
 
@@ -215,36 +186,8 @@ class WarriorJob extends BaseJob {
         const range = skillInfo.range;
         const affectedTargets = [];
 
-        if (options.gameStateManager) {
-            const otherPlayers = options.gameStateManager.getAllPlayers();
-            
-            otherPlayers.forEach(targetPlayer => {
-                if (targetPlayer.id !== this.player.id && 
-                    targetPlayer.team !== this.player.team && 
-                    !targetPlayer.isDead) {
-                    
-                    // 직사각형 범위 체크 (간단화: 플레이어 방향으로 직선 거리로 처리)
-                    const distance = this.calculateDistance(
-                        this.player.x, this.player.y,
-                        targetPlayer.x, targetPlayer.y
-                    );
-                    
-                    if (distance <= range) {
-                        const actualDamage = Math.max(1, damage);
-                        const result = options.gameStateManager.takeDamage(this.player, targetPlayer, actualDamage);
-                        
-                        if (result.success) {
-                            affectedTargets.push({
-                                playerId: targetPlayer.id,
-                                damage: result.actualDamage,
-                                newHp: result.newHp,
-                                isDead: result.newHp <= 0
-                            });
-                        }
-                    }
-                }
-            });
-        }
+        // 찌르기는 지연 데미지이므로 즉시 데미지를 적용하지 않음
+        // 실제 데미지는 SkillManager에서 지연시간 후 처리됨
 
         console.log(`전사 찌르기 발동! 데미지: ${damage}, 범위: ${range}, 적중: ${affectedTargets.length}명`);
 

@@ -1,4 +1,4 @@
-const { getSkillInfo } = require('../../shared/JobClasses.js');
+const { getJobInfo, getSkillInfo } = require('../../shared/JobClasses.js');
 const gameConfig = require('../config/GameConfig');
 const MonsterConfig = require('../../shared/MonsterConfig');
 
@@ -10,6 +10,27 @@ class SkillManager {
   constructor(gameStateManager, projectileManager = null) {
     this.gameStateManager = gameStateManager;
     this.projectileManager = projectileManager;
+    this.delayedDamageCallbacks = new Map(); // 지연된 데미지 콜백 저장
+  }
+
+  /**
+   * 지연된 데미지 콜백 등록
+   */
+  setDelayedDamageCallback(playerId, skillType, callback) {
+    const key = `${playerId}_${skillType}`;
+    this.delayedDamageCallbacks.set(key, callback);
+  }
+
+  /**
+   * 지연된 데미지 콜백 호출
+   */
+  callDelayedDamageCallback(playerId, skillType, damageResult) {
+    const key = `${playerId}_${skillType}`;
+    const callback = this.delayedDamageCallbacks.get(key);
+    if (callback) {
+      callback(damageResult);
+      this.delayedDamageCallbacks.delete(key);
+    }
   }
 
   /**
@@ -79,7 +100,6 @@ class SkillManager {
     // 전체 스킬 완료 시간 = 시전시간 + 지속시간 + 후딜레이
     const totalSkillTime = Math.max(duration, delay) + afterDelay;
     
-    // 와드 스킬은 설치형이므로 액션 상태를 설정하지 않음 (서포터와 마법사 모두)
     if (skillType !== 'ward' && (duration > 0 || delay > 0 || afterDelay > 0)) {
       player.currentActions.skills.set(skillType, {
         startTime: now,
@@ -150,24 +170,49 @@ class SkillManager {
       if (player.wardList.length >= 2) {
         const oldestWard = player.wardList.shift();
         console.log(`기존 와드 제거: ${oldestWard.id}`);
-        result.removedWard = oldestWard;
       }
       
       // 새 와드 정보 생성
+      let wardX, wardY;
+      
+      if (targetX !== null && targetY !== null) {
+        // 마우스 위치가 지정된 경우 사정거리 체크 및 클램핑
+        const castRange = skillInfo.castRange || 300; // 기본 사정거리 300
+        const deltaX = targetX - player.x;
+        const deltaY = targetY - player.y;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        if (distance > castRange) {
+          // 사정거리 초과 시 방향은 유지하되 최대 거리로 클램핑
+          const ratio = castRange / distance;
+          wardX = player.x + deltaX * ratio;
+          wardY = player.y + deltaY * ratio;
+          console.log(`와드 사정거리 클램핑: 요청 거리=${Math.round(distance)}, 최대 거리=${castRange}, 클램핑된 위치=(${Math.round(wardX)}, ${Math.round(wardY)})`);
+        } else {
+          // 사정거리 내에 있으면 마우스 위치에 설치
+          wardX = targetX;
+          wardY = targetY;
+        }
+      } else {
+        // 마우스 위치가 지정되지 않은 경우 플레이어 위치에 설치
+        wardX = player.x;
+        wardY = player.y;
+      }
+      
       const newWard = {
         id: Date.now() + Math.random(), // 고유 ID
-        x: targetX || player.x,
-        y: targetY || player.y,
+        x: wardX,
+        y: wardY,
         range: completeSkillInfo.range,
         duration: completeSkillInfo.duration,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        playerId: player.id,
+        team: player.team
       };
       
       // 와드 리스트에 추가
       player.wardList.push(newWard);
-      result.wardId = newWard.id;
       
-      console.log(`서포터 와드 설치! 위치: (${newWard.x}, ${newWard.y}), 현재 와드 개수: ${player.wardList.length}`);
     }
     
     // 직업별 스킬 로직 처리
@@ -854,10 +899,15 @@ class SkillManager {
         // 휩쓸기는 지연 데미지 처리
         const sweepDelay = skillInfo.delay || 1000; // 기본값 1초
         
-        console.log(`휩쓸기 스킬 사용! 플레이어: ${player.id}, 지연시간: ${sweepDelay}ms`);
+        console.log(`[DEBUG] 휩쓸기 스킬 사용! 플레이어: ${player.id}, 지연시간: ${sweepDelay}ms`);
+        console.log(`[DEBUG] 플레이어 위치: (${x}, ${y}), 타겟 위치: (${targetX}, ${targetY})`);
+        console.log(`[DEBUG] 범위: ${range}, 데미지: ${damage}`);
+        console.log(`[DEBUG] delayedActions 존재: ${!!player.delayedActions}`);
         
         // 지연 시간 후 데미지 적용
         const sweepTimeoutId = setTimeout(() => {
+          console.log(`[DEBUG] 휩쓸기 setTimeout 콜백 실행됨! 플레이어: ${player.id}`);
+          
           // 플레이어가 죽었는지 확인
           if (player.isDead) {
             console.log(`휩쓸기 스킬 취소: 플레이어 ${player.id}가 사망함`);
@@ -865,8 +915,25 @@ class SkillManager {
             return;
           }
           
+          console.log(`[DEBUG] 현재 enemies 개수: ${enemies.size || enemies.length || 0}`);
+          console.log(`[DEBUG] 현재 players 개수: ${players.size || players.length || 0}`);
+          
           console.log(`휩쓸기 지연 데미지 적용! 플레이어: ${player.id}`);
-          this.applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo);
+          
+          // 실제 데미지 계산 및 적용
+          const actualDamageResult = {
+            affectedEnemies: [],
+            affectedPlayers: [],
+            totalDamage: 0
+          };
+          
+          this.applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, actualDamageResult, skillInfo);
+          
+          console.log(`[DEBUG] 휩쓸기 데미지 결과:`, actualDamageResult);
+          
+          // 지연된 데미지 콜백 호출
+          this.callDelayedDamageCallback(player.id, 'sweep', actualDamageResult);
+          
           player.delayedActions.delete('sweep');
         }, sweepDelay);
         
@@ -876,10 +943,16 @@ class SkillManager {
 
       case 'thrust':
         // 찌르기는 지연 데미지 처리
-        const delay = skillInfo.delay || 1500; // 기본값 1.5초
+        const thrustDelay = skillInfo.delay || 1500; // 기본값 1.5초
+        
+        console.log(`[DEBUG] 찌르기 스킬 사용! 플레이어: ${player.id}, 지연시간: ${thrustDelay}ms`);
+        console.log(`[DEBUG] 플레이어 위치: (${x}, ${y}), 타겟 위치: (${targetX}, ${targetY})`);
+        console.log(`[DEBUG] 범위: ${range}, 데미지: ${damage}`);
         
         // 지연 시간 후 데미지 적용
         const thrustTimeoutId = setTimeout(() => {
+          console.log(`[DEBUG] 찌르기 setTimeout 콜백 실행됨! 플레이어: ${player.id}`);
+          
           // 플레이어가 죽었는지 확인
           if (player.isDead) {
             console.log(`찌르기 스킬 취소: 플레이어 ${player.id}가 사망함`);
@@ -887,10 +960,27 @@ class SkillManager {
             return;
           }
           
+          console.log(`[DEBUG] 현재 enemies 개수: ${enemies.size || enemies.length || 0}`);
+          console.log(`[DEBUG] 현재 players 개수: ${players.size || players.length || 0}`);
+          
           console.log(`찌르기 지연 데미지 적용! 플레이어: ${player.id}`);
-          this.applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo);
+          
+          // 실제 데미지 계산 및 적용
+          const actualDamageResult = {
+            affectedEnemies: [],
+            affectedPlayers: [],
+            totalDamage: 0
+          };
+          
+          this.applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, actualDamageResult, skillInfo);
+          
+          console.log(`[DEBUG] 찌르기 데미지 결과:`, actualDamageResult);
+          
+          // 지연된 데미지 콜백 호출
+          this.callDelayedDamageCallback(player.id, 'thrust', actualDamageResult);
+          
           player.delayedActions.delete('thrust');
-        }, delay);
+        }, thrustDelay);
         
         // 지연된 액션으로 등록
         player.delayedActions.set('thrust', thrustTimeoutId);
@@ -999,9 +1089,6 @@ class SkillManager {
     };
 
     switch (skillType) {
-      case 'ward':
-        // 와드는 데미지 없음, 시야 효과만
-        break;
       case 'ice_field':
         console.log(`얼음 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${x}, ${y}), 범위: ${skillInfo.range}`);
         this.applyIceFieldDamage(player, x, y, skillInfo.range, skillInfo.damage, damageResult);
@@ -1091,19 +1178,24 @@ class SkillManager {
 
   // 공통 데미지 적용 메서드들
   applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo = null) {
-    console.log(`applySweepDamage 호출됨! 플레이어: ${player.id}, 범위: ${range}, 데미지: ${damage}`);
-    
+    console.log("applySweepDamage");
+
     // skillInfo에서 stunDuration 가져오기 (일반화된 처리)
     const stunDuration = skillInfo?.stunDuration || 0;
     
-    if (stunDuration > 0) {
-      console.log(`기절 지속시간: ${stunDuration}ms`);
-    }
-    
+    // Map 객체인 경우 배열로 변환
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+
     // 적들 대상
-    enemies.forEach(enemy => {
-      if (enemy.isDead) return;
-      if (this.isInSweepRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
+    enemyArray.forEach((enemy, index) => {
+      if (enemy.isDead) {
+        return;
+      }
+      
+      const inRange = this.isInSweepRange(x, y, enemy.x, enemy.y, targetX, targetY, range);
+      
+      if (inRange) {
         const result = this.gameStateManager.takeDamage(player, enemy, damage);
         
         if (result.success) {
@@ -1117,7 +1209,6 @@ class SkillManager {
           
           // 기절 효과가 있는 경우에만 적용
           if (stunDuration > 0) {
-            console.log(`몬스터 ${enemy.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
             enemy.startStun(stunDuration);
             enemyData.isStunned = true;
             enemyData.stunDuration = stunDuration;
@@ -1125,14 +1216,21 @@ class SkillManager {
           
           damageResult.affectedEnemies.push(enemyData);
           damageResult.totalDamage += result.actualDamage;
+        } else {
+          console.log(`[DEBUG] Enemy ${enemy.id} 데미지 적용 실패:`, result.error || 'Unknown error');
         }
       }
     });
 
     // 다른 팀 플레이어들 대상
-    players.forEach(targetPlayer => {
-      if (targetPlayer.id === player.id || targetPlayer.team === player.team || targetPlayer.hp <= 0) return;
-      if (this.isInSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
+    playerArray.forEach((targetPlayer, index) => {
+      if (targetPlayer.isDead || targetPlayer.team === player.team || targetPlayer.id === player.id) {
+        return;
+      }
+      
+      const inRange = this.isInSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range);
+
+      if (inRange) {
         const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
         if (result.success) {
@@ -1141,13 +1239,11 @@ class SkillManager {
             damage: damage,
             actualDamage: result.actualDamage,
             x: targetPlayer.x,
-            y: targetPlayer.y,
-            team: targetPlayer.team
+            y: targetPlayer.y
           };
           
           // 기절 효과가 있는 경우에만 적용
           if (stunDuration > 0) {
-            console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
             targetPlayer.startStun(stunDuration);
             playerData.isStunned = true;
             playerData.stunDuration = stunDuration;
@@ -1155,19 +1251,23 @@ class SkillManager {
           
           damageResult.affectedPlayers.push(playerData);
           damageResult.totalDamage += result.actualDamage;
+        } else {
+          console.log(`[DEBUG] Player ${targetPlayer.id} 데미지 적용 실패:`, result.error || 'Unknown error');
         }
       }
     });
   }
 
   applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo = null) {
-    console.log(`applyThrustDamage 호출됨! 플레이어: ${player.id}, 범위: ${range}, 데미지: ${damage}`);
-    
     // skillInfo에서 stunDuration 가져오기 (일반화된 처리)
     const stunDuration = skillInfo?.stunDuration || 0;
     
+    // Map 객체인 경우 배열로 변환
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+    
     // 적들 대상
-    enemies.forEach(enemy => {
+    enemyArray.forEach(enemy => {
       if (enemy.isDead) return;
       if (this.isInThrustRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
         const result = this.gameStateManager.takeDamage(player, enemy, damage);
@@ -1196,8 +1296,9 @@ class SkillManager {
     });
 
     // 다른 팀 플레이어들 대상
-    players.forEach(targetPlayer => {
-      if (targetPlayer.id === player.id || targetPlayer.team === player.team || targetPlayer.hp <= 0) return;
+    playerArray.forEach(targetPlayer => {
+      if (targetPlayer.isDead || targetPlayer.team === player.team || targetPlayer.id === player.id) return;
+      
       if (this.isInThrustRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
         const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
@@ -1207,13 +1308,11 @@ class SkillManager {
             damage: damage,
             actualDamage: result.actualDamage,
             x: targetPlayer.x,
-            y: targetPlayer.y,
-            team: targetPlayer.team
+            y: targetPlayer.y
           };
           
           // 기절 효과가 있는 경우에만 적용
           if (stunDuration > 0) {
-            console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
             targetPlayer.startStun(stunDuration);
             playerData.isStunned = true;
             playerData.stunDuration = stunDuration;
@@ -1224,17 +1323,12 @@ class SkillManager {
         }
       }
     });
+
   }
 
   applySpreadDamage(player, x, y, range, damage, damageResult, skillInfo = null) {
-    console.log(`applySpreadDamage 호출됨! 플레이어: ${player.id}, 범위: ${range}, 데미지: ${damage}`);
-    
     // skillInfo에서 stunDuration 가져오기 (일반화된 처리)
     const stunDuration = skillInfo?.stunDuration || 0;
-    
-    if (stunDuration > 0) {
-      console.log(`기절 지속시간: ${stunDuration}ms`);
-    }
     
     const enemies = this.gameStateManager.enemies;
     const players = this.gameStateManager.players;
@@ -1258,7 +1352,6 @@ class SkillManager {
           
           // 기절 효과가 있는 경우에만 적용
           if (stunDuration > 0) {
-            console.log(`몬스터 ${enemy.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
             enemy.startStun(stunDuration);
             enemyData.isStunned = true;
             enemyData.stunDuration = stunDuration;
@@ -1290,7 +1383,6 @@ class SkillManager {
           
           // 기절 효과가 있는 경우에만 적용
           if (stunDuration > 0) {
-            console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
             targetPlayer.startStun(stunDuration);
             playerData.isStunned = true;
             playerData.stunDuration = stunDuration;
@@ -1306,7 +1398,10 @@ class SkillManager {
   // 범위 계산 헬퍼 메서드들
   isInSweepRange(centerX, centerY, targetX, targetY, mouseX, mouseY, range) {
     const distance = Math.sqrt((targetX - centerX) ** 2 + (targetY - centerY) ** 2);
-    if (distance > range) return false;
+    
+    if (distance > range) {
+      return false;
+    }
 
     const angleToMouse = Math.atan2(mouseY - centerY, mouseX - centerX);
     const angleToTarget = Math.atan2(targetY - centerY, targetX - centerX);
@@ -1322,7 +1417,9 @@ class SkillManager {
     const sweepSkill = warriorJobInfo.skills.find(skill => skill.type === 'sweep');
     const angleOffset = sweepSkill ? sweepSkill.angleOffset : Math.PI / 3; // 기본값 60도
     
-    return angleDiff <= angleOffset;
+    const inRange = angleDiff <= angleOffset;
+    
+    return inRange;
   }
 
   isAngleInSweepRange(centerX, centerY, targetX, targetY, mouseX, mouseY, range) {
