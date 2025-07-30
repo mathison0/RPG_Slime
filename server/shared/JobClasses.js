@@ -182,7 +182,8 @@ const JobClasses = {
                 description: '범위 내 적들의 속도를 감소시킵니다.',
                 cooldown: 12000,
                 damage: 0,
-                range: 100,
+                range: 100,  // 얼음 장판의 효과 범위 (반지름)
+                maxCastRange: 300, // 최대 시전 사거리
                 duration: 6000,
                 effect: 'slow',
                 key: '1',
@@ -192,9 +193,9 @@ const JobClasses = {
                 name: '마법 투사체',
                 description: '마우스 방향으로 마법 투사체를 발사합니다.',
                 cooldown: 3000,
-                damage: 'attack * 2.0',
+                damage: 'attack * 5.0',
                 range: 400,
-                explosionRadius: 60, // 폭발 범위
+                explosionRadius: 90, // 폭발 범위
                 afterDelay: 200,
                 key: '2',
                 type: 'magic_missile'
@@ -204,8 +205,9 @@ const JobClasses = {
                 description: '일정 시간 동안 보호막을 생성합니다.',
                 cooldown: 15000,
                 damage: 0,
-                duration: 8000,
+                duration: 4000,
                 effect: 'shield',
+                knockbackDistance: 40, // 밀어내기 거리
                 key: '3',
                 type: 'shield'
             }

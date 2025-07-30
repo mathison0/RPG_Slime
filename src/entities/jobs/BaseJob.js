@@ -19,6 +19,12 @@ export default class BaseJob {
      * @param {Object} options - 스킬 사용 옵션
      */
     useSkill(skillNumber, options = {}) {
+        // 기절 상태에서는 스킬 사용 불가
+        if (this.player.isStunned) {
+            console.log(`BaseJob: 기절 상태에서 스킬 사용 시도 - 무시됨`);
+            return;
+        }
+        
         console.log(`BaseJob: 스킬 ${skillNumber} 사용됨`);
         // 각 직업에서 오버라이드해야 함
     }
@@ -37,6 +43,12 @@ export default class BaseJob {
      * @param {number} targetY - 목표 Y 좌표
      */
     useBasicAttack(targetX, targetY) {
+        // 기절 상태에서는 기본 공격 사용 불가
+        if (this.player.isStunned) {
+            console.log(`BaseJob: 기절 상태에서 기본 공격 시도 - 무시됨`);
+            return;
+        }
+        
         // 클라이언트 사이드 쿨다운 체크
         if (this.player.isSkillOnCooldown('basic_attack')) {
             return; // 서버에 요청을 보내지 않음

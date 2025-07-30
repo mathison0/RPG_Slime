@@ -21,8 +21,8 @@ class SkillManager {
       return { success: false, error: 'Cannot use skills while dead' };
     }
 
-    // 기절 상태에서는 스킬 사용 불가
-    if (player.isStunned) {
+    // 기절 상태에서는 스킬 사용 불가 (보호막 제외)
+    if (player.isStunned && skillType !== 'shield') {
       return { success: false, error: 'Cannot use skills while stunned' };
     }
 
@@ -168,6 +168,32 @@ class SkillManager {
       result.wardId = newWard.id;
       
       console.log(`서포터 와드 설치! 위치: (${newWard.x}, ${newWard.y}), 현재 와드 개수: ${player.wardList.length}`);
+    }
+    
+    // 직업별 스킬 로직 처리
+    if (player.job && typeof player.job.useSkill === 'function') {
+      const jobSkillResult = player.job.useSkill(skillType, {
+        targetX,
+        targetY,
+        gameStateManager: this.gameStateManager
+      });
+      
+      console.log(`직업별 스킬 로직 실행: ${player.jobClass}.${skillType}, 결과:`, jobSkillResult);
+      
+      // 직업별 스킬 결과를 메인 결과에 병합
+      if (jobSkillResult && jobSkillResult.success) {
+        // 직업별 스킬에서 반환한 추가 정보들을 병합
+        if (jobSkillResult.x !== undefined) result.x = jobSkillResult.x;
+        if (jobSkillResult.y !== undefined) result.y = jobSkillResult.y;
+        if (jobSkillResult.affectedTargets) result.affectedTargets = jobSkillResult.affectedTargets;
+        
+        console.log(`직업별 스킬 결과 병합 완료: ${skillType}`);
+      } else if (jobSkillResult && !jobSkillResult.success) {
+        console.log(`직업별 스킬 실행 실패: ${skillType}, 이유: ${jobSkillResult.reason}`);
+        return jobSkillResult; // 실패 시 직업별 스킬 결과 반환
+      }
+    } else {
+      console.log(`직업별 스킬 로직 없음: ${player.jobClass}, job존재=${!!player.job}`);
     }
     
     return result;
@@ -1417,21 +1443,15 @@ class SkillManager {
 
     // 다른 플레이어에게 슬로우 효과 적용 (적팀만)
     const playerArray = Array.isArray(players) ? players : Array.from(players.values());
-    console.log(`playerArray 길이: ${playerArray.length}`);
-    console.log(`playerArray:`, playerArray);
     
     playerArray.forEach(targetPlayer => {
-      console.log(`플레이어 처리 중: ${targetPlayer.id}, 위치: (${targetPlayer.x}, ${targetPlayer.y}), 팀: ${targetPlayer.team}, 내 팀: ${player.team}, isDead: ${targetPlayer.isDead}`);
-      
       if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) {
-        console.log(`플레이어 ${targetPlayer.id} 제외됨: 자기자신=${targetPlayer.id === player.id}, 죽음=${targetPlayer.isDead}, 같은팀=${targetPlayer.team === player.team}`);
-        return;
+          return;
       }
 
       const distance = Math.sqrt(
         Math.pow(targetPlayer.x - x, 2) + Math.pow(targetPlayer.y - y, 2)
       );
-      console.log(`플레이어 ${targetPlayer.id} 거리: ${distance}, 범위: ${range}`);
       
       if (distance <= range) {
         // 슬로우 효과 적용 (속도 50% 감소)
@@ -1450,12 +1470,6 @@ class SkillManager {
         targetPlayer.slowEffects.push(slowEffect);
         
         // 슬로우 효과를 클라이언트에 알림
-        console.log(`player-slowed 이벤트 전송:`, {
-          playerId: targetPlayer.id,
-          effectId: slowEffect.id,
-          speedReduction: slowEffect.speedReduction,
-          duration: slowEffect.duration
-        });
         this.gameStateManager.io.emit('player-slowed', {
           playerId: targetPlayer.id,
           effectId: slowEffect.id,
