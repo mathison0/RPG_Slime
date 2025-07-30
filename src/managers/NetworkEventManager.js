@@ -5,6 +5,7 @@ import AssetLoader from '../utils/AssetLoader.js';
 import PingManager from './PingManager.js';
 import MinimapManager from './MinimapManager.js';
 import EffectManager from '../effects/EffectManager.js';
+import { getGlobalTimerManager } from './AbsoluteTimerManager.js';
 
 /**
  * 네트워크 이벤트 처리 매니저
@@ -56,6 +57,7 @@ export default class NetworkEventManager {
         this.networkManager.off('projectiles-update');
         this.networkManager.off('attack-invalid');
         this.networkManager.off('enemy-stunned');
+        this.networkManager.off('magic-missile-explosion');
         
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
@@ -139,6 +141,20 @@ export default class NetworkEventManager {
         // 몬스터 기절 상태
         this.networkManager.on('enemy-stunned', (data) => {
             this.handleEnemyStunned(data);
+        });
+
+        // 마법 투사체 폭발
+        this.networkManager.on('magic-missile-explosion', (data) => {
+            this.handleMagicMissileExplosion(data);
+        });
+        
+        // 슬로우 효과 이벤트 리스너 추가
+        this.networkManager.on('enemy-slowed', (data) => {
+            this.handleEnemySlowed(data);
+        });
+        
+        this.networkManager.on('player-slowed', (data) => {
+            this.handlePlayerSlowed(data);
         });
         
         // 플레이어 상태 업데이트
@@ -2001,7 +2017,147 @@ export default class NetworkEventManager {
         }
     }
 
+    handleMagicMissileExplosion(data) {
+        console.log('마법 투사체 폭발 이벤트 받음:', data);
+        
+        const { x, y, radius, casterId, affectedEnemies, affectedPlayers } = data;
+        
+        // 폭발 이펙트 생성 (모든 클라이언트에서 동일하게 표시)
+        this.effectManager.showMagicExplosion(x, y, radius);
+        
+        // 데미지 표시 (서버에서 계산된 결과)
+        if (affectedEnemies && affectedEnemies.length > 0) {
+            affectedEnemies.forEach(enemyData => {
+                const enemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyData.enemyId);
+                if (enemy) {
+                    this.effectManager.showDamageText(enemy.x, enemy.y, enemyData.damage, 'red');
+                }
+            });
+        }
+        
+        if (affectedPlayers && affectedPlayers.length > 0) {
+            affectedPlayers.forEach(playerData => {
+                const targetPlayer = this.findPlayerById(playerData.playerId);
+                if (targetPlayer) {
+                    this.effectManager.showDamageText(targetPlayer.x, targetPlayer.y, playerData.damage, 'red');
+                }
+            });
+        }
+        
+        console.log(`마법 투사체 폭발 처리 완료 - 적중 적: ${affectedEnemies?.length || 0}명, 적중 플레이어: ${affectedPlayers?.length || 0}명`);
+    }
+
     /**
+     * 적 슬로우 효과 처리
+     */
+    handleEnemySlowed(data) {
+        console.log('적 슬로우 효과 받음:', data);
+        console.log('적 슬로우 효과 처리 시작');
+        const { enemyId, effectId, speedReduction, duration } = data;
+        
+        const enemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyId);
+        if (enemy) {
+            // 슬로우 효과 적용
+            if (!enemy.slowEffects) {
+                enemy.slowEffects = [];
+            }
+            
+            const slowEffect = {
+                id: effectId,
+                speedReduction: speedReduction,
+                duration: duration,
+                startTime: Date.now()
+            };
+            
+            enemy.slowEffects.push(slowEffect);
+            
+            // 시각적 효과 (파란색 틴트)
+            enemy.setTint(0x87ceeb);
+            
+            // 슬로우 효과 메시지 표시
+            this.effectManager.showSkillMessage(enemy.x, enemy.y, '슬로우!');
+            
+            // 절대 시간 기준 타이머 매니저 사용 (WarriorJob과 동일한 방식)
+            const timerManager = getGlobalTimerManager();
+            const targetEndTime = Date.now() + duration;
+            const eventId = timerManager.addEvent(targetEndTime, () => {
+                if (enemy.active) {
+                    // 슬로우 효과 제거
+                    enemy.slowEffects = enemy.slowEffects.filter(effect => effect.id !== effectId);
+                    
+                    // 다른 슬로우 효과가 없으면 틴트 제거
+                    if (enemy.slowEffects.length === 0) {
+                        enemy.clearTint();
+                    }
+                }
+            });
+            
+            // 호환성을 위한 타이머 객체
+            const slowEffectTimer = {
+                remove: () => timerManager.removeEvent(eventId)
+            };
+            
+            if (enemy.delayedSkillTimers) {
+                enemy.delayedSkillTimers.add(slowEffectTimer);
+            }
+        }
+    }
+
+    /**
+     * 플레이어 슬로우 효과 처리
+     */
+    handlePlayerSlowed(data) {
+        console.log('플레이어 슬로우 효과 받음:', data);
+        console.log('플레이어 슬로우 효과 처리 시작');
+        const { playerId, effectId, speedReduction, duration } = data;
+        
+        const targetPlayer = this.findPlayerById(playerId);
+        if (targetPlayer) {
+            // 슬로우 효과 적용
+            if (!targetPlayer.slowEffects) {
+                targetPlayer.slowEffects = [];
+            }
+            
+            const slowEffect = {
+                id: effectId,
+                speedReduction: speedReduction,
+                duration: duration,
+                startTime: Date.now()
+            };
+            
+            targetPlayer.slowEffects.push(slowEffect);
+            
+            // 시각적 효과 (파란색 틴트)
+            targetPlayer.setTint(0x87ceeb);
+            
+            // 슬로우 효과 메시지 표시
+            this.effectManager.showSkillMessage(targetPlayer.x, targetPlayer.y, '슬로우!');
+            
+            // 절대 시간 기준 타이머 매니저 사용 (WarriorJob과 동일한 방식)
+            const timerManager = getGlobalTimerManager();
+            const targetEndTime = Date.now() + duration;
+            const eventId = timerManager.addEvent(targetEndTime, () => {
+                if (targetPlayer.active) {
+                    // 슬로우 효과 제거
+                    targetPlayer.slowEffects = targetPlayer.slowEffects.filter(effect => effect.id !== effectId);
+                    
+                    // 다른 슬로우 효과가 없으면 틴트 제거
+                    if (targetPlayer.slowEffects.length === 0) {
+                        targetPlayer.clearTint();
+                    }
+                }
+            });
+            
+            // 호환성을 위한 타이머 객체
+            const slowEffectTimer = {
+                remove: () => timerManager.removeEvent(eventId)
+            };
+            
+            if (targetPlayer.delayedSkillTimers) {
+                targetPlayer.delayedSkillTimers.add(slowEffectTimer);
+            }
+        }
+    }
      * 플레이어 위치와 속도를 고정 (시전시간 동안)
      */
     freezePlayerPosition(player, serverX, serverY) {
