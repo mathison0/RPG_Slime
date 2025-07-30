@@ -344,7 +344,16 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
         
-        const speed = this.speed;
+        // 슬로우 효과 적용
+        let effectiveSpeed = this.speed;
+        if (this.slowEffects && this.slowEffects.length > 0) {
+            // 가장 강한 슬로우 효과 적용
+            const strongestSlow = this.slowEffects.reduce((strongest, current) => {
+                return current.speedReduction < strongest.speedReduction ? current : strongest;
+            });
+            effectiveSpeed = this.speed * strongestSlow.speedReduction;
+        }
+        
         this.setVelocity(0);
         
         if (this.isJumping || this.isCasting || this.isStunned) {
@@ -358,25 +367,25 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // WASD 또는 방향키로 이동
         if (this.wasd.W.isDown || this.cursors.up.isDown) {
-            this.setVelocityY(-speed);
+            this.setVelocityY(-effectiveSpeed);
             movingUp = true;
         }
         if (this.wasd.S.isDown || this.cursors.down.isDown) {
-            this.setVelocityY(speed);
+            this.setVelocityY(effectiveSpeed);
             movingDown = true;
         }
         if (this.wasd.A.isDown || this.cursors.left.isDown) {
-            this.setVelocityX(-speed);
+            this.setVelocityX(-effectiveSpeed);
             movingLeft = true;
         }
         if (this.wasd.D.isDown || this.cursors.right.isDown) {
-            this.setVelocityX(speed);
+            this.setVelocityX(effectiveSpeed);
             movingRight = true;
         }
         
         // 대각선 이동 정규화
         if (this.body.velocity.x !== 0 && this.body.velocity.y !== 0) {
-            this.body.velocity.normalize().scale(speed);
+            this.body.velocity.normalize().scale(effectiveSpeed);
         }
         
         this.updateDirection(movingUp, movingDown, movingLeft, movingRight);

@@ -289,6 +289,50 @@ export default class EffectManager {
     }
 
     /**
+     * 마법 폭발 이펙트 표시
+     * @param {number} x - X 좌표
+     * @param {number} y - Y 좌표
+     * @param {number} radius - 폭발 반지름
+     */
+    showMagicExplosion(x, y, radius = 60) {
+        // 마법 폭발 이펙트 (보라색 원형)
+        const explosion = this.scene.add.circle(x, y, radius, 0xff00ff, 0.3);
+        explosion.setDepth(1500);
+        
+        this.scene.tweens.add({
+            targets: explosion,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            alpha: 0,
+            duration: 400,
+            onComplete: () => {
+                explosion.destroy();
+            }
+        });
+        
+        // 추가 파티클 효과
+        for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            const particleX = x + Math.cos(angle) * radius * 0.5;
+            const particleY = y + Math.sin(angle) * radius * 0.5;
+            
+            const particle = this.scene.add.circle(particleX, particleY, 3, 0xff00ff, 1);
+            particle.setDepth(1500);
+            
+            this.scene.tweens.add({
+                targets: particle,
+                x: particle.x + Math.cos(angle) * radius,
+                y: particle.y + Math.sin(angle) * radius,
+                alpha: 0,
+                duration: 300,
+                onComplete: () => {
+                    particle.destroy();
+                }
+            });
+        }
+    }
+
+    /**
      * 상태 변화 이펙트 (틴트 변경)
      * @param {Phaser.GameObjects.Sprite} target - 대상 객체
      * @param {number} color - 틴트 색상

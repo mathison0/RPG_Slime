@@ -78,7 +78,7 @@ class SkillManager {
     // 전체 스킬 완료 시간 = 시전시간 + 지속시간 + 후딜레이
     const totalSkillTime = Math.max(duration, delay) + afterDelay;
     
-    // 와드 스킬은 설치형이므로 액션 상태를 설정하지 않음
+    // 와드 스킬은 설치형이므로 액션 상태를 설정하지 않음 (서포터와 마법사 모두)
     if (skillType !== 'ward' && (duration > 0 || delay > 0 || afterDelay > 0)) {
       player.currentActions.skills.set(skillType, {
         startTime: now,
@@ -138,7 +138,7 @@ class SkillManager {
       skillInfo: completeSkillInfo
     };
     
-    // 와드 스킬의 경우 추가 정보 설정
+    // 와드 스킬의 경우 추가 정보 설정 (서포터만)
     if (skillType === 'ward') {
       // 와드 개수 제한 체크 (최대 2개)
       if (!player.wardList) {
@@ -166,7 +166,7 @@ class SkillManager {
       player.wardList.push(newWard);
       result.wardId = newWard.id;
       
-      console.log(`마법사 와드 설치! 위치: (${newWard.x}, ${newWard.y}), 현재 와드 개수: ${player.wardList.length}`);
+      console.log(`서포터 와드 설치! 위치: (${newWard.x}, ${newWard.y}), 현재 와드 개수: ${player.wardList.length}`);
     }
     
     return result;
@@ -984,6 +984,7 @@ class SkillManager {
         // 와드는 데미지 없음, 시야 효과만
         break;
       case 'ice_field':
+        console.log(`얼음 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${x}, ${y}), 범위: ${skillInfo.range}`);
         this.applyIceFieldDamage(player, x, y, skillInfo.range, skillInfo.damage, damageResult);
         break;
       case 'magic_missile':
@@ -1351,11 +1352,200 @@ class SkillManager {
   }
 
   applyIceFieldDamage(player, x, y, range, damage, damageResult) {
+    console.log(`applyIceFieldDamage 호출됨! 플레이어: ${player.id}, 위치: (${x}, ${y}), 범위: ${range}`);
     // 얼음 장판 데미지 로직
+    const enemies = this.gameStateManager.enemies;
+    const players = this.gameStateManager.players;
+    
+    console.log(`enemies 객체:`, enemies);
+    console.log(`players 객체:`, players);
+    
+    // 적에게 데미지 및 슬로우 효과 적용
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    console.log(`enemyArray 길이: ${enemyArray.length}`);
+    console.log(`enemyArray:`, enemyArray);
+    
+    enemyArray.forEach(enemy => {
+      console.log(`적 처리 중: ${enemy.id}, 위치: (${enemy.x}, ${enemy.y}), isDead: ${enemy.isDead}`);
+      if (enemy.isDead) return;
+
+      const distance = Math.sqrt(
+        Math.pow(enemy.x - x, 2) + Math.pow(enemy.y - y, 2)
+      );
+      console.log(`적 ${enemy.id} 거리: ${distance}, 범위: ${range}`);
+      
+      if (distance <= range) {
+        // 데미지 적용
+        if (damage > 0) {
+          const result = this.gameStateManager.takeDamage(player, enemy, damage);
+          if (result.success) {
+            damageResult.affectedEnemies.push({
+              id: enemy.id,
+              damage: damage,
+              actualDamage: result.actualDamage,
+              x: enemy.x,
+              y: enemy.y,
+              type: enemy.type
+            });
+            damageResult.totalDamage += result.actualDamage;
+          }
+        }
+        
+        // 슬로우 효과 적용 (속도 50% 감소)
+        if (!enemy.slowEffects) {
+          enemy.slowEffects = [];
+        }
+        
+        const slowEffect = {
+          id: `ice_field_${player.id}_${Date.now()}`,
+          source: player.id,
+          speedReduction: 0.5, // 50% 감소
+          duration: 6000, // 6초 지속
+          startTime: Date.now()
+        };
+        
+        enemy.slowEffects.push(slowEffect);
+        
+        // 슬로우 효과를 클라이언트에 알림
+        console.log(`enemy-slowed 이벤트 전송:`, {
+          enemyId: enemy.id,
+          effectId: slowEffect.id,
+          speedReduction: slowEffect.speedReduction,
+          duration: slowEffect.duration
+        });
+        this.gameStateManager.io.emit('enemy-slowed', {
+          enemyId: enemy.id,
+          effectId: slowEffect.id,
+          speedReduction: slowEffect.speedReduction,
+          duration: slowEffect.duration
+        });
+      }
+    });
+
+    // 다른 플레이어에게 슬로우 효과 적용 (적팀만)
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+    console.log(`playerArray 길이: ${playerArray.length}`);
+    console.log(`playerArray:`, playerArray);
+    
+    playerArray.forEach(targetPlayer => {
+      console.log(`플레이어 처리 중: ${targetPlayer.id}, 위치: (${targetPlayer.x}, ${targetPlayer.y}), 팀: ${targetPlayer.team}, 내 팀: ${player.team}, isDead: ${targetPlayer.isDead}`);
+      
+      if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) {
+        console.log(`플레이어 ${targetPlayer.id} 제외됨: 자기자신=${targetPlayer.id === player.id}, 죽음=${targetPlayer.isDead}, 같은팀=${targetPlayer.team === player.team}`);
+        return;
+      }
+
+      const distance = Math.sqrt(
+        Math.pow(targetPlayer.x - x, 2) + Math.pow(targetPlayer.y - y, 2)
+      );
+      console.log(`플레이어 ${targetPlayer.id} 거리: ${distance}, 범위: ${range}`);
+      
+      if (distance <= range) {
+        // 슬로우 효과 적용 (속도 50% 감소)
+        if (!targetPlayer.slowEffects) {
+          targetPlayer.slowEffects = [];
+        }
+        
+        const slowEffect = {
+          id: `ice_field_${player.id}_${Date.now()}`,
+          source: player.id,
+          speedReduction: 0.5, // 50% 감소
+          duration: 6000, // 6초 지속
+          startTime: Date.now()
+        };
+        
+        targetPlayer.slowEffects.push(slowEffect);
+        
+        // 슬로우 효과를 클라이언트에 알림
+        console.log(`player-slowed 이벤트 전송:`, {
+          playerId: targetPlayer.id,
+          effectId: slowEffect.id,
+          speedReduction: slowEffect.speedReduction,
+          duration: slowEffect.duration
+        });
+        this.gameStateManager.io.emit('player-slowed', {
+          playerId: targetPlayer.id,
+          effectId: slowEffect.id,
+          speedReduction: slowEffect.speedReduction,
+          duration: slowEffect.duration
+        });
+      }
+    });
   }
 
-  applyMagicMissileDamage(player, x, y, targetX, targetY, damage, damageResult) {
-    // 마법 투사체 데미지 로직
+  applyMagicMissileDamage(player, x, y, targetX, targetY, damage) {
+    const damageResult = {
+      affectedEnemies: [],
+      affectedPlayers: [],
+      totalDamage: 0
+    };
+
+    // JobClasses에서 마법 투사체 스킬 정보 가져오기
+    const { getSkillInfo } = require('../../shared/JobClasses.js');
+    const skillInfo = getSkillInfo('mage', 'magic_missile');
+    
+    // 마법 투사체 범위 공격 처리 (원형 범위)
+    const explosionRadius = skillInfo.explosionRadius || 60;
+    const enemies = this.gameStateManager.enemies;
+    const players = this.gameStateManager.players;
+    
+    // 적에게 데미지 적용
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    enemyArray.forEach(enemy => {
+      if (enemy.isDead) return;
+
+      const distance = Math.sqrt(
+        Math.pow(enemy.x - targetX, 2) + Math.pow(enemy.y - targetY, 2)
+      );
+      
+      if (distance <= explosionRadius) {
+        // JobClasses에서 정의된 데미지 공식 사용
+        const actualDamage = this.calculateSkillDamage(player, 'magic_missile', skillInfo.damage);
+        const result = this.gameStateManager.takeDamage(player, enemy, actualDamage);
+        
+        if (result.success) {
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: actualDamage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y,
+            type: enemy.type
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    // 다른 플레이어에게 데미지 적용 (PvP)
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+    playerArray.forEach(targetPlayer => {
+      if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) return;
+
+      const distance = Math.sqrt(
+        Math.pow(targetPlayer.x - targetX, 2) + Math.pow(targetPlayer.y - targetY, 2)
+      );
+      
+      if (distance <= explosionRadius) {
+        // JobClasses에서 정의된 데미지 공식 사용 (몬스터와 동일)
+        const damage = this.calculateSkillDamage(player, 'magic_missile', skillInfo.damage);
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+        
+        if (result.success) {
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y,
+            team: targetPlayer.team
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    return damageResult;
   }
 
   applyGrabDamage(player, x, y, targetX, targetY, damage, damageResult) {

@@ -243,9 +243,22 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.hp = enemyData.hp;
         this.maxHp = enemyData.maxHp;
         
-        // 이동 속도 정보
-        this.vx = enemyData.vx || 0;
-        this.vy = enemyData.vy || 0;
+        // 이동 속도 정보 (슬로우 효과 적용)
+        let effectiveVx = enemyData.vx || 0;
+        let effectiveVy = enemyData.vy || 0;
+        
+        // 슬로우 효과 적용
+        if (this.slowEffects && this.slowEffects.length > 0) {
+            // 가장 강한 슬로우 효과 적용
+            const strongestSlow = this.slowEffects.reduce((strongest, current) => {
+                return current.speedReduction < strongest.speedReduction ? current : strongest;
+            });
+            effectiveVx *= strongestSlow.speedReduction;
+            effectiveVy *= strongestSlow.speedReduction;
+        }
+        
+        this.vx = effectiveVx;
+        this.vy = effectiveVy;
         
         // 몬스터 타입 업데이트 (새로운 타입이면 스프라이트 변경)
         if (enemyData.type && enemyData.type !== this.type) {
