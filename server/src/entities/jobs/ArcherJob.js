@@ -61,7 +61,7 @@ class ArcherJob extends BaseJob {
         this.setSkillCooldown('roll');
 
         // 구르기 거리 및 방향 계산
-        const rollDistance = skillInfo.range || 300; // 기본값을 300으로 변경
+        const rollDistance = skillInfo.range || 150; // 기본값을 300으로 변경
         // 클라이언트에서 전송한 방향 정보 사용, 없으면 현재 플레이어 방향 사용
         const direction = options.direction || this.player.direction || 'front';
         

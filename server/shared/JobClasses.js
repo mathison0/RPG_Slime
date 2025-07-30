@@ -266,7 +266,7 @@ const JobClasses = {
                 description: '빠르게 구르며 이동합니다.',
                 cooldown: 2000,
                 damage: 0,
-                range: 300,
+                range: 150,
                 afterDelay: 200,
                 key: '1',
                 type: 'roll'
