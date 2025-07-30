@@ -27,7 +27,15 @@ class SkillManager {
 
     // 기본 공격 처리
     if (skillType === 'basic_attack') {
-      return this.handleBasicAttack(player, targetX, targetY);
+      const basicAttackResult = this.handleBasicAttack(player, targetX, targetY);
+      
+      if (basicAttackResult.success) {
+        // 기본 공격 데미지 처리
+        const damageResult = this.applyBasicAttackDamage(player, basicAttackResult.skillInfo, player.x, player.y, targetX, targetY);
+        basicAttackResult.damageResult = damageResult;
+      }
+      
+      return basicAttackResult;
     }
 
     const skillInfo = getSkillInfo(player.jobClass, skillType);
@@ -62,7 +70,7 @@ class SkillManager {
     // 스킬 사용 처리
     player.skillCooldowns[skillType] = now;
     
-    // 액션 상태 업데이트
+    // 액션 상태 업데이트 (와드 스킬은 설치형이므로 액션 상태 설정하지 않음)
     const duration = skillInfo.duration || 0;
     const delay = skillInfo.delay || 0;
     const afterDelay = skillInfo.afterDelay || 0;
@@ -70,7 +78,8 @@ class SkillManager {
     // 전체 스킬 완료 시간 = 시전시간 + 지속시간 + 후딜레이
     const totalSkillTime = Math.max(duration, delay) + afterDelay;
     
-    if (duration > 0 || delay > 0 || afterDelay > 0) {
+    // 와드 스킬은 설치형이므로 액션 상태를 설정하지 않음
+    if (skillType !== 'ward' && (duration > 0 || delay > 0 || afterDelay > 0)) {
       player.currentActions.skills.set(skillType, {
         startTime: now,
         duration: duration,
@@ -262,6 +271,11 @@ class SkillManager {
     this.cleanupExpiredActions(player);
     
     for (const [skillType, skillAction] of player.currentActions.skills) {
+      // 와드 스킬은 후딜레이 체크에서 제외 (설치형 스킬이므로)
+      if (skillType === 'ward') {
+        continue;
+      }
+      
       // 스킬이 아직 완전히 끝나지 않았다면 (후딜레이 포함)
       if (now < skillAction.endTime) {
         return true;
@@ -460,7 +474,12 @@ class SkillManager {
     const attackRange = attackRanges[player.jobClass] || 50;
     const angleOffset = Math.PI / 6; // 30도
 
-    return this.applyMeleeSweepDamage(player, baseDamage, x, y, targetX, targetY, attackRange, angleOffset);
+    // 전사는 직사각형 공격, 나머지는 부채꼴 공격
+    if (player.jobClass === 'warrior') {
+      return this.applyWarriorRectangularAttack(player, baseDamage, x, y, targetX, targetY);
+    } else {
+      return this.applyMeleeSweepDamage(player, baseDamage, x, y, targetX, targetY, attackRange, angleOffset);
+    }
   }
 
   /**
@@ -535,6 +554,125 @@ class SkillManager {
     });
 
     return damageResult;
+  }
+
+  /**
+   * 전사 직사각형 공격 데미지 적용
+   */
+  applyWarriorRectangularAttack(player, baseDamage, x, y, targetX, targetY) {
+    const damageResult = {
+      affectedEnemies: [],
+      affectedPlayers: [],
+      totalDamage: 0
+    };
+
+    const enemies = this.gameStateManager.enemies;
+    const players = this.gameStateManager.players;
+    
+    // 직사각형 공격 범위 설정
+    const width = 30;  // 직사각형 너비
+    const height = 60; // 직사각형 높이 (플레이어에서 커서까지)
+    
+    // 플레이어에서 커서까지의 각도 계산
+    const angleToMouse = Math.atan2(targetY - y, targetX - x);
+    
+    // 직사각형의 네 꼭지점 계산 (회전된)
+    const cos = Math.cos(angleToMouse);
+    const sin = Math.sin(angleToMouse);
+    const halfWidth = width / 2;
+    
+    // 회전 변환을 직접 계산 (플레이어 위치가 직사각형 하단 중심)
+    const corners = [
+      { x: 0, y: -halfWidth },        // 좌하단
+      { x: height, y: -halfWidth },   // 우하단  
+      { x: height, y: halfWidth },    // 우상단
+      { x: 0, y: halfWidth }          // 좌상단
+    ];
+    
+    // 회전된 좌표 계산
+    const rotatedCorners = corners.map(corner => ({
+      x: x + (corner.x * cos - corner.y * sin),
+      y: y + (corner.x * sin + corner.y * cos)
+    }));
+
+    // 적에게 데미지 적용
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    enemyArray.forEach(enemy => {
+      if (enemy.isDead) return;
+
+      const enemyX = enemy.x;
+      const enemyY = enemy.y;
+      
+      // 직사각형 범위 내에 있는지 확인
+      if (this.isInRectangularRange(x, y, enemyX, enemyY, rotatedCorners)) {
+        const damage = Math.floor(baseDamage);
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y,
+            type: enemy.type
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    // 다른 플레이어에게 데미지 적용 (PvP)
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+    playerArray.forEach(targetPlayer => {
+      if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) return;
+
+      const playerX = targetPlayer.x;
+      const playerY = targetPlayer.y;
+      
+      // 직사각형 범위 내에 있는지 확인
+      if (this.isInRectangularRange(x, y, playerX, playerY, rotatedCorners)) {
+        const damage = Math.floor(baseDamage * 0.5); // PvP 데미지는 50%
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+        
+        if (result.success) {
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y,
+            team: targetPlayer.team
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    return damageResult;
+  }
+
+  /**
+   * 직사각형 범위 내에 있는지 확인
+   */
+  isInRectangularRange(centerX, centerY, targetX, targetY, corners) {
+    // 점이 다각형 내부에 있는지 확인하는 알고리즘
+    let inside = false;
+    const n = corners.length;
+    
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = corners[i].x;
+      const yi = corners[i].y;
+      const xj = corners[j].x;
+      const yj = corners[j].y;
+      
+      if (((yi > targetY) !== (yj > targetY)) && 
+          (targetX < (xj - xi) * (targetY - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+    }
+    
+    return inside;
   }
 
   /**
@@ -809,6 +947,9 @@ class SkillManager {
     };
 
     switch (skillType) {
+      case 'ward':
+        // 와드는 데미지 없음, 시야 효과만
+        break;
       case 'ice_field':
         this.applyIceFieldDamage(player, x, y, skillInfo.range, skillInfo.damage, damageResult);
         break;

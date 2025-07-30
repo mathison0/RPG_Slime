@@ -252,6 +252,19 @@ class SocketEventManager {
         broadcastData.wardBodySize = 125; // 와드 물리 바디 크기
         broadcastData.playerId = socket.id; // 와드 설치자 ID 추가
         broadcastData.playerTeam = player.team; // 와드 설치자 팀 정보 추가
+        // 와드 위치 정보 추가 (마우스 커서 위치)
+        broadcastData.x = data.targetX || player.x;
+        broadcastData.y = data.targetY || player.y;
+        // 와드 ID 추가
+        broadcastData.wardId = skillResult.wardId;
+        
+        // 기존 와드가 제거된 경우 제거 이벤트도 브로드캐스트
+        if (skillResult.removedWardId) {
+          this.io.emit('ward-removed', {
+            playerId: socket.id,
+            wardId: skillResult.removedWardId
+          });
+        }
       }
 
       // 타겟 위치가 있는 경우 추가
@@ -565,16 +578,8 @@ class SocketEventManager {
       console.log(`[${timestamp}] [${playerId}] 스킬 사용 결과:`, result);
       
       if (result.success) {
-        // 데미지 적용
-        const damageResult = this.skillManager.applySkillDamage(
-          player, 
-          'basic_attack', 
-          result.skillInfo, 
-          player.x, 
-          player.y, 
-          data.targetX, 
-          data.targetY
-        );
+        // 데미지 적용 (useSkill 내부에서 이미 처리됨)
+        const damageResult = result.damageResult || { affectedEnemies: [], affectedPlayers: [], totalDamage: 0 };
 
         console.log(`[${timestamp}] [${playerId}] 데미지 결과:`, damageResult);
 

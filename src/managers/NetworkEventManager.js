@@ -97,6 +97,11 @@ export default class NetworkEventManager {
         this.networkManager.on('ward-destroyed', (data) => {
             this.handleWardDestroyed(data);
         });
+
+        // 와드 제거 (최대 개수 초과로 인한 자동 제거)
+        this.networkManager.on('ward-removed', (data) => {
+            this.handleWardRemoved(data);
+        });
         
 
 
@@ -1045,6 +1050,33 @@ export default class NetworkEventManager {
                 });
                 
                 child.destroy();
+            }
+        });
+    }
+
+    /**
+     * 와드 제거 처리 (최대 개수 초과로 인한 자동 제거)
+     */
+    handleWardRemoved(data) {
+        console.log('와드 제거됨:', data);
+        
+        // 다른 플레이어의 와드 제거
+        this.scene.children.list.forEach(child => {
+            if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
+                if (child.wardOwnerId === data.playerId) {
+                    // 부드러운 페이드 아웃 효과
+                    this.scene.tweens.add({
+                        targets: child,
+                        alpha: 0,
+                        duration: 300,
+                        onComplete: () => {
+                            if (child.rangeIndicator) {
+                                child.rangeIndicator.destroy();
+                            }
+                            child.destroy();
+                        }
+                    });
+                }
             }
         });
     }

@@ -184,6 +184,7 @@ const JobClasses = {
                 damage: 0,
                 range: 120,
                 duration: 30000,
+                afterDelay: 0,
                 key: '1',
                 type: 'ward'
             },

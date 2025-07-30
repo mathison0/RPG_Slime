@@ -512,13 +512,15 @@ export default class MinimapManager {
         // 모든 와드 수집 (같은 팀 와드만)
         const allWards = [];
         
-        // 자신의 와드
-        if (this.scene.activeWard) {
-            allWards.push({
-                x: this.scene.activeWard.x,
-                y: this.scene.activeWard.y,
-                radius: 120,
-                ownerId: this.scene.player.networkId
+        // 자신의 와드들 (최대 2개)
+        if (this.scene.wardList && this.scene.wardList.length > 0) {
+            this.scene.wardList.forEach(ward => {
+                allWards.push({
+                    x: ward.x,
+                    y: ward.y,
+                    radius: ward.radius || 120,
+                    ownerId: this.scene.player.networkId
+                });
             });
         }
         

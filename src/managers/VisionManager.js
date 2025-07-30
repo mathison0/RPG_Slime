@@ -213,10 +213,11 @@ export default class VisionManager {
     addWardVisionToMask(visionMaskGraphics, cam) {
         visionMaskGraphics.fillStyle(0xffffff);
         
-        // 로컬 와드
-        if (this.scene.activeWard) {
-            const ward = this.scene.activeWard;
-            visionMaskGraphics.fillCircle(ward.x - cam.scrollX, ward.y - cam.scrollY, ward.radius);
+        // 로컬 와드들 (최대 2개)
+        if (this.scene.wardList && this.scene.wardList.length > 0) {
+            this.scene.wardList.forEach(ward => {
+                visionMaskGraphics.fillCircle(ward.x - cam.scrollX, ward.y - cam.scrollY, ward.radius);
+            });
         }
         
         // 다른 플레이어들의 와드들 (시야 효과는 같은 팀만)
