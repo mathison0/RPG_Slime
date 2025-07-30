@@ -59,9 +59,9 @@ export default class NetworkEventManager {
         this.networkManager.off('attack-invalid');
         this.networkManager.off('enemy-stunned');
         this.networkManager.off('magic-missile-explosion');
-        this.networkManager.off('shield-exploded');
+
         this.networkManager.off('shield-removed');
-        this.networkManager.off('enemies-knockback');
+
         
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
@@ -142,20 +142,14 @@ export default class NetworkEventManager {
             this.handleMagicMissileExplosion(data);
         });
         
-        // 보호막 폭발 이벤트
-        this.networkManager.on('shield-exploded', (data) => {
-            this.handleShieldExploded(data);
-        });
+
         
         // 보호막 제거 이벤트
         this.networkManager.on('shield-removed', (data) => {
             this.handleShieldRemoved(data);
         });
         
-        // 몬스터 밀어내기 이벤트
-        this.networkManager.on('enemies-knockback', (data) => {
-            this.handleEnemiesKnockback(data);
-        });
+
         
         // 슬로우 효과 이벤트 리스너 추가
         this.networkManager.on('enemy-slowed', (data) => {
@@ -2476,92 +2470,9 @@ export default class NetworkEventManager {
         return freezeSkills.includes(skillType);
     }
 
-    handleShieldExploded(data) {
-        console.log('보호막 폭발 이벤트 받음 - 상세 데이터:', JSON.stringify(data, null, 2));
-        
-        // 폭발 이펙트 생성 (서버에서 받은 범위 사용)
-        const explosionRadius = data.knockbackDistance || 80; // 서버에서 받은 밀어내기 거리와 동일한 범위
-        const explosion = this.scene.add.circle(data.x, data.y, explosionRadius, 0x00ffff, 0.4);
-        explosion.setDepth(750);
-        explosion.setStrokeStyle(4, 0x00ffff, 0.8);
-        
-        console.log(`보호막 폭발 이펙트 생성: 위치=(${data.x}, ${data.y}), 반지름=${explosionRadius}`);
-        
-        // 폭발 애니메이션
-        this.scene.tweens.add({
-            targets: explosion,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            alpha: 0,
-            duration: 600,
-            ease: 'Power2',
-            onComplete: () => {
-                explosion.destroy();
-                console.log('보호막 폭발 애니메이션 완료');
-            }
-        });
-        
-        // 폭발 메시지 표시
-        this.scene.effectManager.showSkillMessage(
-            data.x, 
-            data.y, 
-            '보호막 폭발!',
-            { 
-                fill: '#00ffff',
-                fontSize: '16px',
-                fontStyle: 'bold'
-            }
-        );
-    }
 
-    handleEnemiesKnockback(data) {
-        console.log('몬스터 밀어내기 이벤트 받음:', data);
-        
-        // 각 몬스터에 대해 밀어내기 애니메이션 적용
-        data.affectedEnemies.forEach(enemyData => {
-            const enemy = this.scene.enemies?.getChildren().find(e => e.networkId === enemyData.enemyId);
-            if (enemy) {
-                // 현재 위치에서 새 위치로 밀어내기 애니메이션
-                this.scene.tweens.add({
-                    targets: enemy,
-                    x: enemyData.newX,
-                    y: enemyData.newY,
-                    duration: 300,
-                    ease: 'Power2',
-                    onUpdate: () => {
-                        // 물리 바디 위치 동기화
-                        if (enemy.body) {
-                            enemy.body.reset(enemy.x, enemy.y);
-                        }
-                        // 체력바 위치 업데이트
-                        if (enemy.updateHealthBar) {
-                            enemy.updateHealthBar();
-                        }
-                    },
-                    onComplete: () => {
-                        // 밀어내기 완료 후 서버 위치와 동기화
-                        if (enemy.body) {
-                            enemy.body.reset(enemyData.newX, enemyData.newY);
-                        }
-                    }
-                });
-                
-                // 밀어내기 이펙트 (작은 폭발 효과)
-                const knockbackEffect = this.scene.add.circle(enemy.x, enemy.y, 15, 0x00ffff, 0.6);
-                knockbackEffect.setDepth(750);
-                this.scene.tweens.add({
-                    targets: knockbackEffect,
-                    scaleX: 2,
-                    scaleY: 2,
-                    alpha: 0,
-                    duration: 400,
-                    onComplete: () => {
-                        knockbackEffect.destroy();
-                    }
-                });
-            }
-        });
-    }
+
+
 
     handleShieldRemoved(data) {
         console.log('보호막 제거 이벤트 받음:', data);

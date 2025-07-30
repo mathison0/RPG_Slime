@@ -21,32 +21,32 @@ const MAP_LEVELS = {
 // 기본 몬스터 스탯 (배율 적용 전)
 const BASE_MONSTER_STATS = {
   [MONSTER_TYPES.BASIC]: {
-    hp: 50,
-    attack: 15,
-    speed: 80,
+    hp: 150,
+    attack: 50,
+    speed: 110,
     size: 32,
     exp: 10,
-    aggroRange: 250,      // 기본 인식 범위
-    maxAggroRange: 500,   // 최대 인식 범위
-    wanderSpeed: 40       // 배회 속도
+    aggroRange: 200,      // 기본 인식 범위
+    maxAggroRange: 400,   // 최대 인식 범위
+    wanderSpeed: 50       // 배회 속도
   },
   [MONSTER_TYPES.CHARGE]: {
-    hp: 30,
-    attack: 30,
+    hp: 70,
+    attack: 100,
     speed: 160,
     size: 36,
     exp: 15,
     aggroRange: 350,      // 더 넓은 인식 범위 (공격적)
-    maxAggroRange: 700,   // 더 넓은 최대 인식 범위
+    maxAggroRange: 550,   // 더 넓은 최대 인식 범위
     wanderSpeed: 80       // 빠른 배회 속도
   },
   [MONSTER_TYPES.ELITE]: {
-    hp: 200,
-    attack: 50,
+    hp: 800,
+    attack: 150,
     speed: 120,
     size: 44,
-    exp: 30,
-    aggroRange: 150,      // 가장 넓은 인식 범위 (경계심 높음)
+    exp: 100,
+    aggroRange: 100,      // 가장 넓은 인식 범위 (경계심 높음)
     maxAggroRange: 600,   // 가장 넓은 최대 인식 범위
     wanderSpeed: 60       // 적당한 배회 속도
   }
@@ -65,27 +65,27 @@ const SPAWN_RATIOS = {
     [MONSTER_TYPES.ELITE]: 0
   },
   [MAP_LEVELS.LEVEL_2]: {
-    [MONSTER_TYPES.BASIC]: 65,
+    [MONSTER_TYPES.BASIC]: 70,
     [MONSTER_TYPES.CHARGE]: 30,
-    [MONSTER_TYPES.ELITE]: 5
+    [MONSTER_TYPES.ELITE]: 0
   },
   [MAP_LEVELS.LEVEL_3]: {
-    [MONSTER_TYPES.BASIC]: 50,
+    [MONSTER_TYPES.BASIC]: 57,
     [MONSTER_TYPES.CHARGE]: 40,
-    [MONSTER_TYPES.ELITE]: 10
+    [MONSTER_TYPES.ELITE]: 3
   },
   [MAP_LEVELS.LEVEL_4]: {
-    [MONSTER_TYPES.BASIC]: 50,
-    [MONSTER_TYPES.CHARGE]: 30,
-    [MONSTER_TYPES.ELITE]: 20
+    [MONSTER_TYPES.BASIC]: 30,
+    [MONSTER_TYPES.CHARGE]: 60,
+    [MONSTER_TYPES.ELITE]: 10
   }
 };
 
 // 레벨별 스탯 배율
 const STAT_MULTIPLIERS = {
-  [MAP_LEVELS.LEVEL_1_RED]: 1.0,
-  [MAP_LEVELS.LEVEL_1_BLUE]: 1.0,
-  [MAP_LEVELS.LEVEL_2]: 1.5,
+  [MAP_LEVELS.LEVEL_1_RED]: 0.5,
+  [MAP_LEVELS.LEVEL_1_BLUE]: 0.5,
+  [MAP_LEVELS.LEVEL_2]: 1.0,
   [MAP_LEVELS.LEVEL_3]: 2.0,
   [MAP_LEVELS.LEVEL_4]: 3.0
 };
@@ -94,9 +94,9 @@ const STAT_MULTIPLIERS = {
 const EXP_MULTIPLIERS = {
   [MAP_LEVELS.LEVEL_1_RED]: 1.0,
   [MAP_LEVELS.LEVEL_1_BLUE]: 1.0,
-  [MAP_LEVELS.LEVEL_2]: 2.0,
-  [MAP_LEVELS.LEVEL_3]: 3.0,
-  [MAP_LEVELS.LEVEL_4]: 5.0
+  [MAP_LEVELS.LEVEL_2]: 2.5,
+  [MAP_LEVELS.LEVEL_3]: 4.0,
+  [MAP_LEVELS.LEVEL_4]: 10.0
 };
 
 // 레벨별 크기 배율
@@ -110,11 +110,11 @@ const SIZE_MULTIPLIERS = {
 
 // 레벨별 최대 몬스터 수
 const MAX_MONSTERS_PER_LEVEL = {
-  [MAP_LEVELS.LEVEL_1_RED]: 15, // 빨강팀 구역
-  [MAP_LEVELS.LEVEL_1_BLUE]: 15, // 파랑팀 구역
-  [MAP_LEVELS.LEVEL_2]: 200,
-  [MAP_LEVELS.LEVEL_3]: 40,
-  [MAP_LEVELS.LEVEL_4]: 40
+  [MAP_LEVELS.LEVEL_1_RED]: 30, // 빨강팀 구역
+  [MAP_LEVELS.LEVEL_1_BLUE]: 30, // 파랑팀 구역
+  [MAP_LEVELS.LEVEL_2]: 250,
+  [MAP_LEVELS.LEVEL_3]: 60,
+  [MAP_LEVELS.LEVEL_4]: 50
 };
 
 // 공통 설정

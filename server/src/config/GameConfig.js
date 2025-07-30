@@ -6,8 +6,8 @@ const { MAX_MONSTERS_PER_LEVEL } = require('../../shared/MonsterConfig');
 
 const gameConfig = {
   // 타일 기반 맵 크기 (타일 개수)
-  MAP_WIDTH_TILES: 120,
-  MAP_HEIGHT_TILES: 120,
+  MAP_WIDTH_TILES: 90,
+  MAP_HEIGHT_TILES: 90,
   TILE_SIZE: 100,
   SPAWN_WIDTH_TILES: 6,
   SPAWN_BARRIER_EXTRA_TILES: 4, // 스폰 구역보다 추가로 확장할 타일 수
@@ -52,8 +52,8 @@ const gameConfig = {
     },
     // 경험치 관련 설정
     EXP: {
-      BASE_REQUIRED: 100,     // 레벨 1->2 필요 경험치
-      MULTIPLIER: 1           // 레벨당 곱하는 값 (현재는 level * 100)
+      1: 25, 2: 30, 3: 35, 4: 40, 5: 100, 6: 150, 7: 200, 8: 300, 9: 350, 10: 1000,
+      11: 1200, 12: 1400, 13: 1600, 14: 1800, 15: 2000, 16: 100000000
     },
     // 기본 스킬 설정
     SKILLS: {
