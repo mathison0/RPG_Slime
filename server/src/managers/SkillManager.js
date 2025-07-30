@@ -43,10 +43,10 @@ class SkillManager {
       return { success: false, error: 'Invalid skill type' };
     }
 
-    // 쿨타임 체크
+    // 쿨타임 체크 (endTime 기반)
     const now = Date.now();
-    const lastUsed = player.skillCooldowns[skillType] || 0;
-    if (now - lastUsed < skillInfo.cooldown) {
+    const skillEndTime = player.skillCooldowns[skillType] || 0;
+    if (now < skillEndTime) {
       return { success: false, error: 'Skill on cooldown' };
     }
 
@@ -67,8 +67,8 @@ class SkillManager {
       return { success: false, error: 'Cannot use skill while in after delay' };
     }
 
-    // 스킬 사용 처리
-    player.skillCooldowns[skillType] = now;
+    // 스킬 사용 처리 (endTime 저장)
+    player.skillCooldowns[skillType] = now + skillInfo.cooldown;
     
     // 액션 상태 업데이트 (와드 스킬은 설치형이므로 액션 상태 설정하지 않음)
     const duration = skillInfo.duration || 0;
@@ -233,7 +233,7 @@ class SkillManager {
       if (skillAction.delay > 0 && now < skillAction.startTime + skillAction.delay) {
         castingSkills.push({
           skillType,
-          remainingCastTime: (skillAction.startTime + skillAction.delay) - now
+          endTime: skillAction.startTime + skillAction.delay
         });
       }
     }
@@ -742,18 +742,18 @@ class SkillManager {
       return { success: false, error: 'Cannot use basic attack while stunned' };
     }
     
-    // 기본 공격 쿨다운 체크 (JobClasses.js에서 가져옴)
+    // 기본 공격 쿨다운 체크 (endTime 기반)
     const { getJobInfo } = require('../../shared/JobClasses.js');
     const jobInfo = getJobInfo(player.jobClass);
     const cooldown = jobInfo.basicAttackCooldown;
-    const lastUsed = player.skillCooldowns['basic_attack'] || 0;
+    const basicAttackEndTime = player.skillCooldowns['basic_attack'] || 0;
     
-    if (now - lastUsed < cooldown) {
+    if (now < basicAttackEndTime) {
       return { success: false, error: 'Basic attack on cooldown' };
     }
 
-    // 기본 공격 쿨다운 설정
-    player.skillCooldowns['basic_attack'] = now;
+    // 기본 공격 쿨다운 설정 (endTime 저장)
+    player.skillCooldowns['basic_attack'] = now + cooldown;
     
     return {
       success: true,

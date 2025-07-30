@@ -427,19 +427,6 @@ export default class MageJob extends BaseJob {
         }
     }
 
-    /**
-     * 쿨타임 정보 반환
-     */
-    getSkillCooldowns() {
-        // 서버에서 받은 쿨타임 정보를 사용
-        if (this.player.serverSkillCooldowns) {
-            return this.player.serverSkillCooldowns;
-        }
-        return {};
-    }
-
-    // 기본 공격은 서버에서 처리됩니다. 클라이언트는 이벤트 응답으로만 애니메이션 실행
-
     createProjectile(targetX, targetY) {
         // 투사체 생성 (빛나는 점)
         const projectile = this.player.scene.add.circle(this.player.x, this.player.y, 4, 0x0000ff, 1);

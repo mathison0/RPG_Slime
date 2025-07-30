@@ -390,13 +390,13 @@ class SocketEventManager {
     }
 
     // 점프 시작 처리
+    const now = Date.now();
     const jumpDuration = 400;
     if (!this.skillManager.startJump(player, jumpDuration)) {
       return; // 이미 점프 중이면 무시
     }
 
     // 모든 클라이언트에게 점프 알림
-    const now = Date.now();
     this.io.emit('player-skill-used', {
       playerId: socket.id,
       skillType: 'jump',

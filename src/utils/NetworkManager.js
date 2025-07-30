@@ -12,7 +12,7 @@ class NetworkManager {
         
         // 개발환경과 프로덕션 환경 구분
         const serverUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:3000' 
+            ? 'http://localhost:80' 
             : window.location.origin;
         
         // Socket.IO 연결 옵션 최적화
@@ -437,7 +437,7 @@ class NetworkManager {
             
             // 새로운 소켓 연결 생성
             const serverUrl = window.location.hostname === 'localhost' 
-                ? 'http://localhost:3000' 
+                ? 'http://localhost:80' 
                 : window.location.origin;
             
             this.socket = io(serverUrl, {
@@ -464,12 +464,12 @@ class NetworkManager {
             clearInterval(this.pingTestInterval);
         }
 
-        // 5초마다 핑 테스트 실행 (3초에서 5초로 변경)
+        // 3초마다 핑 테스트 실행
         this.pingTestInterval = setInterval(() => {
             if (this.isConnected) {
                 this.sendPingTest();
             }
-        }, 5000);
+        }, 500);
         
         // 즉시 한 번 실행
         if (this.isConnected) {

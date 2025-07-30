@@ -38,8 +38,7 @@ class MechanicJob extends BaseJob {
         if (!this.isSkillAvailable('repair')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('repair')
+                reason: 'cooldown'
             };
         }
 
@@ -115,8 +114,7 @@ class MechanicJob extends BaseJob {
         if (!this.canUseBasicAttack()) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.basicAttackCooldown - (Date.now() - this.lastBasicAttackTime)
+                reason: 'cooldown'
             };
         }
 

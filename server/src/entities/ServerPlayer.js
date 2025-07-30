@@ -133,31 +133,28 @@ class ServerPlayer {
   }
 
   /**
-   * 클라이언트용 스킬 쿨타임 정보 생성
+   * 클라이언트용 스킬 쿨타임 정보 생성 (endTime 기반)
    */
   getClientSkillCooldowns() {
     const now = Date.now();
     const clientCooldowns = {};
     
-    // 서버의 스킬 쿨타임을 클라이언트 스킬 키로 변환
-    for (const [serverSkillType, lastUsed] of Object.entries(this.skillCooldowns)) {
+    // 서버의 스킬 쿨타임을 클라이언트 스킬 키로 변환 (endTime 기반)
+    for (const [serverSkillType, endTime] of Object.entries(this.skillCooldowns)) {
       const clientSkillKey = this.getSkillKeyFromType(serverSkillType);
       if (clientSkillKey) {
-        // 스킬 정보 가져오기
-        const skillInfo = getSkillInfo(this.jobClass, serverSkillType);
-        if (skillInfo && skillInfo.cooldown) {
-          const elapsed = now - lastUsed;
-          const remaining = Math.max(0, skillInfo.cooldown - elapsed);
-          
-          clientCooldowns[clientSkillKey] = {
-            remaining: remaining,
-            total: skillInfo.cooldown,
-            lastUsed: lastUsed
-          };
-        }
+        clientCooldowns[clientSkillKey] = {
+          nextAvailableTime: endTime
+        };
       }
     }
     
+    // 기본 공격 쿨다운 추가 (항상 포함)
+    const basicAttackEndTime = this.skillCooldowns['basic_attack'] || 0;
+    clientCooldowns['basic_attack'] = {
+      nextAvailableTime: basicAttackEndTime
+    };
+
     return clientCooldowns;
   }
 
@@ -180,7 +177,7 @@ class ServerPlayer {
         activeActions.jump = {
           startTime: jumpAction.startTime,
           duration: jumpAction.duration,
-          remainingTime: jumpAction.endTime - now
+          endTime: jumpAction.endTime
         };
       } else {
         // 점프 완료됨
@@ -196,7 +193,7 @@ class ServerPlayer {
           skillType,
           startTime: skillAction.startTime,
           duration: skillAction.duration,
-          remainingTime: skillAction.endTime - now,
+          endTime: skillAction.endTime,
           skillInfo: skillAction.skillInfo
         });
       } else {

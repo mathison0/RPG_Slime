@@ -131,9 +131,8 @@ export default class NetworkEventManager {
             this.handleEnemyDamaged(data);
         });
 
-        // 적 업데이트
-        this.networkManager.on('enemies-update', (data) => {
-            this.handleEnemiesUpdate(data);
+        this.networkManager.on('enemies-update', (enemiesData) => {
+            this.handleEnemiesUpdate(enemiesData);
         });
 
         this.networkManager.on('monster-attack', (data) => {
@@ -159,22 +158,9 @@ export default class NetworkEventManager {
             this.handlePlayerSlowed(data);
         });
         
-        // 플레이어 상태 업데이트 (기존)
+        // 플레이어 상태 업데이트
         this.networkManager.on('players-state-update', (data) => {
             this.handlePlayersStateUpdate(data);
-        });
-
-        // 새로운 경량화된 이벤트들
-        this.networkManager.on('players-position-update', (data) => {
-            this.handlePlayersPositionUpdate(data);
-        });
-
-        this.networkManager.on('player-state-update', (data) => {
-            this.handlePlayerStateUpdate(data);
-        });
-
-        this.networkManager.on('other-players-update', (data) => {
-            this.handleOtherPlayersUpdate(data);
         });
 
         // 플레이어 기절 상태
@@ -527,8 +513,6 @@ export default class NetworkEventManager {
         // 후딜레이 완료 시간 계산
         const effectEndTime = endTime - afterDelay; // 실제 스킬 효과 종료 시간
         
-        console.log(`스킬 사용: ${data.skillType}, 전체완료까지: ${timeUntilEnd}ms, 효과완료까지: ${effectEndTime - currentTime}ms, 시전시간: ${delay}ms, 지속시간: ${duration}ms, 후딜레이: ${afterDelay}ms, endTime: ${endTime}`);
-
         // 스킬이 이미 완료된 경우 스킵
         if (timeUntilEnd < 0) {
             console.log(`스킬 이펙트 스킵: 이미 완료됨 (${timeUntilEnd}ms, ${data.skillType})`);
@@ -580,9 +564,6 @@ export default class NetworkEventManager {
         const timeUntilEffectEnd = effectEndTime - currentTime;
         
         if (timeUntilEffectEnd > 0) {
-            // 아직 지속 중 - 남은 시간만큼 효과 시작
-            console.log(`지속 스킬 시작: ${data.skillType}, 남은 지속시간: ${timeUntilEffectEnd}ms`);
-            
             this.showSkillEffect(player, data.skillType, {
                 ...data,
                 isDelayed: false,
@@ -975,6 +956,19 @@ export default class NetworkEventManager {
                 }
             }
             
+            // 활성 액션 정보 업데이트 (점프 endTime 포함)
+            if (myPlayerState.activeActions) {
+                // 점프 액션 처리
+                if (myPlayerState.activeActions.jump && myPlayerState.activeActions.jump.endTime > Date.now()) {
+                    this.scene.player.jumpEndTime = myPlayerState.activeActions.jump.endTime;
+                    console.log(`점프 endTime 업데이트: ${this.scene.player.jumpEndTime}`);
+                } else if (!myPlayerState.activeActions.jump && this.scene.player.jumpEndTime) {
+                    // 점프 액션이 없으면 초기화
+                    this.scene.player.jumpEndTime = null;
+                    console.log('점프 endTime 초기화');
+                }
+            }
+            
             // UI 업데이트 (클라이언트 로컬 정보 반영)
             this.scene.player.updateUI();
         }
@@ -1130,8 +1124,6 @@ export default class NetworkEventManager {
      * 투사체 제거 처리
      */
     handleProjectileRemoved(data) {
-        console.log('투사체 제거됨:', data);
-        // 투사체 제거 로직은 ProjectileManager에서 처리됨
     }
 
     /**
@@ -1286,11 +1278,8 @@ export default class NetworkEventManager {
     /**
      * 적 상태 업데이트 처리 (중복 적 정리 포함)
      */
-    handleEnemiesUpdate(data) {
+    handleEnemiesUpdate(enemiesData) {
         if (!this.scene.enemies) return;
-
-        // 새로운 데이터 형식 처리 (서버 최적화로 인한 변경)
-        const enemiesData = data.enemies || data; // 기존 형식과 호환성 유지
 
         // 먼저 중복된 적들 정리
         this.cleanupDuplicateEnemies();
@@ -1323,10 +1312,9 @@ export default class NetworkEventManager {
 
         // 서버에 없는 적들 제거 (클라이언트에서만 존재하는 적들)
         const serverEnemyIds = new Set(enemiesData.map(e => e.id));
-        const clientEnemies = this.scene.enemies.getChildren();
-        clientEnemies.forEach(enemy => {
-            if (!serverEnemyIds.has(enemy.networkId)) {
-                console.log(`서버에 없는 적 제거: ${enemy.networkId}`);
+        this.scene.enemies.getChildren().forEach(enemy => {
+            if (enemy.networkId && !serverEnemyIds.has(enemy.networkId)) {
+                console.log(`서버에 존재하지 않는 적 제거: ${enemy.networkId}`);
                 enemy.destroy();
             }
         });
@@ -1803,14 +1791,26 @@ export default class NetworkEventManager {
             targets.push(player.healthBar.container);
         }
         
-        // 서버에서 받은 지속시간 사용 (기본값 400ms)
-        const skillInfo = data?.skillInfo || {};
-        const duration = skillInfo.duration || 400;
+        // 점프 애니메이션 끝나는 시점 저장 (서버에서 받은 endTime 사용)
+        let jumpEndTime;
+        if (data?.endTime) {
+            jumpEndTime = data.endTime;
+            player.jumpEndTime = data.endTime;
+        } else {
+            // endTime이 없으면 기본 지속시간(400ms)으로 계산
+            const defaultDuration = 400;
+            jumpEndTime = Date.now() + defaultDuration;
+            player.jumpEndTime = jumpEndTime;
+        }
+        
+        // endTime까지 남은 시간으로 애니메이션 지속시간 계산
+        const totalRemainingTime = Math.max(0, jumpEndTime - Date.now());
+        const halfDuration = totalRemainingTime / 2; // yoyo 애니메이션이므로 절반씩
         
         this.scene.tweens.add({
             targets: targets,
             y: '-=50',
-            duration: Math.min(duration / 2, 200), // 올라가는 시간
+            duration: halfDuration,
             yoyo: true,
             ease: 'Power2',
             onComplete: () => {
@@ -1823,6 +1823,7 @@ export default class NetworkEventManager {
                         player.healthBar.container.y = originalHealthBarY;
                     }
                     player.isJumping = false;
+                    player.jumpEndTime = null; // 점프 끝나면 초기화
                     player.updateNameTextPosition();
                     player.updateHealthBar();
                 }
@@ -2052,120 +2053,6 @@ export default class NetworkEventManager {
                     enemy.sprite.clearTint();
                 }
             }
-        }
-    }
-
-    /**
-     * 플레이어 위치 업데이트 처리 (경량화)
-     */
-    handlePlayersPositionUpdate(positionUpdates) {
-        if (this.scene.otherPlayers?.children) {
-            positionUpdates.forEach(posUpdate => {
-                if (posUpdate.id === this.networkManager.playerId) return; // 본인 제외
-                
-                const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === posUpdate.id);
-                if (otherPlayer) {
-                    // 부드러운 위치 보간을 위한 이동
-                    if (Math.abs(otherPlayer.x - posUpdate.x) > 5 || Math.abs(otherPlayer.y - posUpdate.y) > 5) {
-                        this.scene.tweens.add({
-                            targets: otherPlayer,
-                            x: posUpdate.x,
-                            y: posUpdate.y,
-                            duration: 80, // 부드러운 이동
-                            ease: 'Linear'
-                        });
-                    }
-                    
-                    otherPlayer.direction = posUpdate.direction;
-                    otherPlayer.isJumping = posUpdate.isJumping;
-                    otherPlayer.isDead = posUpdate.isDead;
-                    
-                    // 방향에 따른 스프라이트 업데이트
-                    if (otherPlayer.updateDirection) {
-                        otherPlayer.updateDirection();
-                    }
-                }
-            });
-        }
-    }
-
-    /**
-     * 본인 플레이어 상태 업데이트 처리
-     */
-    handlePlayerStateUpdate(playerState) {
-        if (playerState.id === this.networkManager.playerId && this.scene.player) {
-            // 네트워크 핑 계산
-            if (playerState.timestamp) {
-                const currentTime = Date.now();
-                const ping = currentTime - playerState.timestamp;
-                this.scene.player.networkPing = Math.max(0, ping);
-            }
-            
-            // 상태 정보 업데이트
-            this.scene.player.hp = playerState.hp;
-            this.scene.player.maxHp = playerState.maxHp;
-            this.scene.player.level = playerState.level;
-            this.scene.player.exp = playerState.exp;
-            this.scene.player.expToNext = playerState.expToNext;
-            this.scene.player.jobClass = playerState.jobClass;
-            this.scene.player.size = playerState.size;
-            
-            // 스탯 정보 업데이트
-            if (playerState.stats) {
-                this.scene.player.attack = playerState.stats.attack;
-                this.scene.player.speed = playerState.stats.speed;
-                this.scene.player.visionRange = playerState.stats.visionRange;
-            }
-            
-            // 스킬 쿨타임 정보
-            this.scene.player.serverSkillCooldowns = playerState.skillCooldowns;
-            
-            // 활성 효과 정보
-            this.scene.player.activeEffects = new Set(playerState.activeEffects || []);
-            this.scene.player.isStealth = playerState.isStealth;
-            this.scene.player.isCasting = playerState.isCasting;
-            
-            // 크기 업데이트
-            if (playerState.size !== undefined && playerState.size !== this.scene.player.size) {
-                this.scene.player.size = playerState.size;
-                this.scene.player.updateSize();
-            }
-            
-            // UI 업데이트
-            this.scene.player.updateUI();
-        }
-    }
-
-    /**
-     * 다른 플레이어들 상태 업데이트 처리
-     */
-    handleOtherPlayersUpdate(otherPlayersData) {
-        if (this.scene.otherPlayers?.children) {
-            otherPlayersData.forEach(playerState => {
-                const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === playerState.id);
-                if (otherPlayer) {
-                    otherPlayer.hp = playerState.hp;
-                    otherPlayer.maxHp = playerState.maxHp;
-                    otherPlayer.level = playerState.level;
-                    
-                    // 직업 변경 시 job 인스턴스 업데이트
-                    if (otherPlayer.jobClass !== playerState.jobClass) {
-                        otherPlayer.jobClass = playerState.jobClass;
-                        otherPlayer.updateJobClass();
-                    }
-                    
-                    // 상태 업데이트
-                    otherPlayer.isCasting = playerState.isCasting;
-                    otherPlayer.activeEffects = new Set(playerState.activeEffects || []);
-                    otherPlayer.isStealth = playerState.isStealth;
-                    
-                    // 크기 업데이트
-                    if (playerState.size !== undefined && playerState.size !== otherPlayer.size) {
-                        otherPlayer.size = playerState.size;
-                        otherPlayer.updateSize();
-                    }
-                }
-            });
         }
     }
 

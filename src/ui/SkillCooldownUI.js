@@ -128,17 +128,30 @@ export default class SkillCooldownUI {
     updateFromServer(serverSkillCooldowns) {
         if (!serverSkillCooldowns) return;
 
-        // 각 스킬의 쿨타임 정보를 개별적으로 처리
+        // 각 스킬의 쿨타임 정보를 개별적으로 처리 (endTime 기반)
         Object.keys(this.skillUIs).forEach(skillKey => {
             const ui = this.skillUIs[skillKey];
             if (!ui) return;
             
             const cooldownInfo = serverSkillCooldowns[skillKey];
-            if (cooldownInfo && cooldownInfo.remaining > 0) {
-                // 쿨타임이 남은 스킬의 UI 업데이트
-                this.drawCooldown(skillKey, cooldownInfo.remaining, cooldownInfo.total);
+            if (cooldownInfo && cooldownInfo.nextAvailableTime) {
+                const now = Date.now();
+                const remaining = Math.max(0, cooldownInfo.nextAvailableTime - now);
+                
+                if (remaining > 0) {
+                    // 쿨타임이 남은 스킬의 UI 업데이트
+                    // total은 계산할 수 없으므로 remaining을 최대값으로 사용
+                    this.drawCooldown(skillKey, remaining, remaining);
+                } else {
+                    // 쿨타임이 끝난 스킬의 UI 초기화
+                    ui.cooldown.clear();
+                    // 쿨타임이 끝나면 배경을 파란색으로 복원
+                    ui.background.clear();
+                    ui.background.fillStyle(0x0066ff, 0.8);
+                    ui.background.fillCircle(ui.x, ui.y, ui.radius);
+                }
             } else {
-                // 쿨타임이 끝난 스킬의 UI 초기화
+                // 쿨타임 정보가 없는 스킬의 UI 초기화
                 ui.cooldown.clear();
                 // 쿨타임이 끝나면 배경을 파란색으로 복원
                 ui.background.clear();

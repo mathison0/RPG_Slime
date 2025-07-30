@@ -38,8 +38,7 @@ class SlimeJob extends BaseJob {
         if (!this.isSkillAvailable('spread')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('spread')
+                reason: 'cooldown'
             };
         }
 
@@ -131,8 +130,7 @@ class SlimeJob extends BaseJob {
         if (!this.canUseBasicAttack()) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.basicAttackCooldown - (Date.now() - this.lastBasicAttackTime)
+                reason: 'cooldown'
             };
         }
 

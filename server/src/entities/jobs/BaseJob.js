@@ -24,41 +24,39 @@ class BaseJob {
     }
 
     /**
-     * 스킬 쿨타임 확인
+     * 스킬 쿨타임 확인 (endTime 기반)
      * @param {string} skillType - 스킬 타입
      * @returns {boolean} - 사용 가능 여부
      */
     isSkillAvailable(skillType) {
         const now = Date.now();
-        const lastUsed = this.skillCooldowns.get(skillType) || 0;
-        const skillInfo = this.getSkillInfo(skillType);
+        const endTime = this.skillCooldowns.get(skillType) || 0;
         
-        if (!skillInfo) return false;
-        
-        return now >= lastUsed + skillInfo.cooldown;
+        return now >= endTime;
     }
 
     /**
-     * 스킬 쿨타임 설정
+     * 스킬 쿨타임 설정 (endTime 기반)
      * @param {string} skillType - 스킬 타입
      */
     setSkillCooldown(skillType) {
-        this.skillCooldowns.set(skillType, Date.now());
+        const skillInfo = this.getSkillInfo(skillType);
+        if (skillInfo) {
+            const endTime = Date.now() + skillInfo.cooldown;
+            this.skillCooldowns.set(skillType, endTime);
+        }
     }
 
     /**
-     * 스킬 쿨타임 남은 시간 계산
+     * 스킬 쿨타임 남은 시간 계산 (endTime 기반)
      * @param {string} skillType - 스킬 타입
      * @returns {number} - 남은 시간 (ms)
      */
     getRemainingCooldown(skillType) {
         const now = Date.now();
-        const lastUsed = this.skillCooldowns.get(skillType) || 0;
-        const skillInfo = this.getSkillInfo(skillType);
+        const endTime = this.skillCooldowns.get(skillType) || 0;
         
-        if (!skillInfo) return 0;
-        
-        return Math.max(0, (lastUsed + skillInfo.cooldown) - now);
+        return Math.max(0, endTime - now);
     }
 
     /**
