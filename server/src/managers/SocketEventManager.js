@@ -37,7 +37,6 @@ class SocketEventManager {
       this.setupPlayerPingHandler(socket);
       this.setupEnemyHitHandler(socket);
       this.setupProjectileWallCollisionHandler(socket);
-      this.setupProjectileHandler(socket);
       this.setupGameSyncHandler(socket);
       this.setupPlayerRespawnHandler(socket);
       this.setupPingTestHandler(socket); // 핑 테스트 핸들러 추가
@@ -196,7 +195,6 @@ class SocketEventManager {
 
       // 스킬 타입을 직업별 스킬로 매핑
       const actualSkillType = this.mapSkillType(player.jobClass, data.skillType);
-      console.log(`스킬 매핑: ${data.skillType} -> ${actualSkillType}, 직업: ${player.jobClass}`);
       
       if (!actualSkillType) {
         socket.emit('skill-error', { 
@@ -239,8 +237,8 @@ class SocketEventManager {
         playerId: socket.id,
         skillType: skillResult.skillType,
         endTime: skillResult.endTime, // 스킬 완료 시간 (후딜레이 포함)
-        x: skillResult.x,
-        y: skillResult.y,
+        x: player.x, // 항상 플레이어의 실제 서버 위치 사용
+        y: player.y, // 항상 플레이어의 실제 서버 위치 사용
         team: player.team,
         skillInfo: skillResult.skillInfo,
         damageResult: damageResult // 데미지 결과 추가
@@ -252,9 +250,9 @@ class SocketEventManager {
         broadcastData.wardBodySize = 125; // 와드 물리 바디 크기
         broadcastData.playerId = socket.id; // 와드 설치자 ID 추가
         broadcastData.playerTeam = player.team; // 와드 설치자 팀 정보 추가
-        // 와드 위치 정보 추가 (마우스 커서 위치)
-        broadcastData.x = data.targetX || player.x;
-        broadcastData.y = data.targetY || player.y;
+        // 와드 설치 위치 정보 추가 (플레이어 위치와 별도로)
+        broadcastData.wardX = data.targetX || player.x;
+        broadcastData.wardY = data.targetY || player.y;
         // 와드 ID 추가
         broadcastData.wardId = skillResult.wardId;
         
@@ -340,12 +338,13 @@ class SocketEventManager {
         skill3: 'heal_field'
       }
     };
-    
-    const jobSkills = skillMappings[jobClass];
-    const mappedSkill = jobSkills ? jobSkills[skillType] : null;
+
     if (skillType === 'basic_attack') {
       return 'basic_attack';
     }
+    
+    const jobSkills = skillMappings[jobClass];
+    const mappedSkill = jobSkills ? jobSkills[skillType] : null;
     
     return mappedSkill;
   }
@@ -512,100 +511,7 @@ class SocketEventManager {
     });
   }
 
-    /**
-   * 투사체 이벤트 핸들러
-   */
-  setupProjectileHandler(socket) {
-    socket.on('fire-projectile', (data) => {
-      const timestamp = Date.now();
-      console.log(`\n[${timestamp}] [${socket.id}] fire-projectile 요청 받음:`, data);
-      
-      const playerId = socket.id;
-      const player = this.gameStateManager.getPlayer(playerId);
-      
-      if (!player) {
-        console.log(`[${timestamp}] [${playerId}] 플레이어를 찾을 수 없음`);
-        return;
-      }
-      
-      // 투사체 생성
-      const projectileId = this.projectileManager.createProjectile(
-        playerId, 
-        data.targetX, 
-        data.targetY, 
-        player.jobClass
-      );
-      
-      if (projectileId) {
-        // 모든 클라이언트에게 투사체 생성 알림
-        const projectileData = {
-          projectileId: projectileId,
-          playerId: playerId,
-          jobClass: player.jobClass,
-          x: player.x,
-          y: player.y,
-          targetX: data.targetX,
-          targetY: data.targetY,
-          team: player.team
-        };
-        
-        this.io.emit('projectile-created', projectileData);
-      }
-    });
-
-    // 근접 공격 이벤트 핸들러 추가
-    socket.on('use-basic-attack', (data) => {
-      const timestamp = Date.now();
-      console.log(`\n[${timestamp}] [${socket.id}] use-basic-attack 요청 받음:`, data);
-      
-      const playerId = socket.id;
-      const player = this.gameStateManager.getPlayer(playerId);
-      
-      if (!player) {
-        console.log(`[${timestamp}] [${playerId}] 플레이어를 찾을 수 없음`);
-        return;
-      }
-
-      console.log(`[${timestamp}] [${playerId}] 플레이어 찾음:`, {
-        id: player.id,
-        jobClass: player.jobClass,
-        x: player.x,
-        y: player.y
-      });
-
-      // 스킬 매니저를 통해 근접 공격 처리
-      const result = this.skillManager.useSkill(player, 'basic_attack', data.targetX, data.targetY);
-      
-      console.log(`[${timestamp}] [${playerId}] 스킬 사용 결과:`, result);
-      
-      if (result.success) {
-        // 데미지 적용 (useSkill 내부에서 이미 처리됨)
-        const damageResult = result.damageResult || { affectedEnemies: [], affectedPlayers: [], totalDamage: 0 };
-
-        console.log(`[${timestamp}] [${playerId}] 데미지 결과:`, damageResult);
-
-        // 모든 클라이언트에게 근접 공격 이펙트 알림
-        const attackData = {
-          playerId: playerId,
-          jobClass: player.jobClass,
-          x: player.x,
-          y: player.y,
-          targetX: data.targetX,
-          targetY: data.targetY,
-          team: player.team,
-          damageResult: damageResult,
-          timestamp: result.timestamp
-        };
-
-        console.log(`[${timestamp}] [${playerId}] melee-attack-performed 이벤트 전송:`, attackData);
-        this.io.emit('melee-attack-performed', attackData);
-        
-        console.log(`[${timestamp}] [${playerId}] 근접 공격 처리 완료:`, damageResult);
-      } else {
-        console.log(`[${timestamp}] [${playerId}] 근접 공격 실패:`, result.error);
-      }
-    });
-  }
+  
 
   /**
    * 게임 동기화 이벤트 핸들러

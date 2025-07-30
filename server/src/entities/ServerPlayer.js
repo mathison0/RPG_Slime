@@ -240,13 +240,18 @@ class ServerPlayer {
    */
   levelUp() {
     this.level++;
-    this.exp = 0;
+    // exp는 GameStateManager.giveExperience()에서 초과분 이월 처리하므로 여기서 0으로 초기화하지 않음
     this.expToNext = this.level * gameConfig.PLAYER.EXP.BASE_REQUIRED * gameConfig.PLAYER.EXP.MULTIPLIER;
     
     // JobClasses를 사용한 올바른 스탯 계산
+    const oldMaxHp = this.maxHp;
     const newStats = calculateStats(this.jobClass, this.level);
     this.maxHp = newStats.hp;
-    this.hp = this.maxHp; // 풀피로 회복
+    
+    // 최대체력이 증가한 만큼만 현재 체력에 추가 (예: 70/100 -> 90/120)
+    const hpIncrease = this.maxHp - oldMaxHp;
+    this.hp = Math.min(this.maxHp, this.hp + hpIncrease);
+    
     this.attack = newStats.attack;
     this.speed = newStats.speed;
     this.visionRange = newStats.visionRange;
@@ -330,7 +335,11 @@ class ServerPlayer {
    */
   changeJob(newJobClass) {
     this.jobClass = newJobClass;
-    console.log(`플레이어 ${this.id} 직업 변경: ${newJobClass}`);
+    
+    // 직업 변경 시 즉시 스탯 업데이트
+    this.initializeStatsFromJobClass();
+    
+    console.log(`플레이어 ${this.id} 직업 변경: ${newJobClass}, 새로운 스탯 적용 완료`);
   }
 
   /**

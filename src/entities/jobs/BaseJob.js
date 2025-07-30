@@ -45,30 +45,11 @@ export default class BaseJob {
         // 기본 공격 쿨타임 설정
         this.setBasicAttackCooldown();
         
-        // 근접 공격 직업들 (서버에서 처리)
-        const meleeJobs = ['warrior', 'supporter', 'mechanic', 'assassin'];
-        
-        if (meleeJobs.includes(this.player.jobClass)) {
-            // 근접 공격은 서버에 이벤트 전송
-            if (this.player.networkManager) {
-                console.log('근접 공격 이벤트 전송:', { targetX, targetY });
-                this.player.networkManager.socket.emit('use-basic-attack', {
-                    targetX: targetX,
-                    targetY: targetY
-                });
-            } else {
-                console.warn('networkManager가 없음');
-            }
+        // 모든 기본공격을 스킬로 통합 처리 (서버에서 근접/원거리 구분)
+        if (this.player.networkManager) {
+            this.player.networkManager.useSkill('basic_attack', targetX, targetY);
         } else {
-            // 원거리 공격은 투사체 발사
-            if (this.player.networkManager) {
-                this.player.networkManager.socket.emit('fire-projectile', {
-                    targetX: targetX,
-                    targetY: targetY
-                });
-            } else {
-                console.warn('networkManager가 없음');
-            }
+            console.warn('networkManager가 없음');
         }
     }
 

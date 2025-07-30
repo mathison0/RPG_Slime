@@ -44,9 +44,9 @@ class GameServer {
     
     // 매니저들 초기화
     this.gameStateManager = new GameStateManager(this.io);
-    this.skillManager = new SkillManager(this.gameStateManager);
-    this.gameStateManager.skillManager = this.skillManager; // skillManager 참조 추가
     this.projectileManager = new ProjectileManager(this.gameStateManager);
+    this.skillManager = new SkillManager(this.gameStateManager, this.projectileManager);
+    this.gameStateManager.skillManager = this.skillManager; // skillManager 참조 추가
     this.enemyManager = new EnemyManager(this.io, this.gameStateManager);
     this.socketEventManager = new SocketEventManager(this.io, this.gameStateManager, this.enemyManager, this.skillManager, this.projectileManager);
     
@@ -328,8 +328,7 @@ class GameServer {
           },
           // 직업 정보 추가
           jobInfo: {
-            name: this.getJobName(player.jobClass),
-            description: this.getJobDescription(player.jobClass)
+            name: this.getJobName(player.jobClass)
           },
           // 스킬 쿨타임 정보 추가
           skillCooldowns: this.getPlayerSkillCooldowns(player),

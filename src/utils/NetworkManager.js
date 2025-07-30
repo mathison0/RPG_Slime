@@ -206,11 +206,7 @@ class NetworkManager {
             this.emit('player-stunned', data);
         });
 
-        // 투사체 관련 이벤트
-        this.socket.on('projectile-created', (data) => {
-            this.emit('projectile-created', data);
-        });
-
+        // 투사체 관련 이벤트 (스킬로 통합된 이후에도 필요)
         this.socket.on('projectiles-update', (data) => {
             this.emit('projectiles-update', data);
         });
@@ -229,11 +225,6 @@ class NetworkManager {
 
         this.socket.on('projectile-hit-enemy', (data) => {
             this.emit('projectile-hit-enemy', data);
-        });
-
-        // 근접 공격 이벤트
-        this.socket.on('melee-attack-performed', (data) => {
-            this.emit('melee-attack-performed', data);
         });
 
         // 공격 무효 이벤트

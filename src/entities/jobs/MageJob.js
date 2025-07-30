@@ -124,9 +124,9 @@ export default class MageJob extends BaseJob {
      * 와드 이펙트 (서버에서 스킬 승인 시 호출)
      */
     showWardEffect(data = null) {
-        // 서버에서 받은 위치 정보 사용 (기본값: 플레이어 위치)
-        const wardX = data?.x || this.player.x;
-        const wardY = data?.y || this.player.y;
+        // 서버에서 받은 와드 설치 위치 정보 사용 (wardX, wardY는 설치 위치, x, y는 플레이어 위치)
+        const wardX = data?.wardX || data?.x || this.player.x;
+        const wardY = data?.wardY || data?.y || this.player.y;
         
         // 와드 관리 배열 초기화 (없으면 생성)
         if (!this.player.scene.wardList) {

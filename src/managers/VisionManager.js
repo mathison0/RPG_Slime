@@ -104,7 +104,7 @@ export default class VisionManager {
             });
         });
 
-        for (let i = 0; i < 360; i += 4) {
+        for (let i = 0; i < 360; i += 1) {
             rays.push(Phaser.Math.DegToRad(i));
         }
         rays.push(Phaser.Math.DegToRad(359.999999));

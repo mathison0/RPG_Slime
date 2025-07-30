@@ -99,6 +99,15 @@ const EXP_MULTIPLIERS = {
   [MAP_LEVELS.LEVEL_4]: 5.0
 };
 
+// 레벨별 크기 배율
+const SIZE_MULTIPLIERS = {
+  [MAP_LEVELS.LEVEL_1_RED]: 0.7,
+  [MAP_LEVELS.LEVEL_1_BLUE]: 0.7,
+  [MAP_LEVELS.LEVEL_2]: 1.0,
+  [MAP_LEVELS.LEVEL_3]: 1.5,
+  [MAP_LEVELS.LEVEL_4]: 2.0
+};
+
 // 레벨별 최대 몬스터 수
 const MAX_MONSTERS_PER_LEVEL = {
   [MAP_LEVELS.LEVEL_1_RED]: 15, // 빨강팀 구역
@@ -197,13 +206,14 @@ function calculateMonsterStats(type, level) {
   const baseStats = BASE_MONSTER_STATS[type];
   const multiplier = STAT_MULTIPLIERS[level];
   const expMultiplier = EXP_MULTIPLIERS[level];
+  const sizeMultiplier = SIZE_MULTIPLIERS[level];
   
   return {
     hp: Math.floor(baseStats.hp * multiplier),
     maxHp: Math.floor(baseStats.hp * multiplier),
     attack: Math.floor(baseStats.attack * multiplier),
     speed: baseStats.speed, // 속도는 배율 적용 안함
-    size: baseStats.size,
+    size: Math.floor(baseStats.size * sizeMultiplier), // 레벨에 따른 크기 조정
     exp: Math.floor(baseStats.exp * expMultiplier)
   };
 }
@@ -215,6 +225,7 @@ module.exports = {
   SPAWN_RATIOS,
   STAT_MULTIPLIERS,
   EXP_MULTIPLIERS,
+  SIZE_MULTIPLIERS,
   MAX_MONSTERS_PER_LEVEL,
   COMMON_CONFIG,
   getMapLevelFromPosition,
