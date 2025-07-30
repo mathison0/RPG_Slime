@@ -150,6 +150,13 @@ export default class SlimeJob extends BaseJob {
             }
         });
         
+        // 투사체 이펙트 (미세한 크기 변화)
+        const effectTween = this.player.scene.tweens.add({
+            targets: projectile,
+            yoyo: true,
+            repeat: -1
+        });
+        
         // 투사체 파괴 함수
         const destroyProjectile = () => {
             if (projectile.active) {
@@ -185,4 +192,22 @@ export default class SlimeJob extends BaseJob {
             }
         });
     }
+
+    /**
+     * 슬라임 폭발 이펙트 생성 (매우 작게)
+     */
+    createSlimeExplosion(x, y) {
+        const explosion = this.player.scene.add.circle(x, y, 5, 0x00ff00, 0.6);
+        this.player.scene.tweens.add({
+            targets: explosion,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            alpha: 0,
+            duration: 200,
+            onComplete: () => {
+                explosion.destroy();
+            }
+        });
+    }
+
 } 

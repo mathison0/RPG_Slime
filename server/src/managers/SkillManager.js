@@ -15,8 +15,7 @@ class SkillManager {
   /**
    * 스킬 사용 시도
    */
-  useSkill(player, skillType, targetX = null, targetY = null, options = {}) {
-    console.log(`SkillManager useSkill 호출: player=${player.id}, skillType=${skillType}, targetX=${targetX}, targetY=${targetY}, options=`, options);
+  useSkill(player, skillType, targetX = null, targetY = null) {
     // 죽은 플레이어는 스킬 사용 불가
     if (player.isDead) {
       return { success: false, error: 'Cannot use skills while dead' };

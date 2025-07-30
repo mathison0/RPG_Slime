@@ -291,17 +291,13 @@ class NetworkManager {
     }
 
     // 스킬 사용
-    useSkill(skillType, targetX = null, targetY = null, direction = null, rotationDirection = null) {
+    useSkill(skillType, targetX = null, targetY = null) {
         if (this.isConnected) {
-            const skillData = {
+            this.socket.emit('player-skill', {
                 skillType: skillType,
                 targetX: targetX,
-                targetY: targetY,
-                direction: direction,
-                rotationDirection: rotationDirection
-            };
-            console.log(`NetworkManager useSkill 전송:`, skillData);
-            this.socket.emit('player-skill', skillData);
+                targetY: targetY
+            });
         }
     }
 
