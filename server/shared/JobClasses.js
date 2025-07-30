@@ -123,7 +123,7 @@ const JobClasses = {
             hp: 350,
             attack: 10,
             speed: 180,
-            visionRange: 250
+            visionRange: 300
         },
         levelGrowth: {
             hp: 35,
@@ -181,7 +181,7 @@ const JobClasses = {
             hp: 130,
             attack: 5,
             speed: 210,
-            visionRange: 400
+            visionRange: 360
         },
         levelGrowth: {
             hp: 13,
