@@ -19,10 +19,13 @@ class ArcherJob extends BaseJob {
      * @returns {Object} - 스킬 사용 결과
      */
     useSkill(skillType, options = {}) {
+        console.log(`ArcherJob useSkill 호출: skillType=${skillType}, options=`, options);
         switch (skillType) {
             case 'roll':
+                console.log('ArcherJob: roll 스킬 실행');
                 return this.useRoll(options);
             case 'focus':
+                console.log('ArcherJob: focus 스킬 실행');
                 return this.useFocus(options);
             default:
                 console.log('ArcherJob: 알 수 없는 스킬 타입:', skillType);
@@ -58,11 +61,24 @@ class ArcherJob extends BaseJob {
         this.setSkillCooldown('roll');
 
         // 구르기 거리 및 방향 계산
-        const rollDistance = skillInfo.range || 100;
-        const direction = this.player.direction || 'front';
+        const rollDistance = skillInfo.range || 300; // 기본값을 300으로 변경
+        // 클라이언트에서 전송한 방향 정보 사용, 없으면 현재 플레이어 방향 사용
+        const direction = options.direction || this.player.direction || 'front';
         
-        let targetX = this.player.x;
-        let targetY = this.player.y;
+        console.log(`궁수 구르기 스킬 정보: range=${skillInfo.range}, rollDistance=${rollDistance}, direction=${direction}, options=`, options);
+        console.log(`플레이어 현재 위치: x=${this.player.x}, y=${this.player.y}`);
+        console.log(`플레이어 객체:`, this.player);
+        console.log(`플레이어 ID: ${this.player.id}`);
+        console.log(`플레이어 타입: ${typeof this.player}`);
+        console.log(`플레이어 x 타입: ${typeof this.player.x}, y 타입: ${typeof this.player.y}`);
+        console.log(`플레이어 x 값: ${this.player.x}, y 값: ${this.player.y}`);
+        
+        // 현재 위치 저장
+        const startX = this.player.x;
+        const startY = this.player.y;
+        
+        let targetX = startX;
+        let targetY = startY;
         
         switch (direction) {
             case 'front':
@@ -77,22 +93,49 @@ class ArcherJob extends BaseJob {
             case 'right':
                 targetX += rollDistance;
                 break;
+            case 'back-left':
+                targetX -= rollDistance * 0.707; // cos(45°) = 0.707
+                targetY -= rollDistance * 0.707;
+                break;
+            case 'back-right':
+                targetX += rollDistance * 0.707;
+                targetY -= rollDistance * 0.707;
+                break;
+            case 'front-left':
+                targetX -= rollDistance * 0.707;
+                targetY += rollDistance * 0.707;
+                break;
+            case 'front-right':
+                targetX += rollDistance * 0.707;
+                targetY += rollDistance * 0.707;
+                break;
         }
 
         // 플레이어 위치 업데이트
         this.player.x = targetX;
         this.player.y = targetY;
 
-        console.log(`궁수 구르기 발동! 이동: (${this.player.x}, ${this.player.y}) -> (${targetX}, ${targetY})`);
+        // 구르기 지속시간 계산 (400ms)
+        const rollDuration = 400;
+        const endTime = Date.now() + rollDuration;
+
+        console.log(`궁수 구르기 발동! 이동: (${startX}, ${startY}) -> (${targetX}, ${targetY}), 이동거리: ${rollDistance}px, 지속시간: ${rollDuration}ms`);
 
         return {
             success: true,
             skillType: 'roll',
-            startX: this.player.x,
-            startY: this.player.y,
+            startX: startX,
+            startY: startY,
             endX: targetX,
             endY: targetY,
             direction: direction,
+            rotationDirection: options.rotationDirection, // 회전 방향 정보 추가
+            duration: rollDuration,
+            endTime: endTime,
+            skillInfo: {
+                ...skillInfo,
+                duration: rollDuration
+            },
             caster: {
                 id: this.player.id,
                 x: targetX,
@@ -137,13 +180,18 @@ class ArcherJob extends BaseJob {
             console.log('궁사의 집중 효과 종료');
         }, skillInfo.duration);
 
-        console.log(`궁사의 집중 발동! 지속시간: ${skillInfo.duration}ms`);
+        // 집중 스킬 종료 시간 계산
+        const endTime = Date.now() + skillInfo.duration;
+
+        console.log(`궁사의 집중 발동! 지속시간: ${skillInfo.duration}ms, 종료시간: ${endTime}`);
 
         return {
             success: true,
             skillType: 'focus',
             duration: skillInfo.duration,
+            endTime: endTime,
             effect: skillInfo.effect,
+            skillInfo: skillInfo,
             caster: {
                 id: this.player.id,
                 x: this.player.x,

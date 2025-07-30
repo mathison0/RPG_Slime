@@ -1,6 +1,16 @@
 const gameConfig = require('../config/GameConfig');
 const { getSkillInfo, calculateStats } = require('../../shared/JobClasses');
 
+// 직업별 클래스 import
+const SlimeJob = require('./jobs/SlimeJob');
+const MageJob = require('./jobs/MageJob');
+const AssassinJob = require('./jobs/AssassinJob');
+const NinjaJob = require('./jobs/NinjaJob');
+const WarriorJob = require('./jobs/WarriorJob');
+const MechanicJob = require('./jobs/MechanicJob');
+const ArcherJob = require('./jobs/ArcherJob');
+const SupporterJob = require('./jobs/SupporterJob');
+
 /**
  * 서버측 플레이어 클래스
  */
@@ -18,6 +28,7 @@ class ServerPlayer {
     this.speed = gameConfig.PLAYER.DEFAULT_SPEED;
     this.attack = gameConfig.PLAYER.DEFAULT_ATTACK;
     this.jobClass = 'slime';
+    this.job = null; // 직업 클래스 인스턴스
     this.direction = 'front';
     this.isJumping = false;
     this.size = gameConfig.PLAYER.DEFAULT_SIZE;
@@ -52,6 +63,52 @@ class ServerPlayer {
     
     // 무적 상태 (치트)
     this.isInvincible = false;
+    
+    // 초기 직업 인스턴스 생성
+    this.initializeJob();
+  }
+
+  /**
+   * 직업 인스턴스 초기화
+   */
+  initializeJob() {
+    try {
+      switch (this.jobClass) {
+        case 'slime':
+          this.job = new SlimeJob(this);
+          break;
+        case 'mage':
+          this.job = new MageJob(this);
+          break;
+        case 'assassin':
+          this.job = new AssassinJob(this);
+          break;
+        case 'ninja':
+          this.job = new NinjaJob(this);
+          break;
+        case 'warrior':
+          this.job = new WarriorJob(this);
+          break;
+        case 'mechanic':
+          this.job = new MechanicJob(this);
+          break;
+        case 'archer':
+          this.job = new ArcherJob(this);
+          break;
+        case 'supporter':
+          this.job = new SupporterJob(this);
+          break;
+        default:
+          console.log(`알 수 없는 직업: ${this.jobClass}, 기본값 slime으로 설정`);
+          this.jobClass = 'slime';
+          this.job = new SlimeJob(this);
+          break;
+      }
+      console.log(`플레이어 ${this.id} 직업 인스턴스 생성 완료: ${this.jobClass}`);
+    } catch (error) {
+      console.error(`플레이어 ${this.id} 직업 인스턴스 생성 실패:`, error);
+      this.job = null;
+    }
   }
 
   /**
@@ -335,6 +392,9 @@ class ServerPlayer {
    */
   changeJob(newJobClass) {
     this.jobClass = newJobClass;
+    
+    // 직업 변경 시 새로운 job 인스턴스 생성
+    this.initializeJob();
     
     // 직업 변경 시 즉시 스탯 업데이트
     this.initializeStatsFromJobClass();

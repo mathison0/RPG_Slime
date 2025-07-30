@@ -15,7 +15,8 @@ class SkillManager {
   /**
    * 스킬 사용 시도
    */
-  useSkill(player, skillType, targetX = null, targetY = null) {
+  useSkill(player, skillType, targetX = null, targetY = null, options = {}) {
+    console.log(`SkillManager useSkill 호출: player=${player.id}, skillType=${skillType}, targetX=${targetX}, targetY=${targetY}, options=`, options);
     // 죽은 플레이어는 스킬 사용 불가
     if (player.isDead) {
       return { success: false, error: 'Cannot use skills while dead' };
@@ -168,6 +169,19 @@ class SkillManager {
       result.wardId = newWard.id;
       
       console.log(`서포터 와드 설치! 위치: (${newWard.x}, ${newWard.y}), 현재 와드 개수: ${player.wardList.length}`);
+    }
+    
+    // 직업별 스킬 사용 로직 호출 (구르기, 집중 등)
+    console.log(`플레이어 job 확인: job=${player.job}, jobClass=${player.jobClass}`);
+    if (player.job && player.job.useSkill) {
+      console.log(`직업별 스킬 사용 로직 호출: ${skillType}`);
+      const jobResult = player.job.useSkill(skillType, options);
+      if (jobResult && jobResult.success) {
+        // 직업별 결과와 기본 결과 병합
+        Object.assign(result, jobResult);
+      }
+    } else {
+      console.log(`직업별 스킬 사용 로직 호출 실패: job=${player.job}, useSkill=${player.job ? player.job.useSkill : 'undefined'}`);
     }
     
     return result;
