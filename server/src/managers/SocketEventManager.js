@@ -189,6 +189,7 @@ class SocketEventManager {
   setupPlayerSkillHandler(socket) {
     socket.on('player-skill', (data) => {
       console.log(`스킬 요청 받음: ${data.skillType}, 플레이어: ${socket.id}`);
+      console.log(`받은 스킬 데이터:`, data);
       
       const player = this.gameStateManager.getPlayer(socket.id);
       if (!player) {
@@ -213,12 +214,19 @@ class SocketEventManager {
         return;
       }
 
-      // 서버에서 스킬 사용 검증 및 처리
+      // 서버에서 스킬 사용 검증 및 처리 (모든 조건 체크는 SkillManager에서 수행)
+      const skillOptions = { 
+        direction: data.direction, // 클라이언트에서 받은 방향 정보 전달
+        rotationDirection: data.rotationDirection // 회전 방향 정보 추가
+      };
+      console.log(`스킬 사용 옵션:`, skillOptions);
+
       const skillResult = this.skillManager.useSkill(
         player,
         actualSkillType, 
         data.targetX, 
-        data.targetY
+        data.targetY,
+        skillOptions
       );
 
       if (!skillResult.success) {
@@ -288,6 +296,7 @@ class SocketEventManager {
     // 즉시 실행 스킬들 (즉시 효과 적용)
     return 'IMMEDIATE';
   }
+
 
   /**
    * 즉시 실행 스킬 처리 (즉시 데미지/효과 적용)
@@ -406,6 +415,39 @@ class SocketEventManager {
     if (skillType === 'ice_field') {
       broadcastData.x = skillResult.x || player.x;
       broadcastData.y = skillResult.y || player.y;
+    }
+
+    // 구르기 스킬의 경우 시작 위치와 최종 위치 정보 추가
+    if (skillType === 'roll') {
+      broadcastData.startX = skillResult.startX;
+      broadcastData.startY = skillResult.startY;
+      broadcastData.endX = skillResult.endX;
+      broadcastData.endY = skillResult.endY;
+      broadcastData.direction = skillResult.direction;
+      broadcastData.rotationDirection = skillResult.rotationDirection;
+      console.log(`구르기 위치 정보 추가: 시작(${skillResult.startX}, ${skillResult.startY}) -> 끝(${skillResult.endX}, ${skillResult.endY})`);
+    }
+
+    // 와드 스킬의 경우 크기 정보 추가 (서포터만)
+    if (skillType === 'ward') {
+      broadcastData.wardScale = 0.2; // 와드 크기 정보
+      broadcastData.wardBodySize = 125; // 와드 물리 바디 크기
+      broadcastData.playerId = player.id; // 와드 설치자 ID 추가
+      broadcastData.playerTeam = player.team; // 와드 설치자 팀 정보 추가
+      // 와드 설치 위치 정보 추가 (플레이어 위치와 별도로)
+      broadcastData.wardX = skillResult.targetX || player.x;
+      broadcastData.wardY = skillResult.targetY || player.y;
+      // 와드 ID 추가
+      broadcastData.wardId = skillResult.wardId;
+      
+      // 와드가 제거된 경우 제거 이벤트도 브로드캐스트
+      if (skillResult.removedWard) {
+        this.io.emit('ward-destroyed', {
+          playerId: player.id,
+          wardId: skillResult.removedWard.id,
+          reason: 'replaced'
+        });
+      }
     }
 
     // 타겟 위치 정보
@@ -799,22 +841,6 @@ class SocketEventManager {
       } catch (error) {
         console.error('레벨업 처리 중 오류:', error);
         socket.emit('level-up-error', { error: 'Level up failed' });
-      }
-    });
-  }
-
-  /**
-   * 플레이어 전직 이벤트 핸들러
-   */
-  setupPlayerJobChangeHandler(socket) {
-    socket.on('player-job-change', (data) => {
-      const player = this.gameStateManager.getPlayer(socket.id);
-      if (player) {
-        player.changeJob(data.jobClass);
-        this.io.emit('player-job-changed', {
-          id: socket.id,
-          jobClass: data.jobClass
-        });
       }
     });
   }

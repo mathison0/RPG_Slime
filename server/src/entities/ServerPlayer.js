@@ -1,14 +1,16 @@
 const gameConfig = require('../config/GameConfig');
 const { getSkillInfo, calculateStats } = require('../../shared/JobClasses');
 
-// 직업별 Job 클래스들 import
+// 직업별 클래스 import
 const SlimeJob = require('./jobs/SlimeJob');
-const WarriorJob = require('./jobs/WarriorJob');
 const MageJob = require('./jobs/MageJob');
 const AssassinJob = require('./jobs/AssassinJob');
 const NinjaJob = require('./jobs/NinjaJob');
+const WarriorJob = require('./jobs/WarriorJob');
+const MechanicJob = require('./jobs/MechanicJob');
+const ArcherJob = require('./jobs/ArcherJob');
 const SupporterJob = require('./jobs/SupporterJob');
-// 추가 직업들은 구현 후 import
+
 
 /**
  * 서버측 플레이어 클래스
@@ -27,6 +29,7 @@ class ServerPlayer {
     this.speed = 200;
     this.attack = 20;
     this.jobClass = 'slime';
+    this.job = null; // 직업 클래스 인스턴스
     this.direction = 'front';
     this.isJumping = false;
     this.size = 32;
@@ -39,6 +42,10 @@ class ServerPlayer {
     // 스킬 관련
     this.skillCooldowns = {}; // 스킬별 마지막 사용 시간
     this.activeEffects = new Set(); // 활성 효과들
+    
+    // 버프 시스템
+    this.buffs = new Map(); // buffType -> { startTime, duration, endTime, effect }
+    this.originalStats = {}; // 원본 스탯 저장
 
     // 액션 상태 추가
     this.currentActions = {
@@ -61,44 +68,52 @@ class ServerPlayer {
     
     // 무적 상태 (치트)
     this.isInvincible = false;
-
-    // 데이터 초기화
-    this.initializeStatsFromJobClass();
     
-    // Job 인스턴스 생성
-    this.createJobInstance();
+    // 초기 직업 인스턴스 생성
+    this.initializeJob();
   }
 
   /**
-   * 직업에 따른 Job 인스턴스 생성
+   * 직업 인스턴스 초기화
    */
-  createJobInstance() {
-    switch (this.jobClass) {
-      case 'slime':
-        this.job = new SlimeJob(this);
-        break;
-      case 'warrior':
-        this.job = new WarriorJob(this);
-        break;
-      case 'mage':
-        this.job = new MageJob(this);
-        break;
-      case 'assassin':
-        this.job = new AssassinJob(this);
-        break;
-      case 'ninja':
-        this.job = new NinjaJob(this);
-        break;
-      case 'supporter':
-        this.job = new SupporterJob(this);
-        break;
-      // 추가 직업들 구현 후 추가
-      default:
-        this.job = new SlimeJob(this); // 기본값
-        console.log(`알 수 없는 직업: ${this.jobClass}, 슬라임으로 설정`);
+  initializeJob() {
+    try {
+      switch (this.jobClass) {
+        case 'slime':
+          this.job = new SlimeJob(this);
+          break;
+        case 'mage':
+          this.job = new MageJob(this);
+          break;
+        case 'assassin':
+          this.job = new AssassinJob(this);
+          break;
+        case 'ninja':
+          this.job = new NinjaJob(this);
+          break;
+        case 'warrior':
+          this.job = new WarriorJob(this);
+          break;
+        case 'mechanic':
+          this.job = new MechanicJob(this);
+          break;
+        case 'archer':
+          this.job = new ArcherJob(this);
+          break;
+        case 'supporter':
+          this.job = new SupporterJob(this);
+          break;
+        default:
+          console.log(`알 수 없는 직업: ${this.jobClass}, 기본값 slime으로 설정`);
+          this.jobClass = 'slime';
+          this.job = new SlimeJob(this);
+          break;
+      }
+      console.log(`플레이어 ${this.id} 직업 인스턴스 생성 완료: ${this.jobClass}`);
+    } catch (error) {
+      console.error(`플레이어 ${this.id} 직업 인스턴스 생성 실패:`, error);
+      this.job = null;
     }
-    
-    console.log(`플레이어 ${this.id} Job 인스턴스 생성: ${this.jobClass}`);
   }
 
   /**
@@ -270,7 +285,8 @@ class ServerPlayer {
       isDead: this.isDead, // 사망 상태 추가
       isInvincible: this.isInvincible, // 무적 상태 추가
       activeActions: activeActions,  // 액션 상태 정보 추가
-      skillCooldowns: this.getClientSkillCooldowns() // 클라이언트용 스킬 쿨타임 정보 추가
+      skillCooldowns: this.getClientSkillCooldowns(), // 클라이언트용 스킬 쿨타임 정보 추가
+      buffs: this.getBuffState() // 버프 상태 정보 추가
     };
   }
 
@@ -382,11 +398,11 @@ class ServerPlayer {
   changeJob(newJobClass) {
     this.jobClass = newJobClass;
     
+    // 직업 변경 시 새로운 job 인스턴스 생성
+    this.initializeJob();
+    
     // 직업 변경 시 즉시 스탯 업데이트
     this.initializeStatsFromJobClass();
-    
-    // Job 인스턴스 재생성
-    this.createJobInstance();
 
     console.log(`플레이어 ${this.id} 직업 변경: ${newJobClass}, 새로운 스탯 적용 완료`);
   }
@@ -482,6 +498,128 @@ class ServerPlayer {
    */
   setSize(newSize) {
     this.size = Math.max(16, Math.min(256, newSize));
+  }
+
+  /**
+   * 버프 적용
+   */
+  applyBuff(buffType, duration, effect) {
+    const now = Date.now();
+    const endTime = now + duration;
+    
+    this.buffs.set(buffType, {
+      startTime: now,
+      duration: duration,
+      endTime: endTime,
+      effect: effect
+    });
+
+    // 원본 스탯 저장 (첫 번째 버프 적용 시)
+    if (!this.originalStats[buffType]) {
+      this.originalStats[buffType] = {
+        attackSpeed: this.basicAttackCooldown,
+        speed: this.speed,
+        attack: this.attack
+      };
+    }
+
+    // 버프 효과 적용
+    this.applyBuffEffect(buffType, effect);
+    
+    console.log(`버프 적용: ${buffType}, 지속시간: ${duration}ms, 효과:`, effect);
+  }
+
+  /**
+   * 버프 효과 적용
+   */
+  applyBuffEffect(buffType, effect) {
+    switch (buffType) {
+      case 'attack_speed_boost':
+        if (effect.attackSpeedMultiplier) {
+          this.basicAttackCooldown = Math.floor(this.originalStats[buffType].attackSpeed / effect.attackSpeedMultiplier);
+        }
+        break;
+      case 'speed_attack_boost':
+        if (effect.speedMultiplier) {
+          this.speed = Math.floor(this.originalStats[buffType].speed * effect.speedMultiplier);
+        }
+        if (effect.attackSpeedMultiplier) {
+          this.basicAttackCooldown = Math.floor(this.originalStats[buffType].attackSpeed / effect.attackSpeedMultiplier);
+        }
+        break;
+    }
+  }
+
+  /**
+   * 버프 제거
+   */
+  removeBuff(buffType) {
+    if (this.buffs.has(buffType)) {
+      const buff = this.buffs.get(buffType);
+      
+      // 원본 스탯으로 복원
+      if (this.originalStats[buffType]) {
+        switch (buffType) {
+          case 'attack_speed_boost':
+            this.basicAttackCooldown = this.originalStats[buffType].attackSpeed;
+            break;
+          case 'speed_attack_boost':
+            this.speed = this.originalStats[buffType].speed;
+            this.basicAttackCooldown = this.originalStats[buffType].attackSpeed;
+            break;
+        }
+      }
+      
+      this.buffs.delete(buffType);
+      console.log(`버프 제거: ${buffType}`);
+    }
+  }
+
+  /**
+   * 만료된 버프 정리
+   */
+  cleanupExpiredBuffs() {
+    const now = Date.now();
+    const expiredBuffs = [];
+    
+    for (const [buffType, buff] of this.buffs) {
+      if (now >= buff.endTime) {
+        expiredBuffs.push(buffType);
+      }
+    }
+    
+    expiredBuffs.forEach(buffType => {
+      this.removeBuff(buffType);
+    });
+  }
+
+  /**
+   * 버프 상태 가져오기
+   */
+  getBuffState() {
+    const now = Date.now();
+    const activeBuffs = {};
+    
+    for (const [buffType, buff] of this.buffs) {
+      if (now < buff.endTime) {
+        activeBuffs[buffType] = {
+          remainingTime: buff.endTime - now,
+          effect: buff.effect
+        };
+      }
+    }
+    
+    return activeBuffs;
+  }
+
+  /**
+   * 버프가 활성화되어 있는지 확인
+   */
+  hasBuff(buffType) {
+    if (!this.buffs.has(buffType)) return false;
+    
+    const buff = this.buffs.get(buffType);
+    return Date.now() < buff.endTime;
   }
 }
 

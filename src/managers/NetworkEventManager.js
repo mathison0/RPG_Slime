@@ -615,7 +615,8 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 즉시 시작되는 지속 스킬 처리 (은신, 와드, 슬라임 퍼지기 등)
+     * 즉시 시작되는 지속 스킬 처리 (은신, 와드, 슬라임 퍼지기, 구르기 등)
+     * 구르기는 위치 고정 없이 처리 (이동 중에도 사용 가능)
      */
     handleDurationSkill(player, data, duration, afterDelay, endTime, effectEndTime) {
         const currentTime = Date.now();
@@ -624,31 +625,51 @@ export default class NetworkEventManager {
         // 위치 고정이 필요한 스킬인지 확인 (슬라임 퍼지기 등)
         const needsPositionFreeze = this.shouldFreezePosition(data.skillType);
         
-        // 플레이어 위치를 서버 위치로 고정 (지속시간 동안)
-        if (needsPositionFreeze) {
-            this.freezePlayerPosition(player, data.x, data.y);
-        }
-        
-        if (timeUntilEffectEnd > 0) {
-            this.showSkillEffect(player, data.skillType, {
-                ...data,
-                isDelayed: false,
-                endTime: endTime,
-                effectEndTime: effectEndTime
-            });
-
-            // 스킬 효과 완료 시 위치 고정 해제
-            if (needsPositionFreeze) {
-                setTimeout(() => {
-                    this.restorePlayerMovement(player);
-                }, Math.max(0, timeUntilEffectEnd));
+        // 구르기 스킬은 위치 고정 없이 처리
+        if (data.skillType === 'roll') {
+            if (timeUntilEffectEnd > 0) {
+                this.showSkillEffect(player, data.skillType, {
+                    ...data,
+                    isDelayed: false,
+                    endTime: endTime,
+                    effectEndTime: effectEndTime
+                });
             }
+            
+            // 구르기 완료 후 서버 위치로 동기화
+            setTimeout(() => {
+                if (data.x !== undefined && data.y !== undefined) {
+                    console.log(`구르기 완료 후 위치 동기화: (${player.x}, ${player.y}) -> (${data.x}, ${data.y})`);
+                    player.setPosition(data.x, data.y);
+                }
+            }, Math.max(0, timeUntilEffectEnd));
         } else {
-            // 스킬 효과는 끝났지만 아직 후딜레이 진행 중일 수 있음
-            console.log(`지속 스킬 효과 완료됨: ${data.skillType}`);
-            // 이미 완료된 스킬인 경우 즉시 복원
+            // 기존 위치 고정 스킬들 처리
             if (needsPositionFreeze) {
-                this.restorePlayerMovement(player);
+                this.freezePlayerPosition(player, data.x, data.y);
+            }
+            
+            if (timeUntilEffectEnd > 0) {
+                this.showSkillEffect(player, data.skillType, {
+                    ...data,
+                    isDelayed: false,
+                    endTime: endTime,
+                    effectEndTime: effectEndTime
+                });
+
+                // 스킬 효과 완료 시 위치 고정 해제
+                if (needsPositionFreeze) {
+                    setTimeout(() => {
+                        this.restorePlayerMovement(player);
+                    }, Math.max(0, timeUntilEffectEnd));
+                }
+            } else {
+                // 스킬 효과는 끝났지만 아직 후딜레이 진행 중일 수 있음
+                console.log(`지속 스킬 효과 완료됨: ${data.skillType}`);
+                // 이미 완료된 스킬인 경우 즉시 복원
+                if (needsPositionFreeze) {
+                    this.restorePlayerMovement(player);
+                }
             }
         }
     }
@@ -1023,6 +1044,25 @@ export default class NetworkEventManager {
             
             // 활성 효과 정보
             this.scene.player.activeEffects = new Set(myPlayerState.activeEffects || []);
+            
+            // 버프 상태 동기화
+            if (myPlayerState.buffs) {
+                // 기존 버프들 제거
+                this.scene.player.buffs.clear();
+                
+                // 서버에서 받은 버프들 적용
+                Object.keys(myPlayerState.buffs).forEach(buffType => {
+                    const buffInfo = myPlayerState.buffs[buffType];
+                    if (buffInfo.remainingTime > 0) {
+                        this.scene.player.buffs.set(buffType, {
+                            startTime: Date.now() - (buffInfo.remainingTime - buffInfo.remainingTime),
+                            duration: buffInfo.remainingTime,
+                            endTime: Date.now() + buffInfo.remainingTime,
+                            effect: buffInfo.effect
+                        });
+                    }
+                });
+            }
             
             // 은신 상태
             this.scene.player.isStealth = myPlayerState.isStealth;
@@ -1914,6 +1954,23 @@ export default class NetworkEventManager {
                 break;
             case 'roar':
                 player.job.showRoarEffect();
+                break;
+            case 'roll':
+                if (player.job.showRollEffect) {
+                    player.job.showRollEffect(data);
+                }
+                break;
+            case 'focus':
+                if (player.job.showFocusEffect) {
+                    player.job.showFocusEffect(data);
+                }
+                // 클라이언트에서도 버프 적용
+                if (data.skillInfo && data.skillInfo.duration) {
+                    const focusEffect = {
+                        attackSpeedMultiplier: 2.0 // 공격속도 2배 증가
+                    };
+                    player.applyBuff('attack_speed_boost', data.skillInfo.duration, focusEffect);
+                }
                 break;
         }
     }

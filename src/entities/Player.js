@@ -50,6 +50,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 방향 관련
         this.direction = 'front';
         this.lastDirection = 'front';
+        this.lastPressedKey = null; // 마지막으로 누른 키 추적
         
         // 네트워크 동기화 관련
         this.lastNetworkX = this.x;
@@ -93,6 +94,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 후딜레이 관련
         this.isInAfterDelay = false;
         this.afterDelayEndTime = 0;
+        
+        // 버프 시스템
+        this.buffs = new Map(); // buffType -> { startTime, duration, endTime, effect }
+        this.buffUI = null; // 버프 UI 요소
         
         // 스킬별 스프라이트 상태 플래그 (클라이언트 전용)
         this.isUsingRoar = false;
@@ -313,6 +318,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 this.skillCooldownUI.update();
             }
             
+            // 버프 정리 및 UI 업데이트
+            this.cleanupExpiredBuffs();
+            this.updateBuffUI();
+            
             // 네트워크 위치 동기화
             this.syncNetworkPosition();
         }
@@ -347,17 +356,16 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     handleMovement() {
         this.setVelocity(0);
 
-        // 죽은 상태에서는 이동 불가
         if (this.isDead) {
             return;
         }
-
+        
         // 후딜레이 중일 때는 이동 불가
         if (this.isInAfterDelay) {
             return;
         }
 
-        if (this.jumpAnimationInProgress || this.isCasting || this.isStunned) {
+        if (this.jumpAnimationInProgress || this.isCasting || this.isStunned || this.isRolling) {
             return;
         }
         
@@ -408,14 +416,37 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const isMoving = movingUp || movingDown || movingLeft || movingRight;
         
         if (isMoving) {
-            if (movingUp) {
+            // 대각선 이동 처리
+            if (movingUp && movingLeft && !movingDown && !movingRight) {
+                this.direction = 'back'; // 대각선은 위쪽 우선
+                this.lastPressedKey = 'up';
+            } else if (movingUp && movingRight && !movingDown && !movingLeft) {
+                this.direction = 'back'; // 대각선은 위쪽 우선
+                this.lastPressedKey = 'up';
+            } else if (movingDown && movingLeft && !movingUp && !movingRight) {
+                this.direction = 'front'; // 대각선은 아래쪽 우선
+                this.lastPressedKey = 'down';
+            } else if (movingDown && movingRight && !movingUp && !movingLeft) {
+                this.direction = 'front'; // 대각선은 아래쪽 우선
+                this.lastPressedKey = 'down';
+            } else if (movingLeft && movingRight) {
+                this.direction = 'left'; // 좌우 동시 누르면 왼쪽 우선
+                this.lastPressedKey = 'left';
+            } else if (movingUp && movingDown) {
+                this.direction = 'front'; // 상하 동시 누르면 아래쪽 우선
+                this.lastPressedKey = 'down';
+            } else if (movingUp) {
                 this.direction = 'back';
+                this.lastPressedKey = 'up';
             } else if (movingDown) {
                 this.direction = 'front';
+                this.lastPressedKey = 'down';
             } else if (movingLeft) {
                 this.direction = 'left';
+                this.lastPressedKey = 'left';
             } else if (movingRight) {
                 this.direction = 'right';
+                this.lastPressedKey = 'right';
             }
         }
         
@@ -469,6 +500,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Q키로 첫 번째 스킬
         if (Phaser.Input.Keyboard.JustDown(this.qKey)) {
+            console.log('Q키 눌림 - 구르기 스킬 요청');
             this.requestSkillUse('skill1');
         }
         
@@ -572,6 +604,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 스킬 사용 요청 (서버 권한 방식)
      */
     requestSkillUse(skillType) {
+        console.log(`requestSkillUse 호출: skillType=${skillType}`);
         if (this.networkManager) {
             // 클라이언트 사이드 쿨다운 체크
             if (this.isStunned || this.isCasting || this.jumpAnimationInProgress || this.isDead || this.isSkillOnCooldown(skillType)) {
@@ -582,8 +615,57 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             const pointer = this.scene.input.activePointer;
             const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
             
-            // 서버에 스킬 사용 요청
-            this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y);
+            // 구르기 스킬의 경우 현재 누르고 있는 키들로 이동 방향 결정
+            let skillDirection = this.direction; // 기본값은 현재 방향
+            
+            if (skillType === 'roll' || skillType === 'skill1') {
+                // 현재 누르고 있는 키들 확인
+                const movingUp = this.wasd.W.isDown || this.cursors.up.isDown;
+                const movingDown = this.wasd.S.isDown || this.cursors.down.isDown;
+                const movingLeft = this.wasd.A.isDown || this.cursors.left.isDown;
+                const movingRight = this.wasd.D.isDown || this.cursors.right.isDown;
+                
+                console.log(`구르기 스킬 요청 - 현재 누르고 있는 키들: up=${movingUp}, down=${movingDown}, left=${movingLeft}, right=${movingRight}`);
+                
+                // 현재 누르고 있는 키들로 이동 방향 결정
+                if (movingUp && !movingDown && !movingLeft && !movingRight) {
+                    skillDirection = 'back';
+                } else if (movingDown && !movingUp && !movingLeft && !movingRight) {
+                    skillDirection = 'front';
+                } else if (movingLeft && !movingRight && !movingUp && !movingDown) {
+                    skillDirection = 'left';
+                } else if (movingRight && !movingLeft && !movingUp && !movingDown) {
+                    skillDirection = 'right';
+                } else if (movingUp && movingLeft && !movingDown && !movingRight) {
+                    skillDirection = 'back-left'; // 대각선: 위쪽 + 왼쪽
+                } else if (movingUp && movingRight && !movingDown && !movingLeft) {
+                    skillDirection = 'back-right'; // 대각선: 위쪽 + 오른쪽
+                } else if (movingDown && movingLeft && !movingUp && !movingRight) {
+                    skillDirection = 'front-left'; // 대각선: 아래쪽 + 왼쪽
+                } else if (movingDown && movingRight && !movingUp && !movingLeft) {
+                    skillDirection = 'front-right'; // 대각선: 아래쪽 + 오른쪽
+                } else if (movingLeft && movingRight) {
+                    skillDirection = 'left'; // 좌우 동시 누르면 왼쪽 우선
+                } else if (movingUp && movingDown) {
+                    skillDirection = 'front'; // 상하 동시 누르면 아래쪽 우선
+                }
+                // 아무 키도 누르지 않으면 현재 방향 유지
+                
+                // 회전 방향 결정 (마지막 누른 키 기준)
+                let rotationDirection = 'clockwise'; // 기본값: 시계방향
+                if (this.lastPressedKey === 'left') {
+                    rotationDirection = 'counterclockwise'; // 왼쪽 키를 마지막으로 눌렀으면 반시계방향
+                }
+                
+                console.log(`구르기 스킬 이동 방향 결정: ${skillDirection}, 회전 방향: ${rotationDirection}`);
+                
+                // 회전 방향 정보를 서버로 전송
+                console.log(`구르기 스킬 서버 전송: skillDirection=${skillDirection}, rotationDirection=${rotationDirection}`);
+                this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y, skillDirection, rotationDirection);
+                return; // 여기서 함수 종료
+            }
+            
+            this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y, skillDirection);
         }
     }
     
@@ -1452,6 +1534,151 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     /**
+     * 버프 적용
+     */
+    applyBuff(buffType, duration, effect) {
+        const now = Date.now();
+        const endTime = now + duration;
+        
+        this.buffs.set(buffType, {
+            startTime: now,
+            duration: duration,
+            endTime: endTime,
+            effect: effect
+        });
+        
+        console.log(`버프 적용: ${buffType}, 지속시간: ${duration}ms, 효과:`, effect);
+        
+        // 버프 UI 업데이트
+        this.updateBuffUI();
+    }
+
+    /**
+     * 버프 제거
+     */
+    removeBuff(buffType) {
+        if (this.buffs.has(buffType)) {
+            this.buffs.delete(buffType);
+            console.log(`버프 제거: ${buffType}`);
+            
+            // 버프 UI 업데이트
+            this.updateBuffUI();
+        }
+    }
+
+    /**
+     * 만료된 버프 정리
+     */
+    cleanupExpiredBuffs() {
+        const now = Date.now();
+        const expiredBuffs = [];
+        
+        for (const [buffType, buff] of this.buffs) {
+            if (now >= buff.endTime) {
+                expiredBuffs.push(buffType);
+            }
+        }
+        
+        expiredBuffs.forEach(buffType => {
+            this.removeBuff(buffType);
+        });
+    }
+
+    /**
+     * 버프 상태 가져오기
+     */
+    getBuffState() {
+        const now = Date.now();
+        const activeBuffs = {};
+        
+        for (const [buffType, buff] of this.buffs) {
+            if (now < buff.endTime) {
+                activeBuffs[buffType] = {
+                    remainingTime: buff.endTime - now,
+                    effect: buff.effect
+                };
+            }
+        }
+        
+        return activeBuffs;
+    }
+
+    /**
+     * 버프가 활성화되어 있는지 확인
+     */
+    hasBuff(buffType) {
+        if (!this.buffs.has(buffType)) return false;
+        
+        const buff = this.buffs.get(buffType);
+        return Date.now() < buff.endTime;
+    }
+
+    /**
+     * 버프 UI 업데이트
+     */
+    updateBuffUI() {
+        if (!this.buffUI) {
+            this.createBuffUI();
+        }
+        
+        const activeBuffs = this.getBuffState();
+        const buffTypes = Object.keys(activeBuffs);
+        
+        if (buffTypes.length === 0) {
+            if (this.buffUI) {
+                this.buffUI.destroy();
+                this.buffUI = null;
+            }
+            return;
+        }
+        
+        // 버프 아이콘들 업데이트
+        this.buffUI.removeAll(true);
+        
+        buffTypes.forEach((buffType, index) => {
+            const buff = activeBuffs[buffType];
+            const remainingTime = buff.remainingTime;
+            const progress = remainingTime / (buff.remainingTime + (Date.now() - (this.buffs.get(buffType).endTime - buff.remainingTime)));
+            
+            // 버프 아이콘 생성
+            const icon = this.scene.add.circle(10 + index * 30, 10, 8, this.getBuffColor(buffType), 0.8);
+            this.buffUI.add(icon);
+            
+            // 남은 시간 텍스트
+            const timeText = this.scene.add.text(10 + index * 30, 20, 
+                Math.ceil(remainingTime / 1000) + 's', 
+                { fontSize: '10px', fill: '#ffffff' });
+            this.buffUI.add(timeText);
+        });
+    }
+
+    /**
+     * 버프 UI 생성
+     */
+    createBuffUI() {
+        if (this.buffUI) {
+            this.buffUI.destroy();
+        }
+        
+        this.buffUI = this.scene.add.container(10, 60);
+        this.buffUI.setDepth(1000);
+    }
+
+    /**
+     * 버프 타입별 색상 반환
+     */
+    getBuffColor(buffType) {
+        switch (buffType) {
+            case 'attack_speed_boost':
+                return 0xFFD700; // 금색
+            case 'speed_attack_boost':
+                return 0x00FF00; // 초록색
+            default:
+                return 0xFFFFFF; // 흰색
+        }
+    }
+
+    /**
      * 정리 작업
      */
     destroy() {
@@ -1492,6 +1719,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         if (this.skillCooldownUI) {
             this.skillCooldownUI.destroy();
+        }
+        
+        if (this.buffUI) {
+            this.buffUI.destroy();
         }
         
         if (this.job) {

@@ -40,7 +40,8 @@ class SkillManager {
   /**
    * 스킬 사용 시도
    */
-  useSkill(player, skillType, targetX = null, targetY = null) {
+  useSkill(player, skillType, targetX = null, targetY = null, options = {}) {
+    console.log(`SkillManager useSkill 호출: player=${player.id}, skillType=${skillType}, targetX=${targetX}, targetY=${targetY}, options=`, options);
     // 죽은 플레이어는 스킬 사용 불가
     if (player.isDead) {
       return { success: false, error: 'Cannot use skills while dead' };
@@ -96,7 +97,7 @@ class SkillManager {
     // 스킬 사용 처리 (endTime 저장)
     player.skillCooldowns[skillType] = now + skillInfo.cooldown;
     
-    // 액션 상태 업데이트 (와드 스킬은 설치형이므로 액션 상태 설정하지 않음)
+    // 액션 상태 업데이트 (버프/장판 스킬은 액션 상태 설정하지 않음)
     const duration = skillInfo.duration || 0;
     const delay = skillInfo.delay || 0;
     const afterDelay = skillInfo.afterDelay || 0;
@@ -104,7 +105,9 @@ class SkillManager {
     // 전체 스킬 완료 시간 = 시전시간 + 지속시간 + 후딜레이
     const totalSkillTime = Math.max(duration, delay) + afterDelay;
     
-    if (skillType !== 'ward' && (duration > 0 || delay > 0 || afterDelay > 0)) {
+    // 버프/장판 스킬이 아닌 경우에만 액션 상태 설정
+    const isBuffOrFieldSkill = this.isBuffOrFieldSkill(skillType);
+    if (!isBuffOrFieldSkill && (duration > 0 || delay > 0 || afterDelay > 0)) {
       player.currentActions.skills.set(skillType, {
         startTime: now,
         duration: duration,
@@ -219,30 +222,17 @@ class SkillManager {
       
     }
     
-    // 직업별 스킬 로직 처리
-    if (player.job && typeof player.job.useSkill === 'function') {
-      const jobSkillResult = player.job.useSkill(skillType, {
-        targetX,
-        targetY,
-        gameStateManager: this.gameStateManager
-      });
-      
-      console.log(`직업별 스킬 로직 실행: ${player.jobClass}.${skillType}, 결과:`, jobSkillResult);
-      
-      // 직업별 스킬 결과를 메인 결과에 병합
-      if (jobSkillResult && jobSkillResult.success) {
-        // 직업별 스킬에서 반환한 추가 정보들을 병합
-        if (jobSkillResult.x !== undefined) result.x = jobSkillResult.x;
-        if (jobSkillResult.y !== undefined) result.y = jobSkillResult.y;
-        if (jobSkillResult.affectedTargets) result.affectedTargets = jobSkillResult.affectedTargets;
-        
-        console.log(`직업별 스킬 결과 병합 완료: ${skillType}`);
-      } else if (jobSkillResult && !jobSkillResult.success) {
-        console.log(`직업별 스킬 실행 실패: ${skillType}, 이유: ${jobSkillResult.reason}`);
-        return jobSkillResult; // 실패 시 직업별 스킬 결과 반환
+    // 직업별 스킬 사용 로직 호출 (구르기, 집중 등)
+    console.log(`플레이어 job 확인: job=${player.job}, jobClass=${player.jobClass}`);
+    if (player.job && player.job.useSkill) {
+      console.log(`직업별 스킬 사용 로직 호출: ${skillType}`);
+      const jobResult = player.job.useSkill(skillType, options);
+      if (jobResult && jobResult.success) {
+        // 직업별 결과와 기본 결과 병합
+        Object.assign(result, jobResult);
       }
     } else {
-      console.log(`직업별 스킬 로직 없음: ${player.jobClass}, job존재=${!!player.job}`);
+      console.log(`직업별 스킬 사용 로직 호출 실패: job=${player.job}, useSkill=${player.job ? player.job.useSkill : 'undefined'}`);
     }
     
     return result;
@@ -328,15 +318,19 @@ class SkillManager {
     this.cleanupExpiredActions(player);
     
     for (const [skillType, skillAction] of player.currentActions.skills) {
+      // 버프기나 장판기는 캐스팅 상태로 간주하지 않음
+      const isBuffOrFieldSkill = this.isBuffOrFieldSkill(skillType);
+      if (isBuffOrFieldSkill) {
+        continue; // 버프/장판 스킬은 캐스팅 체크에서 제외
+      }
+      
       // 1. 시전시간 중 (delay > 0이고 아직 시전시간이 끝나지 않음)
       if (skillAction.delay > 0 && now < skillAction.startTime + skillAction.delay) {
         return true;
       }
       
-      // 2. 발동 중이지만 버프기나 장판기가 아닌 스킬들
-      // 버프기/장판기는 지속시간이 있어도 이동 가능해야 함
-      const isBuffOrFieldSkill = this.isBuffOrFieldSkill(skillType);
-      if (!isBuffOrFieldSkill && skillAction.duration > 0 && 
+      // 2. 발동 중인 스킬들 (버프/장판 제외)
+      if (skillAction.duration > 0 && 
           now >= skillAction.startTime + skillAction.delay && 
           now < skillAction.startTime + skillAction.delay + skillAction.duration) {
         return true;
@@ -380,8 +374,9 @@ class SkillManager {
     this.cleanupExpiredActions(player);
     
     for (const [skillType, skillAction] of player.currentActions.skills) {
-      // 와드 스킬은 후딜레이 체크에서 제외 (설치형 스킬이므로)
-      if (skillType === 'ward') {
+      // 버프기나 장판기는 후딜레이 체크에서 제외
+      const isBuffOrFieldSkill = this.isBuffOrFieldSkill(skillType);
+      if (isBuffOrFieldSkill) {
         continue;
       }
       
@@ -1011,7 +1006,20 @@ class SkillManager {
         // 구르기는 데미지 없음, 이동 효과만
         break;
       case 'focus':
-        // 집중은 데미지 없음, 버프 효과만
+        // 집중 스킬 - 공격속도 증가 버프 적용
+        const focusEffect = {
+          attackSpeedMultiplier: 2.0 // 공격속도 2배 증가
+        };
+        player.applyBuff('attack_speed_boost', skillInfo.duration, focusEffect);
+        
+        // 버프 만료 시 자동 제거를 위한 타이머 설정
+        setTimeout(() => {
+          if (player.hasBuff('attack_speed_boost')) {
+            player.removeBuff('attack_speed_boost');
+          }
+        }, skillInfo.duration);
+        
+        console.log(`궁수 ${player.id} 집중 스킬 사용 - 공격속도 증가 버프 적용`);
         break;
     }
 
