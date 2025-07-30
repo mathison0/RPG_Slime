@@ -1045,6 +1045,25 @@ export default class NetworkEventManager {
             // 활성 효과 정보
             this.scene.player.activeEffects = new Set(myPlayerState.activeEffects || []);
             
+            // 버프 상태 동기화
+            if (myPlayerState.buffs) {
+                // 기존 버프들 제거
+                this.scene.player.buffs.clear();
+                
+                // 서버에서 받은 버프들 적용
+                Object.keys(myPlayerState.buffs).forEach(buffType => {
+                    const buffInfo = myPlayerState.buffs[buffType];
+                    if (buffInfo.remainingTime > 0) {
+                        this.scene.player.buffs.set(buffType, {
+                            startTime: Date.now() - (buffInfo.remainingTime - buffInfo.remainingTime),
+                            duration: buffInfo.remainingTime,
+                            endTime: Date.now() + buffInfo.remainingTime,
+                            effect: buffInfo.effect
+                        });
+                    }
+                });
+            }
+            
             // 은신 상태
             this.scene.player.isStealth = myPlayerState.isStealth;
             
@@ -1944,6 +1963,13 @@ export default class NetworkEventManager {
             case 'focus':
                 if (player.job.showFocusEffect) {
                     player.job.showFocusEffect(data);
+                }
+                // 클라이언트에서도 버프 적용
+                if (data.skillInfo && data.skillInfo.duration) {
+                    const focusEffect = {
+                        attackSpeedMultiplier: 2.0 // 공격속도 2배 증가
+                    };
+                    player.applyBuff('attack_speed_boost', data.skillInfo.duration, focusEffect);
                 }
                 break;
         }

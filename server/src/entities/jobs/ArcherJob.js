@@ -171,14 +171,11 @@ class ArcherJob extends BaseJob {
         // 쿨타임 설정
         this.setSkillCooldown('focus');
 
-        // 공격 속도 버프 적용 (서버에서 관리)
-        this.player.activeEffects.add('attack_speed_boost');
-        
-        // 지속시간 후 효과 해제 예약
-        setTimeout(() => {
-            this.player.activeEffects.delete('attack_speed_boost');
-            console.log('궁사의 집중 효과 종료');
-        }, skillInfo.duration);
+        // 새로운 버프 시스템 사용
+        const focusEffect = {
+            attackSpeedMultiplier: 2.0 // 공격속도 2배 증가
+        };
+        this.player.applyBuff('attack_speed_boost', skillInfo.duration, focusEffect);
 
         // 집중 스킬 종료 시간 계산
         const endTime = Date.now() + skillInfo.duration;
@@ -208,9 +205,13 @@ class ArcherJob extends BaseJob {
         const now = Date.now();
         let cooldown = this.basicAttackCooldown;
         
-        // 궁사의 집중 효과 중이면 공격 속도 증가
-        if (this.player.activeEffects.has('attack_speed_boost')) {
-            cooldown = cooldown * 0.6; // 40% 빨라짐
+        // 새로운 버프 시스템 사용
+        if (this.player.hasBuff('attack_speed_boost')) {
+            // 버프 효과에 따라 쿨다운 조정
+            const buff = this.player.buffs.get('attack_speed_boost');
+            if (buff && buff.effect.attackSpeedMultiplier) {
+                cooldown = Math.floor(cooldown / buff.effect.attackSpeedMultiplier);
+            }
         }
         
         return now - this.lastBasicAttackTime >= cooldown;

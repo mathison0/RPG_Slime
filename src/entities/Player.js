@@ -94,6 +94,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.isInAfterDelay = false;
         this.afterDelayEndTime = 0;
         
+        // 버프 시스템
+        this.buffs = new Map(); // buffType -> { startTime, duration, endTime, effect }
+        this.buffUI = null; // 버프 UI 요소
+        
         // 스킬별 스프라이트 상태 플래그 (클라이언트 전용)
         this.isUsingRoar = false;
         this.isUsingSpread = false;
@@ -312,6 +316,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             if (this.skillCooldownUI) {
                 this.skillCooldownUI.update();
             }
+            
+            // 버프 정리 및 UI 업데이트
+            this.cleanupExpiredBuffs();
+            this.updateBuffUI();
             
             // 네트워크 위치 동기화
             this.syncNetworkPosition();
@@ -1532,6 +1540,151 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     /**
+     * 버프 적용
+     */
+    applyBuff(buffType, duration, effect) {
+        const now = Date.now();
+        const endTime = now + duration;
+        
+        this.buffs.set(buffType, {
+            startTime: now,
+            duration: duration,
+            endTime: endTime,
+            effect: effect
+        });
+        
+        console.log(`버프 적용: ${buffType}, 지속시간: ${duration}ms, 효과:`, effect);
+        
+        // 버프 UI 업데이트
+        this.updateBuffUI();
+    }
+
+    /**
+     * 버프 제거
+     */
+    removeBuff(buffType) {
+        if (this.buffs.has(buffType)) {
+            this.buffs.delete(buffType);
+            console.log(`버프 제거: ${buffType}`);
+            
+            // 버프 UI 업데이트
+            this.updateBuffUI();
+        }
+    }
+
+    /**
+     * 만료된 버프 정리
+     */
+    cleanupExpiredBuffs() {
+        const now = Date.now();
+        const expiredBuffs = [];
+        
+        for (const [buffType, buff] of this.buffs) {
+            if (now >= buff.endTime) {
+                expiredBuffs.push(buffType);
+            }
+        }
+        
+        expiredBuffs.forEach(buffType => {
+            this.removeBuff(buffType);
+        });
+    }
+
+    /**
+     * 버프 상태 가져오기
+     */
+    getBuffState() {
+        const now = Date.now();
+        const activeBuffs = {};
+        
+        for (const [buffType, buff] of this.buffs) {
+            if (now < buff.endTime) {
+                activeBuffs[buffType] = {
+                    remainingTime: buff.endTime - now,
+                    effect: buff.effect
+                };
+            }
+        }
+        
+        return activeBuffs;
+    }
+
+    /**
+     * 버프가 활성화되어 있는지 확인
+     */
+    hasBuff(buffType) {
+        if (!this.buffs.has(buffType)) return false;
+        
+        const buff = this.buffs.get(buffType);
+        return Date.now() < buff.endTime;
+    }
+
+    /**
+     * 버프 UI 업데이트
+     */
+    updateBuffUI() {
+        if (!this.buffUI) {
+            this.createBuffUI();
+        }
+        
+        const activeBuffs = this.getBuffState();
+        const buffTypes = Object.keys(activeBuffs);
+        
+        if (buffTypes.length === 0) {
+            if (this.buffUI) {
+                this.buffUI.destroy();
+                this.buffUI = null;
+            }
+            return;
+        }
+        
+        // 버프 아이콘들 업데이트
+        this.buffUI.removeAll(true);
+        
+        buffTypes.forEach((buffType, index) => {
+            const buff = activeBuffs[buffType];
+            const remainingTime = buff.remainingTime;
+            const progress = remainingTime / (buff.remainingTime + (Date.now() - (this.buffs.get(buffType).endTime - buff.remainingTime)));
+            
+            // 버프 아이콘 생성
+            const icon = this.scene.add.circle(10 + index * 30, 10, 8, this.getBuffColor(buffType), 0.8);
+            this.buffUI.add(icon);
+            
+            // 남은 시간 텍스트
+            const timeText = this.scene.add.text(10 + index * 30, 20, 
+                Math.ceil(remainingTime / 1000) + 's', 
+                { fontSize: '10px', fill: '#ffffff' });
+            this.buffUI.add(timeText);
+        });
+    }
+
+    /**
+     * 버프 UI 생성
+     */
+    createBuffUI() {
+        if (this.buffUI) {
+            this.buffUI.destroy();
+        }
+        
+        this.buffUI = this.scene.add.container(10, 60);
+        this.buffUI.setDepth(1000);
+    }
+
+    /**
+     * 버프 타입별 색상 반환
+     */
+    getBuffColor(buffType) {
+        switch (buffType) {
+            case 'attack_speed_boost':
+                return 0xFFD700; // 금색
+            case 'speed_attack_boost':
+                return 0x00FF00; // 초록색
+            default:
+                return 0xFFFFFF; // 흰색
+        }
+    }
+
+    /**
      * 정리 작업
      */
     destroy() {
@@ -1569,6 +1722,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         if (this.skillCooldownUI) {
             this.skillCooldownUI.destroy();
+        }
+        
+        if (this.buffUI) {
+            this.buffUI.destroy();
         }
         
         if (this.job) {

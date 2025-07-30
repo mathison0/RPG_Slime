@@ -66,6 +66,8 @@ class GameStateManager {
     if (this.skillManager) {
       for (const player of this.players.values()) {
         this.skillManager.cleanupExpiredActions(player);
+        // 버프 정리도 함께 수행
+        player.cleanupExpiredBuffs();
       }
     }
     return Array.from(this.players.values()).map(p => p.getState());
