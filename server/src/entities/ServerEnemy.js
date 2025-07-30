@@ -121,20 +121,8 @@ class ServerEnemy {
     
     if (this.target) {
       this.chaseTarget(walls, delta);
-      // 디버깅: 타겟 추적 상태
-      if (!this.chaseLogged) {
-        console.log(`몬스터 ${this.id} (${this.type}) 타겟 추적: ${this.target.id}`);
-        this.chaseLogged = true;
-        this.wanderLogged = false;
-      }
     } else {
       this.wander(delta, now);
-      // 디버깅: 배회 상태
-      if (!this.wanderLogged) {
-        console.log(`몬스터 ${this.id} (${this.type}) 배회 중: (${Math.round(this.x)}, ${Math.round(this.y)})`);
-        this.wanderLogged = true;
-        this.chaseLogged = false;
-      }
     }
     
     this.move(delta, walls);

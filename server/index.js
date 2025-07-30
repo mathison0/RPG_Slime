@@ -21,11 +21,23 @@ class GameServer {
   constructor() {
     this.app = express();
     this.server = http.createServer(this.app);
+    
+    // Socket.IO 설정 최적화
     this.io = socketIo(this.server, {
       cors: {
         origin: "*",
         methods: ["GET", "POST"]
-      }
+      },
+      // 연결 최적화 옵션
+      pingTimeout: 60000,        // 60초 타임아웃
+      pingInterval: 25000,       // 25초마다 핑 체크
+      upgradeTimeout: 30000,     // 업그레이드 타임아웃 30초
+      allowUpgrades: true,       // 업그레이드 허용
+      transports: ['websocket', 'polling'], // WebSocket 우선
+      // 압축 설정
+      compression: true,
+      // 연결 제한
+      maxHttpBufferSize: 1e6     // 1MB 버퍼 크기
     });
     
     this.port = process.env.PORT || gameConfig.SERVER.DEFAULT_PORT;
