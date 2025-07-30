@@ -312,7 +312,7 @@ const JobClasses = {
                 type: 'focus'
             }
         ],
-        basicAttackCooldown: 500,
+        basicAttackCooldown: 700,
         color: 0xFF8C00,
         maxLevel: 50
     },

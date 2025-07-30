@@ -741,14 +741,21 @@ class SkillManager {
     // 기본 공격 쿨다운 체크 (endTime 기반)
     const { getJobInfo } = require('../../shared/JobClasses.js');
     const jobInfo = getJobInfo(player.jobClass);
-    const cooldown = jobInfo.basicAttackCooldown;
+    let cooldown = jobInfo.basicAttackCooldown;
     const basicAttackEndTime = player.skillCooldowns['basic_attack'] || 0;
     
+    // 버프 효과 적용 (서버에서도 적용)
+    if (player.hasBuff('attack_speed_boost')) {
+      const buff = player.buffs.get('attack_speed_boost');
+      if (buff && buff.effect && buff.effect.attackSpeedMultiplier) {
+        const originalCooldown = cooldown;
+        cooldown = Math.floor(cooldown / buff.effect.attackSpeedMultiplier);
+      }
+    }    
     if (now < basicAttackEndTime) {
+      const remainingTime = basicAttackEndTime - now;
       return { success: false, error: 'Basic attack on cooldown' };
     }
-
-    console.log('basic_attack now:', now, 'cooldown:', cooldown);
 
     // 기본 공격 쿨다운 설정 (endTime 저장)
     player.skillCooldowns['basic_attack'] = now + cooldown;

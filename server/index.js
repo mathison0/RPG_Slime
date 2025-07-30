@@ -357,6 +357,12 @@ class GameServer {
           timestamp: Date.now()
         };
         
+        // player.getState()에서 버프 정보를 가져와서 추가
+        const playerState = player.getState();
+        if (playerState.buffs) {
+          state.buffs = playerState.buffs;
+        }
+        
         return state;
       });
       

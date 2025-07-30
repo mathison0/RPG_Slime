@@ -231,18 +231,45 @@ export default class ArcherJob extends BaseJob {
             }
         );
         
-        // 집중 효과 (노란색 오라)
-        const focusAura = this.player.scene.add.circle(this.player.x, this.player.y, 40, 0xFFD700, 0.3);
+        // 집중 효과 (노란색 오라) - 플레이어를 따라다니도록 설정
+        const focusAura = this.player.scene.add.circle(this.player.x, this.player.y, 40, 0xFFD700, 0.4);
         this.player.focusEffect = focusAura;
         
-        // 플레이어를 따라다니도록 설정
-        const followTween = this.player.scene.tweens.add({
+        // 플레이어를 따라다니도록 설정 (깜빡임 없이 고정 투명도)
+        this.player.scene.tweens.add({
             targets: focusAura,
-            alpha: 0.6,
-            yoyo: true,
-            repeat: -1,
-            duration: 1000
+            alpha: 0.4, // 고정 투명도
+            duration: 100,
+            onComplete: () => {
+                // 플레이어 위치에 고정
+                focusAura.setPosition(this.player.x, this.player.y);
+            }
         });
+        
+        // 다른 플레이어들도 이펙트를 볼 수 있도록 설정
+        focusAura.setDepth(1); // 플레이어 위에 표시
+        
+        // 플레이어 업데이트 시 오라 위치도 업데이트 (모든 플레이어에 적용)
+        const originalUpdate = this.player.update;
+        this.player.update = function(time, delta) {
+            originalUpdate.call(this, time, delta);
+            if (focusAura.active) {
+                focusAura.setPosition(this.x, this.y);
+            }
+        };
+        
+        // 다른 플레이어의 경우 추가적인 위치 추적 설정
+        let originalSetPosition = null;
+        if (this.player.isOtherPlayer) {
+            // 다른 플레이어의 경우, 위치 업데이트 시 이펙트도 함께 이동
+            originalSetPosition = this.player.setPosition;
+            this.player.setPosition = function(x, y) {
+                originalSetPosition.call(this, x, y);
+                if (focusAura.active) {
+                    focusAura.setPosition(x, y);
+                }
+            };
+        }
         
         // 절대 시간 기준으로 효과 종료 타이머 설정
         const timerManager = getGlobalTimerManager();
@@ -259,6 +286,14 @@ export default class ArcherJob extends BaseJob {
             // 플레이어 참조 정리
             if (this.player.focusEffect === focusAura) {
                 this.player.focusEffect = null;
+            }
+            
+            // 플레이어 업데이트 함수 복원
+            this.player.update = originalUpdate;
+            
+            // 다른 플레이어의 경우 setPosition 함수도 복원
+            if (this.player.isOtherPlayer && originalSetPosition !== null) {
+                this.player.setPosition = originalSetPosition;
             }
             
             // 타이머 참조 정리
