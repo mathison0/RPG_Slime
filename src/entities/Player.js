@@ -93,6 +93,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.isInAfterDelay = false;
         this.afterDelayEndTime = 0;
         
+        // 스킬별 스프라이트 상태 플래그 (클라이언트 전용)
+        this.isUsingRoar = false;
+        this.isUsingSpread = false;
+        this.skillSpriteTimers = new Map(); // 스킬 스프라이트 타이머 관리
+        
         // 디버그 관련
         this.debugMode = false;
         this.debugGraphics = null;
@@ -224,8 +229,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // 스킬 쿨다운 UI 갱신
         if (this.skillCooldownUI) {
-            // updateVisibleSkills에서 직업 변경을 감지하여 자동으로 UI를 재생성하므로
-            // 여기서는 직업 정보만 업데이트하고 update()에서 처리되도록 함
+            // 직업 변경 시 최대 쿨타임 업데이트
+            this.skillCooldownUI.updateMaxCooldowns(newJobClass);
             console.log(`[Player] 직업 변경: ${newJobClass}`);
         }
         
@@ -601,11 +606,24 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      */
     updateJobSprite() {
 
-        if (this.isCasting || this.isJumping || this.isDead) {
+        if (this.isJumping || this.isDead) {
             return;
         }
 
-        const spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
+        let spriteKey;
+        
+        // 스킬 스프라이트 우선순위 확인
+        if (this.isUsingRoar && this.jobClass === 'warrior') {
+            spriteKey = 'warrior_skill';
+        } else if (this.isUsingSpread && this.jobClass === 'slime') {
+            spriteKey = 'slime_skill';
+        } else if (this.isCasting) {
+            // 캐스팅 중인 경우 현재 스프라이트 유지 (스프라이트 변경 안함)
+            return;
+        } else {
+            // 일반 상태의 스프라이트
+            spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
+        }
         
         if (this.scene.textures.exists(spriteKey)) {
             this.setTexture(spriteKey);
@@ -688,6 +706,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 플레이어 사망 처리
      */
     die() {
+        // 스킬 스프라이트 상태 정리
+        this.clearAllSkillSpriteStates();
+        
         // 새로운 사망 처리 로직 사용
         this.scene.handlePlayerDeath('direct');
     }
@@ -1355,11 +1376,91 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
+     * 스킬 스프라이트 상태 설정 (클라이언트 전용)
+     */
+    setSkillSpriteState(skillType, duration) {
+        // 기존 타이머가 있으면 제거
+        if (this.skillSpriteTimers.has(skillType)) {
+            clearTimeout(this.skillSpriteTimers.get(skillType));
+            this.skillSpriteTimers.delete(skillType);
+        }
+        
+        // 스킬 타입에 따라 플래그 설정
+        if (skillType === 'roar' && this.jobClass === 'warrior') {
+            this.isUsingRoar = true;
+            console.log(`전사 ${this.networkId || 'local'} roar 스프라이트 설정, 지속시간: ${duration}ms`);
+        } else if (skillType === 'spread' && this.jobClass === 'slime') {
+            this.isUsingSpread = true;
+            console.log(`슬라임 ${this.networkId || 'local'} spread 스프라이트 설정, 지속시간: ${duration}ms`);
+        } else {
+            // 다른 스킬은 처리하지 않음
+            return;
+        }
+        
+        // 스프라이트 즉시 업데이트
+        this.updateJobSprite();
+        
+        // 지속시간 후 플래그 해제
+        const timer = setTimeout(() => {
+            this.clearSkillSpriteState(skillType);
+        }, duration);
+        
+        this.skillSpriteTimers.set(skillType, timer);
+    }
+    
+    /**
+     * 스킬 스프라이트 상태 해제 (클라이언트 전용)
+     */
+    clearSkillSpriteState(skillType) {
+        // 타이머 제거
+        if (this.skillSpriteTimers.has(skillType)) {
+            clearTimeout(this.skillSpriteTimers.get(skillType));
+            this.skillSpriteTimers.delete(skillType);
+        }
+        
+        // 스킬 타입에 따라 플래그 해제
+        if (skillType === 'roar') {
+            this.isUsingRoar = false;
+            console.log(`전사 ${this.networkId || 'local'} roar 스프라이트 해제`);
+        } else if (skillType === 'spread') {
+            this.isUsingSpread = false;
+            console.log(`슬라임 ${this.networkId || 'local'} spread 스프라이트 해제`);
+        }
+        
+        // 스프라이트 즉시 업데이트
+        this.updateJobSprite();
+    }
+    
+    /**
+     * 모든 스킬 스프라이트 상태 해제 (클라이언트 전용)
+     */
+    clearAllSkillSpriteStates() {
+        // 모든 타이머 정리
+        for (const [skillType, timer] of this.skillSpriteTimers) {
+            clearTimeout(timer);
+        }
+        this.skillSpriteTimers.clear();
+        
+        // 모든 플래그 해제
+        this.isUsingRoar = false;
+        this.isUsingSpread = false;
+        
+        console.log(`플레이어 ${this.networkId || 'local'} 모든 스킬 스프라이트 상태 해제`);
+        
+        // 스프라이트 즉시 업데이트
+        this.updateJobSprite();
+    }
+
+    /**
      * 정리 작업
      */
     destroy() {
         this.destroyDebugBoxes();
         this.destroyEnemyDebugBoxes();
+        
+        // 스킬 스프라이트 타이머 정리
+        this.clearAllSkillSpriteStates();
+        
         // 스킬 이펙트 타이머 정리
         if (this.roarEffectTimer) {
             this.scene.time.removeEvent(this.roarEffectTimer);

@@ -122,14 +122,12 @@ class ProjectileManager {
             projectile.x += projectile.vx * dt;
             projectile.y += projectile.vy * dt;
 
-                            // 최대 거리 체크 (발사 위치에서 현재 위치까지의 거리)
                 const distance = Math.sqrt(
                     Math.pow(projectile.x - projectile.startX, 2) + 
                     Math.pow(projectile.y - projectile.startY, 2)
                 );
                 
                 if (distance > projectile.maxDistance) {
-                    // 최대 거리 도달 시 클라이언트에게 제거 이벤트 전송
                     this.gameStateManager.io.emit('projectile-removed', {
                         projectileId: projectileId,
                         reason: 'max_distance'

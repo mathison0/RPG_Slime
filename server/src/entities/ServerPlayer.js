@@ -7,6 +7,7 @@ const WarriorJob = require('./jobs/WarriorJob');
 const MageJob = require('./jobs/MageJob');
 const AssassinJob = require('./jobs/AssassinJob');
 const NinjaJob = require('./jobs/NinjaJob');
+const SupporterJob = require('./jobs/SupporterJob');
 // 추가 직업들은 구현 후 import
 
 /**
@@ -87,6 +88,9 @@ class ServerPlayer {
         break;
       case 'ninja':
         this.job = new NinjaJob(this);
+        break;
+      case 'supporter':
+        this.job = new SupporterJob(this);
         break;
       // 추가 직업들 구현 후 추가
       default:
@@ -345,7 +349,6 @@ class ServerPlayer {
    * 플레이어 리스폰 (사망 상태 해제)
    */
   respawn() {
-    console.log('플레이어 리스폰');
     this.isDead = false;
     this.hp = this.maxHp;
     // 데미지 소스 추적 정보 리셋

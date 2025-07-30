@@ -55,6 +55,7 @@ export default class NetworkEventManager {
         this.networkManager.off('connect_error');
         this.networkManager.off('player-stunned');
         this.networkManager.off('projectiles-update');
+        this.networkManager.off('projectile-removed');
         this.networkManager.off('attack-invalid');
         this.networkManager.off('enemy-stunned');
         this.networkManager.off('magic-missile-explosion');
@@ -87,41 +88,31 @@ export default class NetworkEventManager {
             this.handlePlayerSkillUsed(data);
         });
 
-        // 스킬 에러
         this.networkManager.on('skill-error', (data) => {
             this.handleSkillError(data);
         });
         
-        // 플레이어 데미지
         this.networkManager.on('player-damaged', (data) => {
             this.handlePlayerDamaged(data);
         });
         
-        // 와드 파괴
         this.networkManager.on('ward-destroyed', (data) => {
             this.handleWardDestroyed(data);
         });
         
-
-
-        // 플레이어 레벨업
         this.networkManager.on('player-level-up', (data) => {
             this.handlePlayerLevelUp(data);
         });
 
-        // 레벨업 에러
         this.networkManager.on('level-up-error', (data) => {
             this.handleLevelUpError(data);
         });
 
-        // 공격 무효 이벤트
         this.networkManager.on('attack-invalid', (data) => {
             this.handleAttackInvalid(data);
         });
 
-        // 적 관련 이벤트
         this.networkManager.on('enemy-spawned', (enemyData) => {
-            // 중복 생성 방지를 위해 createNetworkEnemy 사용 (내부에서 중복 체크)
             this.createNetworkEnemy(enemyData);
         });
 
@@ -188,6 +179,11 @@ export default class NetworkEventManager {
         // 투사체 업데이트 (스킬로 통합된 이후에도 필요)
         this.networkManager.on('projectiles-update', (data) => {
             this.handleProjectilesUpdate(data);
+        });
+
+        // 와드 업데이트
+        this.networkManager.on('wards-update', (data) => {
+            this.handleWardsUpdate(data);
         });
 
         // 투사체 제거
@@ -497,6 +493,17 @@ export default class NetworkEventManager {
         if (player.isDead) {
             console.log(`스킬 이펙트 취소: 플레이어가 사망함 (${data.skillType})`);
             return;
+        }
+
+        // 스킬 스프라이트 상태 설정 (roar, spread 스킬만)
+        if (data.skillType === 'roar' || data.skillType === 'spread') {
+            const skillInfo = data.skillInfo;
+            const duration = skillInfo?.duration || 0;
+            
+            if (duration > 0) {
+                player.setSkillSpriteState(data.skillType, duration);
+                console.log(`스킬 스프라이트 상태 설정: ${data.skillType}, 플레이어: ${data.playerId}, 지속시간: ${duration}ms`);
+            }
         }
 
         // 본인 플레이어인 경우 쿨타임 설정 (서버 endTime 기반)
@@ -1001,7 +1008,18 @@ export default class NetworkEventManager {
             // 직업 정보 저장 (UI에서 사용)
             this.scene.player.jobInfo = myPlayerState.jobInfo;
             
-            this.scene.player.serverSkillCooldowns = myPlayerState.skillCooldowns;
+            // 스킬 쿨타임 endTime만 저장 (최대 쿨타임은 SkillCooldownUI에서 관리)
+            if (myPlayerState.skillCooldowns) {
+                this.scene.player.serverSkillCooldowns = {};
+                Object.keys(myPlayerState.skillCooldowns).forEach(skillKey => {
+                    const cooldownInfo = myPlayerState.skillCooldowns[skillKey];
+                    if (cooldownInfo && cooldownInfo.nextAvailableTime) {
+                        this.scene.player.serverSkillCooldowns[skillKey] = {
+                            nextAvailableTime: cooldownInfo.nextAvailableTime
+                        };
+                    }
+                });
+            }
             
             // 활성 효과 정보
             this.scene.player.activeEffects = new Set(myPlayerState.activeEffects || []);
@@ -1173,9 +1191,141 @@ export default class NetworkEventManager {
     }
 
     /**
+     * 와드 업데이트
+     */
+    handleWardsUpdate(data) {
+        if (!this.scene || !this.scene.player) return;
+        
+        const { wards } = data;
+        
+        // 현재 씬의 와드 관리 초기화
+        if (!this.scene.allWards) {
+            this.scene.allWards = new Map(); // wardId -> wardSprite
+        }
+        
+        // 서버에서 받은 와드 ID들
+        const serverWardIds = new Set(wards.map(ward => ward.id));
+        
+        // 현재 씬에 있는 와드 중 서버에 없는 것들 제거
+        for (const [wardId, wardSprite] of this.scene.allWards) {
+            if (!serverWardIds.has(wardId)) {
+                this.removeWardSprite(wardSprite);
+                this.scene.allWards.delete(wardId);
+            }
+        }
+        
+        // 서버에서 받은 와드들 처리
+        wards.forEach(ward => {
+            if (!this.scene.allWards.has(ward.id)) {
+                // 새로운 와드 생성
+                this.createWardSprite(ward);
+            }
+            // 기존 와드는 위치나 속성이 변경되지 않으므로 업데이트 필요 없음
+        });
+    }
+    
+    /**
+     * 와드 스프라이트 생성
+     */
+    createWardSprite(wardData) {
+        const ward = this.scene.add.sprite(wardData.x, wardData.y, 'ward');
+        ward.setScale(0.2);
+        
+        // 와드 소유자 확인
+        const isMyWard = wardData.playerId === this.networkManager.playerId;
+        const isMyTeam = wardData.team === this.scene.player.team;
+        
+        // 깊이 설정
+        if (isMyWard) {
+            ward.setDepth(1001); // 자신의 와드는 가장 위에
+        } else if (isMyTeam) {
+            ward.setDepth(1000); // 같은 팀 와드
+        } else {
+            ward.setDepth(999); // 다른 팀 와드는 시야 그림자보다 낮게
+        }
+        
+        // 물리 바디 추가
+        this.scene.physics.add.existing(ward);
+        ward.body.setImmovable(true);
+        ward.body.setSize(125, 125);
+        
+        // 와드 정보 저장
+        ward.wardData = wardData;
+        ward.wardId = wardData.id;
+        ward.ownerId = wardData.playerId;
+        ward.ownerTeam = wardData.team;
+        
+        // 범위 표시 (내 팀 와드만 표시)
+        if (isMyTeam) {
+            const rangeIndicator = this.scene.add.circle(ward.x, ward.y, wardData.range, 0xffffff, 0.1);
+            rangeIndicator.setDepth(ward.depth - 1);
+            ward.rangeIndicator = rangeIndicator;
+        }
+        
+        // 와드 파괴 함수
+        ward.destroyWard = () => {
+            if (ward.rangeIndicator) {
+                ward.rangeIndicator.destroy();
+            }
+            ward.destroy();
+        };
+        
+        // 씬의 와드 맵에 추가
+        this.scene.allWards.set(wardData.id, ward);
+        
+        // 내 와드인 경우 wardList에도 추가 (시야 시스템용)
+        if (isMyWard) {
+            if (!this.scene.wardList) {
+                this.scene.wardList = [];
+            }
+            
+            // 최대 2개 제한
+            if (this.scene.wardList.length >= 2) {
+                this.scene.wardList.shift();
+            }
+            
+            const wardInfo = {
+                id: wardData.id,
+                x: wardData.x,
+                y: wardData.y,
+                radius: wardData.range,
+                sprite: ward,
+                ownerId: wardData.playerId
+            };
+            
+            this.scene.wardList.push(wardInfo);
+            this.scene.activeWard = wardInfo;
+        }
+        
+        console.log(`와드 생성: ${wardData.id}, 위치: (${wardData.x}, ${wardData.y}), 소유자: ${wardData.playerId}, 내 와드: ${isMyWard}`);
+    }
+    
+    /**
+     * 와드 스프라이트 제거
+     */
+    removeWardSprite(wardSprite) {
+        if (!wardSprite || !wardSprite.active) return;
+        
+        const wardId = wardSprite.wardId;
+        const isMyWard = wardSprite.ownerId === this.networkManager.playerId;
+        
+        // 내 와드인 경우 wardList에서도 제거
+        if (isMyWard && this.scene.wardList) {
+            this.scene.wardList = this.scene.wardList.filter(ward => ward.id !== wardId);
+        }
+        
+        wardSprite.destroyWard();
+        
+        console.log(`와드 제거: ${wardId}, 내 와드: ${isMyWard}`);
+    }
+
+    /**
      * 투사체 제거 처리
      */
     handleProjectileRemoved(data) {
+        if (this.scene.projectileManager && data.projectileId) {
+            this.scene.projectileManager.removeProjectile(data.projectileId);
+        }
     }
 
     /**
@@ -1552,8 +1702,6 @@ export default class NetworkEventManager {
                     '리스폰!', 
                     { fill: '#00ff00', fontSize: '20px' }
                 );
-                
-                console.log('플레이어 리스폰 완료:', { x: data.x, y: data.y });
             }
         } else {
             // 다른 플레이어 리스폰 처리
@@ -1747,11 +1895,6 @@ export default class NetworkEventManager {
             case 'slime_spread':
                 if (player.job.showSpreadEffect) {
                     player.job.showSpreadEffect(data);
-                }
-                break;
-            case 'ward':
-                if (player.job.showWardEffect) {
-                    player.job.showWardEffect(data);
                 }
                 break;
             case 'ice_field':

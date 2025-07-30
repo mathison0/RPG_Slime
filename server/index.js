@@ -229,6 +229,9 @@ class GameServer {
       // 투사체 정보 브로드캐스트
       this.syncProjectiles();
       
+      // 와드 정보 브로드캐스트
+      this.syncWards();
+      
     } catch (error) {
       ServerUtils.errorLog('게임 루프 오류', { error: error.message, stack: error.stack });
     }
@@ -286,16 +289,26 @@ class GameServer {
   }
 
   /**
-   * 투사체 정보 동기화
+   * 투사체 정보 브로드캐스트
    */
   syncProjectiles() {
-    const allProjectiles = this.projectileManager.getAllProjectiles();
-    if (allProjectiles.length > 0) {
+    if (this.projectileManager) {
       this.io.emit('projectiles-update', {
-        projectiles: allProjectiles,
+        projectiles: this.projectileManager.getAllProjectiles(),
         timestamp: Date.now()
       });
     }
+  }
+
+  /**
+   * 와드 정보 브로드캐스트
+   */
+  syncWards() {
+    const allWards = this.gameStateManager.getAllWards();
+    this.io.emit('wards-update', {
+      wards: allWards,
+      timestamp: Date.now()
+    });
   }
 
   /**
