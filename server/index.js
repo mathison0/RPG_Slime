@@ -141,7 +141,7 @@ class GameServer {
     } else {
       this.app.get('/', (req, res) => {
         res.json({ 
-          message: '개발 모드입니다. 클라이언트는 http://localhost:443에서 실행하세요.',
+          message: '개발 모드입니다. 클라이언트는 http://localhost:5173에서 실행하세요.',
           server: 'RPG Slime Multiplayer Server',
           status: 'running',
           endpoints: {
@@ -387,7 +387,7 @@ class GameServer {
       
       if (process.env.NODE_ENV !== 'production') {
         console.log(`\n🌐 개발 모드 접속:`);
-        console.log(`   - 클라이언트: http://localhost:443`);
+        console.log(`   - 클라이언트: http://localhost:5173`);
         console.log(`   - 서버 상태: http://localhost:${this.port}/api/status`);
         console.log(`   - 서버 통계: http://localhost:${this.port}/api/stats`);
       }
