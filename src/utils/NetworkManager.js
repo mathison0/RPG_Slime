@@ -464,12 +464,12 @@ class NetworkManager {
             clearInterval(this.pingTestInterval);
         }
 
-        // 3초마다 핑 테스트 실행
+        // 5초마다 핑 테스트 실행 (3초에서 5초로 변경)
         this.pingTestInterval = setInterval(() => {
             if (this.isConnected) {
                 this.sendPingTest();
             }
-        }, 3000);
+        }, 5000);
         
         // 즉시 한 번 실행
         if (this.isConnected) {

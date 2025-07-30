@@ -53,6 +53,19 @@ class GameServer {
     // 게임 루프 타이머
     this.gameLoopInterval = null;
     
+    // 업데이트 타이머 관리
+    this.lastPlayerStatusUpdate = 0;
+    this.lastPositionUpdate = 0;
+    this.lastProjectileUpdate = 0;
+    this.lastEnemyUpdate = 0;
+    
+    // 성능 통계
+    this.performanceStats = {
+      startTime: Date.now(),
+      gameLoopCount: 0,
+      lastStatsOutput: 0
+    };
+    
     this.initialize();
   }
 
@@ -193,7 +206,11 @@ class GameServer {
    */
   gameLoop() {
     try {
+      const currentTime = Date.now();
       const deltaTime = gameConfig.SERVER.GAME_LOOP_INTERVAL;
+      
+      // 성능 통계 업데이트
+      this.performanceStats.gameLoopCount++;
       
       // 연결 해제된 플레이어들 정리
       const disconnectedPlayers = this.gameStateManager.cleanupDisconnectedPlayers();
@@ -204,6 +221,12 @@ class GameServer {
       // 몬스터 AI 업데이트
       this.enemyManager.updateMonsters(deltaTime);
       
+      // 몬스터 상태 브로드캐스트 (덜 자주)
+      if (currentTime - this.lastEnemyUpdate >= gameConfig.SERVER.ENEMY_UPDATE_INTERVAL) {
+        this.enemyManager.broadcastMonsterStates();
+        this.lastEnemyUpdate = currentTime;
+      }
+      
       // 투사체 업데이트
       this.projectileManager.updateProjectiles(deltaTime);
       
@@ -212,17 +235,35 @@ class GameServer {
       if (damagedPlayers.length > 0) {
         damagedPlayers.forEach(damageInfo => {
           this.io.emit('spawn-barrier-damage', damageInfo);
-          console.log(`스폰 배리어 데미지 이벤트 전송: ${damageInfo.playerId}, -${damageInfo.damage}HP`);
         });
       }
       
       // 플레이어 상태 업데이트 및 사망 처리
       this.updatePlayerStates();
       
-      this.syncPlayerStatus();
+      // 위치 업데이트 (더 자주)
+      if (currentTime - this.lastPositionUpdate >= gameConfig.SERVER.POSITION_UPDATE_INTERVAL) {
+        this.syncPlayerPositions();
+        this.lastPositionUpdate = currentTime;
+      }
       
-      // 투사체 정보 브로드캐스트
-      this.syncProjectiles();
+      // 전체 플레이어 상태 업데이트 (덜 자주)
+      if (currentTime - this.lastPlayerStatusUpdate >= gameConfig.SERVER.PLAYER_UPDATE_INTERVAL) {
+        this.syncPlayerStatus();
+        this.lastPlayerStatusUpdate = currentTime;
+      }
+      
+      // 투사체 정보 브로드캐스트 (조건부)
+      if (currentTime - this.lastProjectileUpdate >= gameConfig.SERVER.PROJECTILE_UPDATE_INTERVAL) {
+        this.syncProjectiles();
+        this.lastProjectileUpdate = currentTime;
+      }
+      
+      // 30초마다 성능 통계 출력
+      if (currentTime - this.performanceStats.lastStatsOutput >= 30000) {
+        this.outputPerformanceStats();
+        this.performanceStats.lastStatsOutput = currentTime;
+      }
       
     } catch (error) {
       ServerUtils.errorLog('게임 루프 오류', { error: error.message, stack: error.stack });
@@ -281,20 +322,40 @@ class GameServer {
   }
 
   /**
-   * 투사체 정보 동기화
+   * 투사체 동기화 (최적화)
    */
   syncProjectiles() {
-    const allProjectiles = this.projectileManager.getAllProjectiles();
-    if (allProjectiles.length > 0) {
+    const projectiles = this.projectileManager.getAllProjectiles();
+    // 투사체가 있을 때만 전송
+    if (projectiles && projectiles.length > 0) {
       this.io.emit('projectiles-update', {
-        projectiles: allProjectiles,
+        projectiles: projectiles,
         timestamp: Date.now()
       });
     }
   }
 
   /**
-   * 플레이어 상태 동기화
+   * 플레이어 위치만 동기화 (경량화)
+   */
+  syncPlayerPositions() {
+    const players = this.gameStateManager.getAllPlayers();
+    if (players.length > 0) {
+      const positionUpdates = players.map(player => ({
+        id: player.id,
+        x: player.x,
+        y: player.y,
+        direction: player.direction,
+        isJumping: player.isJumping || false,
+        isDead: player.isDead || false
+      }));
+      
+      this.io.emit('players-position-update', positionUpdates);
+    }
+  }
+
+  /**
+   * 플레이어 상태 동기화 (최적화)
    */
   syncPlayerStatus() {
     const players = this.gameStateManager.getAllPlayers();
@@ -304,46 +365,53 @@ class GameServer {
         const isCasting = this.skillManager.isCasting(player);
         
         // 기본 상태 정보
-        const state = {
+        return {
           id: player.id,
-          x: player.x,
-          y: player.y,
           hp: player.hp,
           maxHp: player.maxHp,
           level: player.level,
-          // 경험치 정보 추가
           exp: player.exp,
           expToNext: player.expToNext,
           jobClass: player.jobClass,
           team: player.team,
           size: player.size,
-          // 전체 스탯 정보 추가
-          stats: {
-            attack: player.attack,
-            speed: player.speed,
-            visionRange: player.visionRange
-          },
-          // 직업 정보 추가
-          jobInfo: {
-            name: this.getJobName(player.jobClass),
-            description: this.getJobDescription(player.jobClass)
-          },
-          // 스킬 쿨타임 정보 추가
-          skillCooldowns: this.getPlayerSkillCooldowns(player),
           // 활성 효과들
           activeEffects: Array.from(player.activeEffects || []),
           // 은신 상태
           isStealth: player.isStealth || false,
-          // 스킬 시전 중 여부 (시전시간이 있는 스킬들만)
-          isCasting: isCasting,
-          // 네트워크 핑 계산을 위한 타임스탬프 추가
-          timestamp: Date.now()
+          // 스킬 시전 중 여부
+          isCasting: isCasting
         };
-        
-        return state;
       });
       
-      this.io.emit('players-state-update', playerStates);
+      // 플레이어별로 개별 전송 (본인에게는 추가 정보 포함)
+      players.forEach(player => {
+        const socket = this.io.sockets.sockets.get(player.id);
+        if (socket) {
+          // 본인 데이터 (추가 정보 포함)
+          const myState = playerStates.find(p => p.id === player.id);
+          if (myState) {
+            // 본인에게만 추가 정보
+            myState.stats = {
+              attack: player.attack,
+              speed: player.speed,
+              visionRange: player.visionRange
+            };
+            myState.skillCooldowns = this.getPlayerSkillCooldowns(player);
+            myState.timestamp = Date.now(); // 핑 계산용
+            
+            socket.emit('player-state-update', myState);
+          }
+          
+          // 다른 플레이어들의 기본 정보만
+          const otherPlayers = playerStates.filter(p => p.id !== player.id);
+          if (otherPlayers.length > 0) {
+            socket.emit('other-players-update', otherPlayers);
+          }
+        }
+      });
+      
+
     }
   }
 
@@ -371,6 +439,23 @@ class GameServer {
   getPlayerSkillCooldowns(player) {
     // ServerPlayer의 getClientSkillCooldowns 메서드 사용
     return player.getClientSkillCooldowns();
+  }
+
+  /**
+   * 성능 통계 출력
+   */
+  outputPerformanceStats() {
+    const now = Date.now();
+    const uptime = now - this.performanceStats.startTime;
+    const players = this.gameStateManager.players.size;
+    const enemies = this.gameStateManager.enemies.size;
+    const memoryUsage = process.memoryUsage();
+    
+    console.log(`🔥 서버 성능 통계 (업타임: ${Math.round(uptime/1000)}초)`);
+    console.log(`   플레이어: ${players}명 | 몬스터: ${enemies}마리`);
+    console.log(`   게임루프: ${this.performanceStats.gameLoopCount}회 실행`);
+    console.log(`   메모리: ${Math.round(memoryUsage.heapUsed/1024/1024)}MB 사용`);
+    console.log(`   업데이트 간격: 위치=${gameConfig.SERVER.POSITION_UPDATE_INTERVAL}ms, 상태=${gameConfig.SERVER.PLAYER_UPDATE_INTERVAL}ms`);
   }
 
   /**
