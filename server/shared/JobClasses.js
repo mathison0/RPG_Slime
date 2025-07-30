@@ -199,7 +199,7 @@ const JobClasses = {
                 description: '범위 내 적들의 속도를 감소시킵니다.',
                 cooldown: 12000,
                 damage: 5,
-                range: 100,  // 얼음 장판의 효과 범위 (반지름)
+                range: 150,  // 얼음 장판의 효과 범위 (반지름)
                 maxCastRange: 300, // 최대 시전 사거리
                 duration: 6000,
                 effect: 'slow',

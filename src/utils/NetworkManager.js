@@ -294,14 +294,31 @@ class NetworkManager {
     }
 
     // 스킬 사용
-    useSkill(skillType, targetX = null, targetY = null, direction = null, rotationDirection = null) {
+    useSkill(skillType, targetXOrOptions = null, targetY = null, direction = null, rotationDirection = null) {
         if (this.isConnected) {
+            let actualTargetX = null;
+            let actualTargetY = null;
+            let actualDirection = direction;
+            let actualRotationDirection = rotationDirection;
+            
+            // 두 번째 파라미터가 객체인 경우 (옵션 객체)
+            if (typeof targetXOrOptions === 'object' && targetXOrOptions !== null) {
+                actualTargetX = targetXOrOptions.targetX || null;
+                actualTargetY = targetXOrOptions.targetY || null;
+                actualDirection = targetXOrOptions.direction || direction;
+                actualRotationDirection = targetXOrOptions.rotationDirection || rotationDirection;
+            } else {
+                // 기존 방식 (targetX, targetY를 개별 파라미터로 받는 경우)
+                actualTargetX = targetXOrOptions;
+                actualTargetY = targetY;
+            }
+            
             const skillData = {
                 skillType: skillType,
-                targetX: targetX,
-                targetY: targetY,
-                direction: direction,
-                rotationDirection: rotationDirection
+                targetX: actualTargetX,
+                targetY: actualTargetY,
+                direction: actualDirection,
+                rotationDirection: actualRotationDirection
             };
             console.log(`NetworkManager useSkill 전송:`, skillData);
             this.socket.emit('player-skill', skillData);

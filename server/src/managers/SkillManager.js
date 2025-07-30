@@ -226,7 +226,13 @@ class SkillManager {
     console.log(`플레이어 job 확인: job=${player.job}, jobClass=${player.jobClass}`);
     if (player.job && player.job.useSkill) {
       console.log(`직업별 스킬 사용 로직 호출: ${skillType}`);
-      const jobResult = player.job.useSkill(skillType, options);
+      // targetX, targetY를 options에 포함시켜서 전달
+      const extendedOptions = {
+        ...options,
+        targetX: targetX,
+        targetY: targetY
+      };
+      const jobResult = player.job.useSkill(skillType, extendedOptions);
       if (jobResult && jobResult.success) {
         // 직업별 결과와 기본 결과 병합
         Object.assign(result, jobResult);
@@ -814,15 +820,61 @@ class SkillManager {
       totalDamage: 0
     };
 
+    // JobClasses에서 마법사 정보 가져오기
+    const { getJobInfo } = require('../../shared/JobClasses.js');
+    const mageInfo = getJobInfo('mage');
+
     switch (skillType) {
       case 'ice_field':
-        console.log(`얼음 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${targetX}, ${targetY}), 범위: ${skillInfo.range}`);
-        // 장판 시스템에 등록
-        this.addField('ice_field', player.id, targetX, targetY, skillInfo.range, skillInfo.duration, skillInfo.damage);
+        // 얼음 장판 사거리 클램핑 (JobClasses에서 maxCastRange 사용)
+        const iceFieldSkill = mageInfo.skills.find(skill => skill.type === 'ice_field');
+        const maxCastRange = iceFieldSkill?.maxCastRange || 300;
+        
+        let clampedTargetX = targetX;
+        let clampedTargetY = targetY;
+        
+        if (targetX !== null && targetY !== null) {
+          const deltaX = targetX - x;
+          const deltaY = targetY - y;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+          
+          if (distance > maxCastRange) {
+            // 사거리 초과 시 방향은 유지하되 최대 거리로 클램핑
+            const ratio = maxCastRange / distance;
+            clampedTargetX = x + deltaX * ratio;
+            clampedTargetY = y + deltaY * ratio;
+            console.log(`서버 얼음 장판 사거리 클램핑: 요청 거리=${Math.round(distance)}, 최대 거리=${maxCastRange}, 클램핑된 위치=(${Math.round(clampedTargetX)}, ${Math.round(clampedTargetY)})`);
+          }
+        }
+        
+        console.log(`얼음 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${clampedTargetX}, ${clampedTargetY}), 범위: ${skillInfo.range}`);
+        // 장판 시스템에 등록 (클램핑된 좌표 사용)
+        this.addField('ice_field', player.id, clampedTargetX, clampedTargetY, skillInfo.range, skillInfo.duration, skillInfo.damage);
         // 초기 데미지는 없음 (0.5초 후부터 적용)
         break;
       case 'magic_missile':
-        this.applyMagicMissileDamage(player, x, y, targetX, targetY, skillInfo.damage, damageResult);
+        // 마법 미사일 사거리 클램핑 (JobClasses에서 range 사용) 
+        const magicMissileSkill = mageInfo.skills.find(skill => skill.type === 'magic_missile');
+        const magicMissileRange = magicMissileSkill?.range || 400;
+        
+        let clampedMissileX = targetX;
+        let clampedMissileY = targetY;
+        
+        if (targetX !== null && targetY !== null) {
+          const deltaX = targetX - x;
+          const deltaY = targetY - y;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+          
+          if (distance > magicMissileRange) {
+            // 사거리 초과 시 방향은 유지하되 최대 거리로 클램핑
+            const ratio = magicMissileRange / distance;
+            clampedMissileX = x + deltaX * ratio;
+            clampedMissileY = y + deltaY * ratio;
+            console.log(`서버 마법 미사일 사거리 클램핑: 요청 거리=${Math.round(distance)}, 최대 거리=${magicMissileRange}, 클램핑된 위치=(${Math.round(clampedMissileX)}, ${Math.round(clampedMissileY)})`);
+          }
+        }
+        
+        this.applyMagicMissileDamage(player, x, y, clampedMissileX, clampedMissileY, skillInfo.damage, damageResult);
         break;
       case 'shield':
         // 보호막은 데미지 없음, 방어 효과만

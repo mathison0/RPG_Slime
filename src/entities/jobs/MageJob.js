@@ -38,6 +38,7 @@ export default class MageJob extends BaseJob {
             case 2: // E키 - 마법 투사체
                 const pointer2 = this.scene.input.activePointer;
                 const worldPoint2 = this.scene.cameras.main.getWorldPoint(pointer2.x, pointer2.y);
+                console.log(`클라이언트 마법 미사일 요청: 마우스 좌표=(${worldPoint2.x}, ${worldPoint2.y})`);
                 this.player.networkManager.useSkill('magic_missile', {
                     targetX: worldPoint2.x,
                     targetY: worldPoint2.y
