@@ -567,17 +567,22 @@ export default class GameScene extends Phaser.Scene {
         // 치트 키 처리
         this.cheatManager.handleCheatKeys();
         
+        // 투사체 매니저 업데이트 (보간 처리)
+        if (this.projectileManager) {
+            this.projectileManager.update(delta);
+        }
+        
         // 점프 상태 변화 감지 및 카메라 제어
-        if (this.player.isJumping && !this.wasJumping) {
+        if (this.player.jumpAnimationInProgress && !this.wasJumping) {
             this.cameras.main.stopFollow();
             this.wasJumping = true;
-        } else if (!this.player.isJumping && this.wasJumping) {
+        } else if (!this.player.jumpAnimationInProgress && this.wasJumping) {
             this.cameras.main.startFollow(this.player);
             this.wasJumping = false;
         }
         
-        // 벽 충돌 체크 (점프 중이 아닐 때만)
-        if (!this.player.isJumping) {
+        // 벽 충돌 체크 (점프 애니메이션 중이 아닐 때만)
+        if (!this.player.jumpAnimationInProgress) {
             const collidingWalls = this.mapManager.checkPlayerWallCollision();
             if (collidingWalls && collidingWalls.length > 0) {
                 this.mapManager.pushPlayerOutOfWall(collidingWalls);
@@ -597,8 +602,8 @@ export default class GameScene extends Phaser.Scene {
         // 맵 토글 처리
         this.minimapManager.handleMapToggle();
 
-        // 점프 중이 아닐 때만 시야 및 미니맵 업데이트
-        if (!this.player.isJumping) {
+        // 점프 애니메이션 중이 아닐 때만 시야 및 미니맵 업데이트
+        if (!this.player.jumpAnimationInProgress) {
             this.minimapManager.updateMinimapVision();
             this.visionManager.updateVision();
 
@@ -692,6 +697,7 @@ export default class GameScene extends Phaser.Scene {
         this.player.isStunned = false;
         this.player.isStealth = false;
         this.player.isJumping = false;
+        this.player.jumpAnimationInProgress = false;
         
         // 지연된 스킬 이펙트들 정리
         this.player.clearDelayedSkillEffects();

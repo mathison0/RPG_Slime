@@ -59,6 +59,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 상태
         this.isJumping = false;
         this.jumpEndTime = null; // 점프 애니메이션 끝나는 시점
+        this.jumpAnimationInProgress = false; // 클라이언트 애니메이션 진행 상태 (isJumping과 별개)
         this.team = team;
         this.isInvincible = false;
         this.isDead = false; // 사망 상태
@@ -356,11 +357,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
 
-        if (this.isJumping || this.isCasting || this.isStunned) {
+        if (this.jumpAnimationInProgress || this.isCasting || this.isStunned) {
             return;
         }
-
-        // 슬로우 효과 적용
+        
         let effectiveSpeed = this.speed;
         if (this.slowEffects && this.slowEffects.length > 0) {
             // 가장 강한 슬로우 효과 적용
@@ -574,7 +574,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     requestSkillUse(skillType) {
         if (this.networkManager) {
             // 클라이언트 사이드 쿨다운 체크
-            if (this.isStunned || this.isCasting || this.isJumping || this.isDead || this.isSkillOnCooldown(skillType)) {
+            if (this.isStunned || this.isCasting || this.jumpAnimationInProgress || this.isDead || this.isSkillOnCooldown(skillType)) {
                 return; // 서버에 요청을 보내지 않음
             }
             
@@ -606,7 +606,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      */
     updateJobSprite() {
 
-        if (this.isJumping || this.isDead) {
+        if (this.jumpAnimationInProgress || this.isDead) {
             return;
         }
 
@@ -1295,9 +1295,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 점프 애니메이션이 끝났는지 확인
      */
     isJumpAnimationFinished() {
-        // 점프 중이 아니면 바로 점프 가능
-        if (!this.isJumping) {
-            console.log('점프 체크: 점프 중이 아님 -> 가능');
+        // 점프 애니메이션 중이 아니면 바로 점프 가능
+        if (!this.jumpAnimationInProgress) {
+            console.log('점프 체크: 점프 애니메이션 중이 아님 -> 가능');
             return true;
         }
         
@@ -1309,8 +1309,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return finished;
         }
         
-        // 점프 액션 정보가 없으면 현재 점프 상태를 기준으로 판단
-        console.log('점프 체크: jumpEndTime 없음, isJumping=true -> 불가능');
+        // 점프 액션 정보가 없으면 현재 점프 애니메이션 상태를 기준으로 판단
+        console.log('점프 체크: jumpEndTime 없음, jumpAnimationInProgress=true -> 불가능');
         return false;
     }
 
@@ -1460,6 +1460,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // 스킬 스프라이트 타이머 정리
         this.clearAllSkillSpriteStates();
+        
+        // 점프 애니메이션 상태 정리
+        this.jumpAnimationInProgress = false;
         
         // 스킬 이펙트 타이머 정리
         if (this.roarEffectTimer) {
