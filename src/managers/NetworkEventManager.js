@@ -2205,7 +2205,7 @@ export default class NetworkEventManager {
             }
         }
     }
-
+  
     freezePlayerPosition(player, serverX, serverY) {
         if (!player || !player.body) return;
 
