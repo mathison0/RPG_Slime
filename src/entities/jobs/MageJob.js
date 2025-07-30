@@ -78,7 +78,7 @@ export default class MageJob extends BaseJob {
         
         // 얼음 장판 생성 (서버에서 받은 위치에)
         const iceField = this.player.scene.add.circle(iceX, iceY, range, 0x87ceeb, 0.4);
-        iceField.setDepth(700);
+        iceField.setDepth(650);
         
         // EffectManager를 사용한 스킬 메시지
         const skillText = this.effectManager.showSkillMessage(

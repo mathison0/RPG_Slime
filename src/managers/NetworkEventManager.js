@@ -2002,13 +2002,13 @@ export default class NetworkEventManager {
      * 점프 이펙트
      */
     showJumpEffect(player, data = null) {
-        // 이미 점프 중이면 중복 실행 방지
-        if (player.isJumping) return;
+        // 점프 애니메이션이 이미 진행 중이면 중복 실행 방지
+        if (player.jumpAnimationInProgress) return;
         
         const originalY = player.y;
         const originalNameY = player.nameText ? player.nameText.y : null;
         const originalHealthBarY = player.healthBar?.container ? player.healthBar.container.y : null;
-        player.isJumping = true;
+        player.jumpAnimationInProgress = true;  // isJumping 대신 애니메이션 진행 상태만 관리
         
         const targets = [player];
         if (player.nameText) {
@@ -2049,8 +2049,9 @@ export default class NetworkEventManager {
                     if (player.healthBar?.container && originalHealthBarY !== null) {
                         player.healthBar.container.y = originalHealthBarY;
                     }
-                    player.isJumping = false;
-                    player.jumpEndTime = null; // 점프 끝나면 초기화
+                    player.jumpAnimationInProgress = false;  // 애니메이션 진행 상태만 관리, isJumping은 서버에서만 관리
+                    
+                    // jumpEndTime은 서버 playerStateUpdate에서 관리되므로 여기서 초기화하지 않음
                     player.updateNameTextPosition();
                     player.updateHealthBar();
                 }
