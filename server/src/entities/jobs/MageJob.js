@@ -60,9 +60,9 @@ class MageJob extends BaseJob {
         // 쿨타임 설정
         this.setSkillCooldown('ward');
 
-        // 와드 위치 계산 (플레이어 앞)
-        const wardX = this.player.x;
-        const wardY = this.player.y - skillInfo.range;
+        // 와드 위치 계산 (마우스 커서 위치 또는 플레이어 위치)
+        const wardX = options.targetX || this.player.x;
+        const wardY = options.targetY || this.player.y;
 
         console.log(`마법사 와드 설치! 위치: (${wardX}, ${wardY}), 지속시간: ${skillInfo.duration}ms`);
 

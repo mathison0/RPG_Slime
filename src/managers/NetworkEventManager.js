@@ -1031,20 +1031,23 @@ export default class NetworkEventManager {
      * 와드 파괴 처리
      */
     handleWardDestroyed(data) {
+        console.log('와드 파괴 이벤트 받음:', data);
+        
+        // 와드 ID로 해당 와드 찾기
         this.scene.children.list.forEach(child => {
-            if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
-                // 파괴 이펙트
-                const explosion = this.scene.add.circle(child.x, child.y, 50, 0xff0000, 0.5);
-                this.scene.tweens.add({
-                    targets: explosion,
-                    scaleX: 2,
-                    scaleY: 2,
-                    alpha: 0,
-                    duration: 500,
-                    onComplete: () => explosion.destroy()
-                });
-                
-                child.destroy();
+            if (child.texture && child.texture.key === 'ward') {
+                // 와드 ID가 일치하거나, 소유자가 일치하는 와드 찾기
+                if (child.wardId === data.wardId || 
+                    (child.ownerId === data.playerId && !child.isOtherPlayerWard)) {
+                    
+                    console.log('와드 파괴됨:', child);
+                    
+                    if (child.destroyWard) {
+                        child.destroyWard();
+                    } else {
+                        child.destroy();
+                    }
+                }
             }
         });
     }
