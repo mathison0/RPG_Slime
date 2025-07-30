@@ -379,7 +379,9 @@ class GameStateManager {
 
     // 실제 데미지 적용
     const actualDamage = damage;
+    const oldHp = target.hp;
     target.hp = Math.max(0, target.hp - actualDamage);
+    const targetDied = target.hp <= 0 && oldHp > 0;
 
     // 몬스터가 피격당한 경우 공격자를 타겟으로 설정
     if (target.mapLevel !== undefined && attacker.team !== undefined) {
@@ -400,6 +402,34 @@ class GameStateManager {
         id: attacker.id,
         timestamp: Date.now()
       };
+    }
+
+    // 타겟이 죽었을 때 경험치 지급
+    if (targetDied) {
+      if (attacker.team !== undefined) { // 공격자가 플레이어인 경우
+        if (target.mapLevel !== undefined) {
+          // 플레이어가 몬스터를 죽임
+          const expAmount = this.calculateMonsterKillExp(target);
+          this.giveExperience(attacker, expAmount, 'monster');
+          console.log(`플레이어 ${attacker.id}가 몬스터 ${target.id}를 죽여 ${expAmount} 경험치 획득`);
+          
+          // 몬스터 사망 이벤트 브로드캐스트
+          if (this.io) {
+            this.io.emit('enemy-destroyed', { enemyId: target.id });
+          }
+          
+          // 적 제거
+          this.removeEnemy(target.id);
+        } else if (target.team !== undefined && target.team !== attacker.team) {
+          // 플레이어가 상대팀 플레이어를 죽임 (PvP)
+          const expAmount = this.calculatePvpKillExp(attacker, target);
+          this.giveExperience(attacker, expAmount, 'pvp');
+          console.log(`플레이어 ${attacker.id}가 플레이어 ${target.id}를 죽여 ${expAmount} 경험치 획득`);
+          
+          // 타겟 플레이어 사망 처리
+          target.isDead = true;
+        }
+      }
     }
 
     // 이벤트 브로드캐스트
@@ -492,6 +522,83 @@ class GameStateManager {
       actualHeal: actualHeal,
       newHp: target.hp
     };
+  }
+
+  /**
+   * PvP 킬 시 경험치 계산
+   * @param {Object} killer - 킬러 플레이어
+   * @param {Object} victim - 피해자 플레이어
+   * @returns {number} - 지급할 경험치
+   */
+  calculatePvpKillExp(killer, victim) {
+    // 죽은 플레이어 레벨 x 100
+    return victim.level * 100;
+  }
+
+  /**
+   * 몬스터 킬 시 경험치 계산
+   * @param {Object} monster - 죽은 몬스터
+   * @returns {number} - 지급할 경험치
+   */
+  calculateMonsterKillExp(monster) {
+    // MonsterConfig에서 기본 경험치와 맵 레벨 배율 적용
+    const baseExp = MonsterConfig.BASE_MONSTER_STATS[monster.type]?.exp || 0;
+    const expMultiplier = MonsterConfig.EXP_MULTIPLIERS[monster.mapLevel] || 1.0;
+    return Math.floor(baseExp * expMultiplier);
+  }
+
+  /**
+   * 경험치 지급 및 레벨업 처리
+   * @param {Object} player - 경험치를 받을 플레이어
+   * @param {number} expAmount - 지급할 경험치
+   * @param {string} source - 경험치 소스 (monster, pvp)
+   */
+  giveExperience(player, expAmount, source = 'unknown') {
+    if (!player || expAmount <= 0) return;
+
+    console.log(`플레이어 ${player.id} 경험치 지급: ${expAmount} (소스: ${source})`);
+    
+    const oldExp = player.exp;
+    const oldLevel = player.level;
+    
+    // 경험치 추가
+    player.exp += expAmount;
+    
+    // 레벨업 체크
+    let leveledUp = false;
+    while (player.exp >= player.expToNext) {
+      player.exp -= player.expToNext;
+      player.levelUp();
+      leveledUp = true;
+      console.log(`플레이어 ${player.id} 레벨업! 새 레벨: ${player.level}`);
+    }
+    
+    // 경험치 획득 이벤트 브로드캐스트
+    if (this.io) {
+      this.io.emit('player-exp-gained', {
+        playerId: player.id,
+        expGained: expAmount,
+        totalExp: player.exp,
+        expToNext: player.expToNext,
+        source: source
+      });
+      
+      // 레벨업 시 레벨업 이벤트 브로드캐스트
+      if (leveledUp) {
+        this.io.emit('player-level-up', {
+          playerId: player.id,
+          newLevel: player.level,
+          oldLevel: oldLevel,
+          stats: {
+            hp: player.hp,
+            maxHp: player.maxHp,
+            attack: player.attack,
+            speed: player.speed,
+            size: player.size
+          }
+        });
+      }
+    }
   }
 }
 

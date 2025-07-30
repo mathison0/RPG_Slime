@@ -79,9 +79,9 @@ const gameConfig = {
   
   // 서버 관련 설정
   SERVER: {
-    GAME_LOOP_INTERVAL: 15, // 15ms
+    GAME_LOOP_INTERVAL: 50,
     DEFAULT_PORT: 3000
   }
 };
 
-module.exports = gameConfig; 
+module.exports = gameConfig;

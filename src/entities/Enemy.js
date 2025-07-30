@@ -33,6 +33,10 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         // UI 요소
         this.healthBar = null;
         
+        // 어그로 표시 UI
+        this.aggroIndicator = null;
+        this.isTargetingPlayer = false;
+        
         // 기본 물리 설정
         this.initializePhysics();
         
@@ -132,6 +136,98 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         if (this.healthBar) {
             this.healthBar.updateHealth(this.hp, this.maxHp);
             this.healthBar.updatePosition();
+            
+            // 체력바 위치 변경 시 어그로 표시 위치도 업데이트
+            this.updateAggroIndicatorPosition();
+        }
+    }
+    
+    /**
+     * 어그로 표시 생성
+     */
+    createAggroIndicator() {
+        if (this.aggroIndicator) {
+            this.aggroIndicator.destroy();
+        }
+        
+        // 초기 위치 계산 (체력바 기준)
+        let initialY;
+        if (this.healthBar && this.healthBar.container) {
+            initialY = this.healthBar.container.y - 15; // 체력바 위 15px
+        } else {
+            initialY = this.y - this.height / 2 - 20;
+        }
+        
+        // 빨간색 "!" 텍스트 생성
+        this.aggroIndicator = this.scene.add.text(this.x, initialY, '!', {
+            fontSize: '20px',
+            fontStyle: 'bold',
+            fill: '#ff0000',
+            stroke: '#ffffff',
+            strokeThickness: 2
+        });
+        
+        // 텍스트를 중앙 정렬
+        this.aggroIndicator.setOrigin(0.5, 0.5);
+        
+        // 어그로 표시를 적보다 높은 depth로 설정
+        this.aggroIndicator.setDepth(700);
+        
+        // 어그로 표시 위치 업데이트 (한 번 더 정확한 위치로 조정)
+        this.updateAggroIndicatorPosition();
+    }
+    ㅇ
+    /**
+     * 어그로 표시 제거
+     */
+    removeAggroIndicator() {
+        if (this.aggroIndicator) {
+            this.aggroIndicator.destroy();
+            this.aggroIndicator = null;
+        }
+    }
+    
+    /**
+     * 어그로 표시 위치 업데이트
+     */
+    updateAggroIndicatorPosition() {
+        if (this.aggroIndicator) {
+            let aggroY;
+            
+            // 체력바가 있으면 체력바 위에 배치
+            if (this.healthBar && this.healthBar.container) {
+                aggroY = this.healthBar.container.y - 15; // 체력바 위 15px
+            } else {
+                // 체력바가 없으면 기본 위치 사용
+                aggroY = this.y - this.height / 2 - 20;
+            }
+            
+            this.aggroIndicator.setPosition(this.x, aggroY);
+        }
+    }
+    
+    /**
+     * 어그로 정보 업데이트 처리
+     * @param {string|null} targetId - 몬스터가 타겟팅하는 플레이어 ID
+     */
+    handleAggroUpdate(targetId) {
+        // 현재 플레이어 ID 가져오기 (NetworkManager에서)
+        const currentPlayerId = this.scene.networkManager?.playerId;
+        
+        // 현재 플레이어가 어그로 대상인지 확인
+        const isPlayerTargeted = targetId === currentPlayerId;
+        
+        // 이전 상태와 다른 경우에만 업데이트
+        if (this.isTargetingPlayer !== isPlayerTargeted) {
+            this.isTargetingPlayer = isPlayerTargeted;
+            
+            if (this.isTargetingPlayer) {
+                // 현재 플레이어가 어그로 대상이면 빨간색 ! 표시
+                this.createAggroIndicator();
+            } else {
+                // 어그로 대상이 아니면 표시 제거
+                this.removeAggroIndicator();
+            }
         }
     }
     
@@ -183,7 +279,10 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
             }
         }
         
-        // 체력바 업데이트
+        // 어그로 정보 처리
+        this.handleAggroUpdate(enemyData.targetId);
+        
+        // 체력바 업데이트 (내부에서 어그로 위치도 함께 업데이트됨)
         this.updateHealthBar();
     }
     
@@ -233,6 +332,12 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         if (this.healthBar) {
             this.healthBar.destroy();
             this.healthBar = null;
+        }
+        
+        // 어그로 표시가 있다면 제거
+        if (this.aggroIndicator) {
+            this.aggroIndicator.destroy();
+            this.aggroIndicator = null;
         }
         
         // HP 바가 있다면 제거 (기존 코드 호환성)

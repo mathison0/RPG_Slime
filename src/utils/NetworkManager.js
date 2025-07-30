@@ -198,9 +198,19 @@ class NetworkManager {
             this.emit('projectile-hit-enemy', data);
         });
 
-        // 공격 무효 이벤트 (무적 상태, 레벨 차이 등)
+        // 근접 공격 이벤트
+        this.socket.on('melee-attack-performed', (data) => {
+            this.emit('melee-attack-performed', data);
+        });
+
+        // 공격 무효 이벤트
         this.socket.on('attack-invalid', (data) => {
             this.emit('attack-invalid', data);
+        });
+
+        // 적 기절 이벤트
+        this.socket.on('enemy-stunned', (data) => {
+            this.emit('enemy-stunned', data);
         });
 
         // 플레이어 무적 상태 변경 이벤트
@@ -216,11 +226,6 @@ class NetworkManager {
         // 자살 치트 에러 이벤트
         this.socket.on('suicide-error', (data) => {
             this.emit('suicide-error', data);
-        });
-
-        // 몬스터 기절 상태 이벤트
-        this.socket.on('enemy-stunned', (data) => {
-            this.emit('enemy-stunned', data);
         });
     }
 

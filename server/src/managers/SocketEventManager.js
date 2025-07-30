@@ -429,30 +429,12 @@ class SocketEventManager {
         const result = this.gameStateManager.takeDamage(player, enemy, player.attack);
         
         if (result.success) {
-          // 몬스터 사망 체크
+          // 몬스터가 죽었으면 새로운 적 스폰
           if (enemy.hp <= 0) {
-            // 적 제거 및 경험치 지급
-            this.gameStateManager.removeEnemy(data.enemyId);
-            const leveledUp = player.gainExp(25); // 적 처치 시 25 경험치
-            
-            this.io.emit('enemy-destroyed', { enemyId: data.enemyId });
-            
-            if (leveledUp) {
-              this.io.emit('player-level-up', {
-                playerId: socket.id,
-                level: player.level,
-                stats: {
-                  hp: player.hp,
-                  maxHp: player.maxHp,
-                  attack: player.attack
-                }
-              });
-            }
-            
             // 새로운 적 스폰
             this.enemyManager.spawnEnemy();
           }
-          // 데미지 이벤트는 통합 함수에서 이미 처리됨
+          // 데미지 이벤트와 경험치 지급은 통합 함수에서 이미 처리됨
         }
       }
     });
@@ -516,7 +498,7 @@ class SocketEventManager {
   }
 
     /**
-   * 투사체 발사 이벤트 핸들러
+   * 투사체 이벤트 핸들러
    */
   setupProjectileHandler(socket) {
     socket.on('fire-projectile', (data) => {
@@ -553,6 +535,67 @@ class SocketEventManager {
         };
         
         this.io.emit('projectile-created', projectileData);
+      }
+    });
+
+    // 근접 공격 이벤트 핸들러 추가
+    socket.on('use-basic-attack', (data) => {
+      const timestamp = Date.now();
+      console.log(`\n[${timestamp}] [${socket.id}] use-basic-attack 요청 받음:`, data);
+      
+      const playerId = socket.id;
+      const player = this.gameStateManager.getPlayer(playerId);
+      
+      if (!player) {
+        console.log(`[${timestamp}] [${playerId}] 플레이어를 찾을 수 없음`);
+        return;
+      }
+
+      console.log(`[${timestamp}] [${playerId}] 플레이어 찾음:`, {
+        id: player.id,
+        jobClass: player.jobClass,
+        x: player.x,
+        y: player.y
+      });
+
+      // 스킬 매니저를 통해 근접 공격 처리
+      const result = this.skillManager.useSkill(player, 'basic_attack', data.targetX, data.targetY);
+      
+      console.log(`[${timestamp}] [${playerId}] 스킬 사용 결과:`, result);
+      
+      if (result.success) {
+        // 데미지 적용
+        const damageResult = this.skillManager.applySkillDamage(
+          player, 
+          'basic_attack', 
+          result.skillInfo, 
+          player.x, 
+          player.y, 
+          data.targetX, 
+          data.targetY
+        );
+
+        console.log(`[${timestamp}] [${playerId}] 데미지 결과:`, damageResult);
+
+        // 모든 클라이언트에게 근접 공격 이펙트 알림
+        const attackData = {
+          playerId: playerId,
+          jobClass: player.jobClass,
+          x: player.x,
+          y: player.y,
+          targetX: data.targetX,
+          targetY: data.targetY,
+          team: player.team,
+          damageResult: damageResult,
+          timestamp: result.timestamp
+        };
+
+        console.log(`[${timestamp}] [${playerId}] melee-attack-performed 이벤트 전송:`, attackData);
+        this.io.emit('melee-attack-performed', attackData);
+        
+        console.log(`[${timestamp}] [${playerId}] 근접 공격 처리 완료:`, damageResult);
+      } else {
+        console.log(`[${timestamp}] [${playerId}] 근접 공격 실패:`, result.error);
       }
     });
   }

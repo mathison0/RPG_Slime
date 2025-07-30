@@ -137,9 +137,9 @@ const JobClasses = {
                 damage: 'attack',
                 range: 100,
                 angleOffset: Math.PI / 4, 
-                delay: 1000, // 1초 시전 시간
-                afterDelay: 400, // 후딜레이 시간
-                stunDuration: 2000, // 2초 기절 지속시간
+                delay: 1000,
+                afterDelay: 300,
+                stunDuration: 2500,
                 key: 'E',
                 type: 'sweep'
             },
@@ -149,9 +149,10 @@ const JobClasses = {
                 cooldown: 4000,
                 damage: 'attack * 3',
                 range: 200,
-                width: 50, // 직사각형의 가로 길이
-                delay: 1500, // 1.5초 지연 데미지
-                afterDelay: 800, // 후딜레이 시간
+                width: 50,
+                delay: 1500,
+                afterDelay: 800,
+                stunDuration: 1000,
                 key: 'R',
                 type: 'thrust'
             }

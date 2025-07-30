@@ -464,6 +464,98 @@ class SkillManager {
   }
 
   /**
+   * 근접 부채꼴 공격 데미지 적용
+   */
+  applyMeleeSweepDamage(player, baseDamage, x, y, targetX, targetY, range, angleOffset) {
+    const damageResult = {
+      affectedEnemies: [],
+      affectedPlayers: [],
+      totalDamage: 0
+    };
+
+    const enemies = this.gameStateManager.enemies;
+    const players = this.gameStateManager.players;
+    const centerX = x;
+    const centerY = y;
+    const mouseX = targetX;
+    const mouseY = targetY;
+
+    // 적에게 데미지 적용 (Map 객체인 경우 values() 사용)
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    enemyArray.forEach(enemy => {
+      if (enemy.isDead) return;
+
+      const enemyX = enemy.x;
+      const enemyY = enemy.y;
+      
+      // 범위 내에 있는지 확인
+      if (this.isInMeleeSweepRange(centerX, centerY, enemyX, enemyY, mouseX, mouseY, range, angleOffset)) {
+        const damage = Math.floor(baseDamage);
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y,
+            type: enemy.type
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    // 다른 플레이어에게 데미지 적용 (PvP) (Map 객체인 경우 values() 사용)
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+    playerArray.forEach(targetPlayer => {
+      if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) return;
+
+      const playerX = targetPlayer.x;
+      const playerY = targetPlayer.y;
+      
+      // 범위 내에 있는지 확인
+      if (this.isInMeleeSweepRange(centerX, centerY, playerX, playerY, mouseX, mouseY, range, angleOffset)) {
+        const damage = Math.floor(baseDamage * 0.5); // PvP 데미지는 50%
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+        
+        if (result.success) {
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y,
+            team: targetPlayer.team
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    return damageResult;
+  }
+
+  /**
+   * 근접 부채꼴 범위 내에 있는지 확인
+   */
+  isInMeleeSweepRange(centerX, centerY, targetX, targetY, mouseX, mouseY, range, angleOffset) {
+    const distance = Math.sqrt((targetX - centerX) ** 2 + (targetY - centerY) ** 2);
+    if (distance > range) return false;
+
+    const angleToMouse = Math.atan2(mouseY - centerY, mouseX - centerX);
+    const angleToTarget = Math.atan2(targetY - centerY, targetX - centerX);
+    
+    let angleDiff = Math.abs(angleToMouse - angleToTarget);
+    if (angleDiff > Math.PI) {
+      angleDiff = 2 * Math.PI - angleDiff;
+    }
+    
+    return angleDiff <= angleOffset;
+  }
+
+  /**
    * 기본 공격 처리
    */
   handleBasicAttack(player, targetX, targetY) {
@@ -584,7 +676,7 @@ class SkillManager {
           }
           
           console.log(`휩쓸기 지연 데미지 적용! 플레이어: ${player.id}`);
-          this.applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult);
+          this.applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo);
           player.delayedActions.delete('sweep');
         }, sweepDelay);
         
@@ -606,7 +698,7 @@ class SkillManager {
           }
           
           console.log(`찌르기 지연 데미지 적용! 플레이어: ${player.id}`);
-          this.applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult);
+          this.applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo);
           player.delayedActions.delete('thrust');
         }, delay);
         
@@ -629,7 +721,7 @@ class SkillManager {
     };
 
     if (skillType === 'spread') {
-      this.applySpreadDamage(player, x, y, skillInfo.range, skillInfo.damage, damageResult);
+      this.applySpreadDamage(player, x, y, skillInfo.range, skillInfo.damage, damageResult, skillInfo);
     }
 
     return damageResult;
@@ -804,16 +896,15 @@ class SkillManager {
   }
 
   // 공통 데미지 적용 메서드들
-  applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult) {
+  applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo = null) {
     console.log(`applySweepDamage 호출됨! 플레이어: ${player.id}, 범위: ${range}, 데미지: ${damage}`);
     
-    // JobClasses에서 휩쓸기 스킬의 stunDuration 값 가져오기
-    const { getJobInfo } = require('../../shared/JobClasses.js');
-    const warriorJobInfo = getJobInfo('warrior');
-    const sweepSkill = warriorJobInfo.skills.find(skill => skill.type === 'sweep');
-    const stunDuration = sweepSkill ? sweepSkill.stunDuration : 2000; // 기본값 2초
+    // skillInfo에서 stunDuration 가져오기 (일반화된 처리)
+    const stunDuration = skillInfo?.stunDuration || 0;
     
-    console.log(`기절 지속시간: ${stunDuration}ms`);
+    if (stunDuration > 0) {
+      console.log(`기절 지속시간: ${stunDuration}ms`);
+    }
     
     // 적들 대상
     enemies.forEach(enemy => {
@@ -822,19 +913,23 @@ class SkillManager {
         const result = this.gameStateManager.takeDamage(player, enemy, damage);
         
         if (result.success) {
-          // 몬스터에게도 기절 효과 적용
-          console.log(`몬스터 ${enemy.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
-          enemy.startStun(stunDuration);
-          
-          damageResult.affectedEnemies.push({
+          const enemyData = {
             id: enemy.id,
             damage: damage,
             actualDamage: result.actualDamage,
             x: enemy.x,
-            y: enemy.y,
-            isStunned: true,
-            stunDuration: stunDuration
-          });
+            y: enemy.y
+          };
+          
+          // 기절 효과가 있는 경우에만 적용
+          if (stunDuration > 0) {
+            console.log(`몬스터 ${enemy.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
+            enemy.startStun(stunDuration);
+            enemyData.isStunned = true;
+            enemyData.stunDuration = stunDuration;
+          }
+          
+          damageResult.affectedEnemies.push(enemyData);
           damageResult.totalDamage += result.actualDamage;
         }
       }
@@ -847,27 +942,36 @@ class SkillManager {
         const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
         if (result.success) {
-          // 기절 효과 적용
-          console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
-          targetPlayer.startStun(stunDuration);
-          
-          damageResult.affectedPlayers.push({
+          const playerData = {
             id: targetPlayer.id,
             damage: damage,
             actualDamage: result.actualDamage,
             x: targetPlayer.x,
             y: targetPlayer.y,
-            team: targetPlayer.team,
-            isStunned: true,
-            stunDuration: stunDuration
-          });
+            team: targetPlayer.team
+          };
+          
+          // 기절 효과가 있는 경우에만 적용
+          if (stunDuration > 0) {
+            console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
+            targetPlayer.startStun(stunDuration);
+            playerData.isStunned = true;
+            playerData.stunDuration = stunDuration;
+          }
+          
+          damageResult.affectedPlayers.push(playerData);
           damageResult.totalDamage += result.actualDamage;
         }
       }
     });
   }
 
-  applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult) {
+  applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo = null) {
+    console.log(`applyThrustDamage 호출됨! 플레이어: ${player.id}, 범위: ${range}, 데미지: ${damage}`);
+    
+    // skillInfo에서 stunDuration 가져오기 (일반화된 처리)
+    const stunDuration = skillInfo?.stunDuration || 0;
+    
     // 적들 대상
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
@@ -875,13 +979,23 @@ class SkillManager {
         const result = this.gameStateManager.takeDamage(player, enemy, damage);
         
         if (result.success) {
-          damageResult.affectedEnemies.push({
+          const enemyData = {
             id: enemy.id,
             damage: damage,
             actualDamage: result.actualDamage,
             x: enemy.x,
             y: enemy.y
-          });
+          };
+          
+          // 기절 효과가 있는 경우에만 적용
+          if (stunDuration > 0) {
+            console.log(`몬스터 ${enemy.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
+            enemy.startStun(stunDuration);
+            enemyData.isStunned = true;
+            enemyData.stunDuration = stunDuration;
+          }
+          
+          damageResult.affectedEnemies.push(enemyData);
           damageResult.totalDamage += result.actualDamage;
         }
       }
@@ -894,21 +1008,40 @@ class SkillManager {
         const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
         if (result.success) {
-          damageResult.affectedPlayers.push({
+          const playerData = {
             id: targetPlayer.id,
             damage: damage,
             actualDamage: result.actualDamage,
             x: targetPlayer.x,
             y: targetPlayer.y,
             team: targetPlayer.team
-          });
+          };
+          
+          // 기절 효과가 있는 경우에만 적용
+          if (stunDuration > 0) {
+            console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
+            targetPlayer.startStun(stunDuration);
+            playerData.isStunned = true;
+            playerData.stunDuration = stunDuration;
+          }
+          
+          damageResult.affectedPlayers.push(playerData);
           damageResult.totalDamage += result.actualDamage;
         }
       }
     });
   }
 
-  applySpreadDamage(player, x, y, range, damage, damageResult) {
+  applySpreadDamage(player, x, y, range, damage, damageResult, skillInfo = null) {
+    console.log(`applySpreadDamage 호출됨! 플레이어: ${player.id}, 범위: ${range}, 데미지: ${damage}`);
+    
+    // skillInfo에서 stunDuration 가져오기 (일반화된 처리)
+    const stunDuration = skillInfo?.stunDuration || 0;
+    
+    if (stunDuration > 0) {
+      console.log(`기절 지속시간: ${stunDuration}ms`);
+    }
+    
     const enemies = this.gameStateManager.enemies;
     const players = this.gameStateManager.players;
 
@@ -921,13 +1054,23 @@ class SkillManager {
         const result = this.gameStateManager.takeDamage(player, enemy, damage);
         
         if (result.success) {
-          damageResult.affectedEnemies.push({
+          const enemyData = {
             id: enemy.id,
             damage: damage,
             actualDamage: result.actualDamage,
             x: enemy.x,
             y: enemy.y
-          });
+          };
+          
+          // 기절 효과가 있는 경우에만 적용
+          if (stunDuration > 0) {
+            console.log(`몬스터 ${enemy.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
+            enemy.startStun(stunDuration);
+            enemyData.isStunned = true;
+            enemyData.stunDuration = stunDuration;
+          }
+          
+          damageResult.affectedEnemies.push(enemyData);
           damageResult.totalDamage += result.actualDamage;
         }
       }
@@ -942,14 +1085,24 @@ class SkillManager {
         const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
         if (result.success) {
-          damageResult.affectedPlayers.push({
+          const playerData = {
             id: targetPlayer.id,
             damage: damage,
             actualDamage: result.actualDamage,
             x: targetPlayer.x,
             y: targetPlayer.y,
             team: targetPlayer.team
-          });
+          };
+          
+          // 기절 효과가 있는 경우에만 적용
+          if (stunDuration > 0) {
+            console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
+            targetPlayer.startStun(stunDuration);
+            playerData.isStunned = true;
+            playerData.stunDuration = stunDuration;
+          }
+          
+          damageResult.affectedPlayers.push(playerData);
           damageResult.totalDamage += result.actualDamage;
         }
       }
