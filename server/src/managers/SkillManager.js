@@ -22,8 +22,8 @@ class SkillManager {
       return { success: false, error: 'Cannot use skills while dead' };
     }
 
-    // 기절 상태에서는 스킬 사용 불가
-    if (player.isStunned) {
+    // 기절 상태에서는 스킬 사용 불가 (보호막 제외)
+    if (player.isStunned && skillType !== 'shield') {
       return { success: false, error: 'Cannot use skills while stunned' };
     }
 
@@ -1431,21 +1431,15 @@ class SkillManager {
 
     // 다른 플레이어에게 슬로우 효과 적용 (적팀만)
     const playerArray = Array.isArray(players) ? players : Array.from(players.values());
-    console.log(`playerArray 길이: ${playerArray.length}`);
-    console.log(`playerArray:`, playerArray);
     
     playerArray.forEach(targetPlayer => {
-      console.log(`플레이어 처리 중: ${targetPlayer.id}, 위치: (${targetPlayer.x}, ${targetPlayer.y}), 팀: ${targetPlayer.team}, 내 팀: ${player.team}, isDead: ${targetPlayer.isDead}`);
-      
       if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) {
-        console.log(`플레이어 ${targetPlayer.id} 제외됨: 자기자신=${targetPlayer.id === player.id}, 죽음=${targetPlayer.isDead}, 같은팀=${targetPlayer.team === player.team}`);
-        return;
+          return;
       }
 
       const distance = Math.sqrt(
         Math.pow(targetPlayer.x - x, 2) + Math.pow(targetPlayer.y - y, 2)
       );
-      console.log(`플레이어 ${targetPlayer.id} 거리: ${distance}, 범위: ${range}`);
       
       if (distance <= range) {
         // 슬로우 효과 적용 (속도 50% 감소)
@@ -1464,12 +1458,6 @@ class SkillManager {
         targetPlayer.slowEffects.push(slowEffect);
         
         // 슬로우 효과를 클라이언트에 알림
-        console.log(`player-slowed 이벤트 전송:`, {
-          playerId: targetPlayer.id,
-          effectId: slowEffect.id,
-          speedReduction: slowEffect.speedReduction,
-          duration: slowEffect.duration
-        });
         this.gameStateManager.io.emit('player-slowed', {
           playerId: targetPlayer.id,
           effectId: slowEffect.id,

@@ -22,17 +22,17 @@ class ServerPlayer {
     this.team = team;
     this.level = 1;
     this.exp = 0;
-    this.expToNext = gameConfig.PLAYER.EXP.BASE_REQUIRED;
-    this.maxHp = gameConfig.PLAYER.DEFAULT_HP;
+    this.expToNext = 100;
+    this.maxHp = 100;
     this.hp = this.maxHp;
-    this.speed = gameConfig.PLAYER.DEFAULT_SPEED;
-    this.attack = gameConfig.PLAYER.DEFAULT_ATTACK;
+    this.speed = 200;
+    this.attack = 20;
     this.jobClass = 'slime';
     this.job = null; // 직업 클래스 인스턴스
     this.direction = 'front';
     this.isJumping = false;
-    this.size = gameConfig.PLAYER.DEFAULT_SIZE;
-    this.visionRange = gameConfig.PLAYER.VISION_RANGE;
+    this.size = 32;
+    this.visionRange = 300;
     this.lastUpdate = Date.now();
     this.nickname = 'Player';
     this.isDead = false; // 사망 상태
@@ -41,13 +41,13 @@ class ServerPlayer {
     // 스킬 관련
     this.skillCooldowns = {}; // 스킬별 마지막 사용 시간
     this.activeEffects = new Set(); // 활성 효과들
-    
+
     // 액션 상태 추가
     this.currentActions = {
       jump: null,      // { startTime, duration, endTime }
       skills: new Map() // skillType -> { startTime, duration, endTime, skillInfo }
     };
-    
+
     // 지연된 액션들 (setTimeout ID 저장)
     this.delayedActions = new Map(); // actionId -> timeoutId
     
@@ -165,9 +165,9 @@ class ServerPlayer {
         thrust: 'skill3'
       },
       mage: {
-        ward: 'skill1',
-        ice_field: 'skill2',
-        magic_missile: 'skill3'
+        ice_field: 'skill1',
+        magic_missile: 'skill2',
+        shield: 'skill3'
       },
       mechanic: {
         repair: 'skill1'
@@ -398,7 +398,7 @@ class ServerPlayer {
     
     // 직업 변경 시 즉시 스탯 업데이트
     this.initializeStatsFromJobClass();
-    
+
     console.log(`플레이어 ${this.id} 직업 변경: ${newJobClass}, 새로운 스탯 적용 완료`);
   }
 
@@ -436,24 +436,6 @@ class ServerPlayer {
   }
 
   /**
-   * 기절 상태 종료
-   */
-  endStun() {
-    this.isStunned = false;
-    this.stunStartTime = 0;
-    this.stunDuration = 0;
-    
-    // 기절 상태 해제를 모든 클라이언트에게 즉시 알림
-    if (global.io) {
-      global.io.emit('player-stunned', {
-        playerId: this.id,
-        isStunned: false,
-        duration: 0
-      });
-    }
-  }
-
-  /**
    * 기절 상태 시작
    */
   startStun(duration) {
@@ -468,13 +450,12 @@ class ServerPlayer {
       }
     }, duration);
     
-    
     // 기절 상태 변경을 모든 클라이언트에게 즉시 알림
     if (global.io) {
+      console.log("startStun", duration);
       global.io.emit('player-stunned', {
         playerId: this.id,
-        isStunned: true,
-        duration: duration
+        isStunned: true
       });
     }
   }
@@ -491,8 +472,7 @@ class ServerPlayer {
     if (global.io) {
       global.io.emit('player-stunned', {
         playerId: this.id,
-        isStunned: false,
-        duration: 0
+        isStunned: false
       });
     }
   }

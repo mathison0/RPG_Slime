@@ -58,6 +58,9 @@ export default class NetworkEventManager {
         this.networkManager.off('attack-invalid');
         this.networkManager.off('enemy-stunned');
         this.networkManager.off('magic-missile-explosion');
+        this.networkManager.off('shield-exploded');
+        this.networkManager.off('shield-removed');
+        this.networkManager.off('enemies-knockback');
         
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
@@ -148,6 +151,21 @@ export default class NetworkEventManager {
             this.handleMagicMissileExplosion(data);
         });
         
+        // 보호막 폭발 이벤트
+        this.networkManager.on('shield-exploded', (data) => {
+            this.handleShieldExploded(data);
+        });
+        
+        // 보호막 제거 이벤트
+        this.networkManager.on('shield-removed', (data) => {
+            this.handleShieldRemoved(data);
+        });
+        
+        // 몬스터 밀어내기 이벤트
+        this.networkManager.on('enemies-knockback', (data) => {
+            this.handleEnemiesKnockback(data);
+        });
+        
         // 슬로우 효과 이벤트 리스너 추가
         this.networkManager.on('enemy-slowed', (data) => {
             this.handleEnemySlowed(data);
@@ -222,10 +240,6 @@ export default class NetworkEventManager {
         
         this.networkManager.on('player-respawned', (data) => {
             this.handlePlayerRespawned(data);
-        });
-        
-        this.networkManager.on('player-state-sync', (data) => {
-            this.handlePlayerStateSync(data);
         });
         
         this.networkManager.on('suicide-error', (data) => {
@@ -444,7 +458,10 @@ export default class NetworkEventManager {
                     otherPlayer.updateCharacterSize();
                 }
                 
-                otherPlayer.updateJobSprite();
+                // 스킬 시전 중이 아닐 때만 스프라이트 업데이트 (스킬 스프라이트 보호)
+                if (!otherPlayer.isCasting) {
+                    otherPlayer.updateJobSprite();
+                }
             }
             // HP 정보 업데이트
             if (data.hp !== undefined && data.hp !== otherPlayer.hp) {
@@ -454,17 +471,12 @@ export default class NetworkEventManager {
                 otherPlayer.maxHp = data.maxHp;
             }
             
-            // 기절 상태 업데이트
-            if (data.isStunned !== undefined && data.isStunned !== otherPlayer.isStunned) {
-                otherPlayer.isStunned = data.isStunned;
-                // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
-                if (data.isStunned) {
-                    this.showStunEffect(otherPlayer, 2000); // 2초 기절
-                }
-            }
+            // 기절 상태는 player-stunned 이벤트로만 업데이트 (중복 처리 방지)
             
-            // 스프라이트 업데이트
-            otherPlayer.updateJobSprite();
+            // 스킬 시전 중이 아닐 때만 스프라이트 업데이트 (스킬 스프라이트 보호)
+            if (!otherPlayer.isCasting) {
+                otherPlayer.updateJobSprite();
+            }
         }
     }
 
@@ -491,6 +503,38 @@ export default class NetworkEventManager {
         if (data.x !== undefined && data.y !== undefined && data.skillType !== 'roll') {
             console.log(`스킬 사용으로 인한 위치 업데이트: (${player.x}, ${player.y}) -> (${data.x}, ${data.y})`);
             player.setPosition(data.x, data.y);
+        }
+        
+        // 본인 플레이어인 경우 쿨타임 설정 (서버 endTime 기반)
+        if (data.playerId === this.networkManager.playerId && player.job) {
+            // 서버에서 온 쿨타임 정보 사용
+            const cooldownInfo = data.cooldownInfo;
+            if (cooldownInfo && cooldownInfo.totalCooldown > 0) {
+                // 서버 스킬 타입을 클라이언트 스킬 키로 변환
+                let skillKey = null;
+                
+                if (data.skillType === 'basic_attack') {
+                    skillKey = 'basic_attack'; // 기본 공격은 그대로 사용
+                } else {
+                    skillKey = player.getClientSkillKey(data.skillType);
+                }
+                
+                if (skillKey && typeof player.job.setSkillCooldown === 'function') {
+                    // 서버에서 온 총 쿨타임 시간 사용
+                    player.job.setSkillCooldown(skillKey, cooldownInfo.totalCooldown);
+                    
+                    // 서버에서 온 쿨타임 정보를 플레이어에 저장 (UI에서 사용)
+                    if (!player.serverCooldownInfo) {
+                        player.serverCooldownInfo = {};
+                    }
+                    player.serverCooldownInfo[skillKey] = {
+                        totalCooldown: cooldownInfo.totalCooldown,
+                        endTime: cooldownInfo.cooldownEndTime
+                    };
+                    
+                    console.log(`서버 승인 후 쿨타임 설정: ${skillKey} (총 ${cooldownInfo.totalCooldown}ms, 종료: ${cooldownInfo.cooldownEndTime})`);
+                }
+            }
         }
 
         // 서버 스킬 정보 추출
@@ -752,6 +796,22 @@ export default class NetworkEventManager {
                     const damageToShow = enemyData.actualDamage || enemyData.damage;
                     this.scene.effectManager.showDamageText(enemy.x, enemy.y, damageToShow);
                     
+                    // 피격 상태 설정 및 tint 업데이트
+                    enemy.isDamaged = true;
+                    if (enemy.updateTint) {
+                        enemy.updateTint();
+                    }
+                    
+                    // 200ms 후 피격 상태 해제
+                    this.scene.time.delayedCall(200, () => {
+                        if (enemy && enemy.active && !enemy.isDead) {
+                            enemy.isDamaged = false;
+                            if (enemy.updateTint) {
+                                enemy.updateTint();
+                            }
+                        }
+                    });
+                    
                     // 적 체력 업데이트 (서버에서 이미 처리됨)
                     // 실제 HP는 서버에서 관리되므로 클라이언트에서는 시각적 효과만
                     if (enemy.updateHealthFromServer) {
@@ -769,17 +829,9 @@ export default class NetworkEventManager {
             damageResult.affectedPlayers.forEach(playerData => {
                 const targetPlayer = this.scene.otherPlayers?.getChildren().find(p => p.networkId === playerData.id);
                 if (targetPlayer) {
-                    // 실제 적용된 데미지 텍스트 표시 (서버에서 계산된 정확한 값)
                     const damageToShow = playerData.actualDamage || playerData.damage;
                     this.scene.effectManager.showDamageText(targetPlayer.x, targetPlayer.y, damageToShow);
                     
-                    // 기절 효과 표시
-                    if (playerData.isStunned) {
-                        this.showStunEffect(targetPlayer, playerData.stunDuration);
-                    }
-                    
-                    // 플레이어 체력 업데이트 (서버에서 이미 처리됨)
-                    // 실제 HP는 서버에서 관리되므로 클라이언트에서는 시각적 효과만
                     if (targetPlayer.updateHealthFromServer) {
                         targetPlayer.updateHealthFromServer();
                     }
@@ -986,6 +1038,10 @@ export default class NetworkEventManager {
             
             // 스킬 시전 중 상태
             this.scene.player.isCasting = myPlayerState.isCasting;
+
+            this.scene.player.isJumping = myPlayerState.isJumping;
+
+            this.scene.player.isDead = myPlayerState.isDead;
             
             // size 정보 업데이트
             if (myPlayerState.size !== undefined && myPlayerState.size !== this.scene.player.size) {
@@ -996,16 +1052,6 @@ export default class NetworkEventManager {
             // 무적 상태 정보 업데이트
             if (myPlayerState.isInvincible !== undefined) {
                 this.scene.player.isInvincible = myPlayerState.isInvincible;
-            }
-            
-            // 기절 상태 정보 업데이트
-            if (myPlayerState.isStunned !== undefined && myPlayerState.isStunned !== this.scene.player.isStunned) {
-                this.scene.player.isStunned = myPlayerState.isStunned;
-                
-                // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
-                if (myPlayerState.isStunned) {
-                    this.showStunEffect(this.scene.player, 2000); // 2초 기절
-                }
             }
             
             // 활성 액션 정보 업데이트 (점프 endTime 포함)
@@ -1057,16 +1103,6 @@ export default class NetworkEventManager {
                     // 무적 상태 정보 업데이트
                     if (playerState.isInvincible !== undefined) {
                         otherPlayer.isInvincible = playerState.isInvincible;
-                    }
-                    
-                    // 기절 상태 정보 업데이트
-                    if (playerState.isStunned !== undefined && playerState.isStunned !== otherPlayer.isStunned) {
-                        otherPlayer.isStunned = playerState.isStunned;
-                        
-                        // 기절 상태가 true로 변경되었을 때 시각적 효과 표시
-                        if (playerState.isStunned) {
-                            this.showStunEffect(otherPlayer, 2000); // 2초 기절
-                        }
                     }
                     
                     otherPlayer.updateJobSprite();
@@ -1179,14 +1215,27 @@ export default class NetworkEventManager {
         
         if (player) {
             player.isStunned = data.isStunned;
+            player.isStunnedTint = data.isStunned; // tint 상태 변수 업데이트
             
             if (data.isStunned) {
-                // 기절 효과 표시
-                this.showStunEffect(player, data.duration || 2000);
-            } else {
-                // 기절 상태 해제 시 색상 복원
-                player.clearTint();
+                this.scene.effectManager.showSkillMessage(
+                    player.x,
+                    player.y,
+                    '기절!', 
+                    { 
+                        fill: '#ffff00',
+                        fontSize: '14px',
+                        fontStyle: 'bold'
+                    }
+                );
             }
+            
+            // updateTint 호출하여 우선순위에 따라 tint 적용
+            if (player.updateTint) {
+                player.updateTint();
+            }
+        } else {
+            console.warn(`[기절 이벤트] 플레이어를 찾을 수 없음: ${data.playerId}`);
         }
     }
 
@@ -1244,6 +1293,14 @@ export default class NetworkEventManager {
         
         const enemy = this.scene.enemies.getChildren().find(e => e.networkId === data.enemyId);
         if (enemy) {
+            // tint 상태 모두 초기화 (사망 시)
+            enemy.isDamaged = false;
+            enemy.isStunnedTint = false;
+            enemy.isSlowedTint = false;
+            if (enemy.updateTint) {
+                enemy.updateTint();
+            }
+            
             enemy.destroy();
         }
     }
@@ -1259,7 +1316,24 @@ export default class NetworkEventManager {
             enemy.hp = data.hp;
             enemy.maxHp = data.maxHp;
             
+            // 데미지 텍스트 표시
             this.scene.effectManager.showDamageText(enemy.x, enemy.y, data.damage, '#ff0000');
+            
+            // 피격 상태 설정 및 tint 업데이트
+            enemy.isDamaged = true;
+            if (enemy.updateTint) {
+                enemy.updateTint();
+            }
+            
+            // 200ms 후 피격 상태 해제
+            this.scene.time.delayedCall(200, () => {
+                if (enemy && enemy.active && !enemy.isDead) {
+                    enemy.isDamaged = false;
+                    if (enemy.updateTint) {
+                        enemy.updateTint();
+                    }
+                }
+            });
         }
     }
 
@@ -1363,16 +1437,23 @@ export default class NetworkEventManager {
                 // 데미지 효과 표시 (스폰 배리어 표시 포함)
                 this.scene.effectManager.showDamageText(
                     this.scene.player.x, 
-                    this.scene.player.y - 60, 
+                    this.scene.player.y, 
                     `${data.damage} (스폰 배리어)`, 
                     '#ff0000'
                 );
                 
                 // 피격 효과
-                this.scene.player.setTint(0xff0000);
+                this.scene.player.isDamaged = true;
+                if (this.scene.player.updateTint) {
+                    this.scene.player.updateTint();
+                }
+                
                 this.scene.time.delayedCall(200, () => {
                     if (this.scene.player && this.scene.player.active && !this.scene.player.isDead) {
-                        this.scene.player.clearTint();
+                        this.scene.player.isDamaged = false;
+                        if (this.scene.player.updateTint) {
+                            this.scene.player.updateTint();
+                        }
                     }
                 });
             }
@@ -1422,8 +1503,14 @@ export default class NetworkEventManager {
                     otherPlayer.clearDelayedSkillEffects();
                 }
                 
-                // 색상 초기화 (데미지로 인한 빨간색 제거)
-                otherPlayer.clearTint();
+                // tint 상태 모두 초기화 (사망 시)
+                otherPlayer.isDamaged = false;
+                otherPlayer.isStunnedTint = false;
+                otherPlayer.isStealthTint = false;
+                otherPlayer.isSlowedTint = false;
+                if (otherPlayer.updateTint) {
+                    otherPlayer.updateTint();
+                }
                 
                 // 이름표도 숨기기
                 if (otherPlayer.nameText) {
@@ -1450,8 +1537,14 @@ export default class NetworkEventManager {
                 this.scene.player.isStunned = false;
                 this.scene.player.isStealth = false;
                 
-                // 색상 초기화 (데미지로 인한 빨간색 제거)
-                this.scene.player.clearTint();
+                // tint 상태 모두 초기화 (리스폰 시)
+                this.scene.player.isDamaged = false;
+                this.scene.player.isStunnedTint = false;
+                this.scene.player.isStealthTint = false;
+                this.scene.player.isSlowedTint = false;
+                if (this.scene.player.updateTint) {
+                    this.scene.player.updateTint();
+                }
                 
                 // 위치 설정 (스프라이트와 물리 바디 모두)
                 this.scene.player.setPosition(data.x, data.y);
@@ -1511,8 +1604,14 @@ export default class NetworkEventManager {
                     otherPlayer.clearDelayedSkillEffects();
                 }
                 
-                // 색상 초기화 (데미지로 인한 빨간색 제거)
-                otherPlayer.clearTint();
+                // tint 상태 모두 초기화 (리스폰 시)
+                otherPlayer.isDamaged = false;
+                otherPlayer.isStunnedTint = false;
+                otherPlayer.isStealthTint = false;
+                otherPlayer.isSlowedTint = false;
+                if (otherPlayer.updateTint) {
+                    otherPlayer.updateTint();
+                }
                 
                 // 이름표 다시 표시 및 위치 업데이트
                 if (otherPlayer.nameText) {
@@ -1530,44 +1629,6 @@ export default class NetworkEventManager {
                 );
             }
         }
-    }
-
-    /**
-     * 플레이어 상태 동기화 처리
-     */
-    handlePlayerStateSync(data) {
-        if (data.playerId === this.networkManager.playerId && this.scene.player) {
-            const player = this.scene.player;
-            const playerData = data.playerData;
-            
-            // 위치 동기화
-            player.x = playerData.x;
-            player.y = playerData.y;
-            if (player.body) {
-                player.body.reset(playerData.x, playerData.y);
-            }
-            
-            // 상태 동기화
-            player.isDead = playerData.isDead;
-            player.hp = playerData.hp;
-            player.maxHp = playerData.maxHp;
-            player.level = playerData.level;
-            
-            // size는 항상 서버에서 제공되어야 함 (클라이언트에서 계산하지 않음)
-            if (playerData.size !== undefined) {
-                player.size = playerData.size;
-            } else {
-                console.warn(`handlePlayerStateSync: 서버에서 size 정보가 누락됨. 기본값 유지: ${player.size}`);
-            }
-            
-            // UI 및 스프라이트 업데이트
-            player.updateCharacterSize();
-            player.updateSize();
-            player.updateJobSprite();
-            player.updateNameTextPosition();
-            player.updateUI();
-            
-    }
     }
 
     /**
@@ -1730,6 +1791,11 @@ export default class NetworkEventManager {
                     player.job.showMagicMissileEffect(data);
                 }
                 break;
+            case 'shield':
+                if (player.job.showShieldEffect) {
+                    player.job.showShieldEffect(data);
+                }
+                break;
             case 'roar':
                 player.job.showRoarEffect();
                 break;
@@ -1825,33 +1891,6 @@ export default class NetworkEventManager {
                     player.updateNameTextPosition();
                     player.updateHealthBar();
                 }
-            }
-        });
-    }
-
-    /**
-     * 기절 이펙트
-     */
-    showStunEffect(player, duration = 2000) {
-        // 기절 상태 표시 (회색으로 변색)
-        player.setTint(0x888888);
-        
-        // EffectManager를 사용한 기절 텍스트 표시
-        this.effectManager.showStatusMessage(
-            player.x, 
-            player.y, 
-            '기절!', 
-            {
-                fontSize: '16px',
-                fill: '#888888',
-                fontStyle: 'bold'
-            }
-        );
-        
-        // 기절 지속시간 후 효과 제거
-        this.scene.time.delayedCall(duration, () => {
-            if (player.active) {
-                player.clearTint();
             }
         });
     }
@@ -1980,11 +2019,19 @@ export default class NetworkEventManager {
             '#ff0000'
         );
 
-        // 피격 효과 (연한 빨간색 tint만)
-        player.setTint(0xff0000);
+        // 피격 상태 설정 및 tint 업데이트
+        player.isDamaged = true;
+        if (player.updateTint) {
+            player.updateTint();
+        }
+        
+        // 200ms 후 피격 상태 해제
         this.scene.time.delayedCall(200, () => {
             if (player && player.active && !player.isDead) {
-                player.clearTint();
+                player.isDamaged = false;
+                if (player.updateTint) {
+                    player.updateTint();
+                }
             }
         });
     }
@@ -2026,30 +2073,26 @@ export default class NetworkEventManager {
         // 해당 몬스터를 찾아서 기절 상태 업데이트
         const enemy = this.scene.enemies?.getChildren().find(e => e.networkId === data.enemyId);
         if (enemy) {
-            // 몬스터의 기절 상태 업데이트
+            // 몬스터의 기절 tint 상태 업데이트
+            enemy.isStunnedTint = data.isStunned;
+            
             if (data.isStunned) {
                 // 기절 시작 - 몬스터 위에 기절 표시
-                this.scene.effectManager.showMessage(
+                this.scene.effectManager.showSkillMessage(
                     enemy.x, 
-                    enemy.y - 40, 
+                    enemy.y,
                     '기절!', 
                     { 
                         fill: '#ffff00',
                         fontSize: '14px',
                         fontStyle: 'bold'
-                    },
-                    data.duration || 2000
+                    }
                 );
-                
-                // 몬스터 색상 변경 (기절 표시)
-                if (enemy.sprite) {
-                    enemy.sprite.setTint(0x888888); // 회색으로 변경
-                }
-            } else {
-                // 기절 해제 - 몬스터 색상 복구
-                if (enemy.sprite) {
-                    enemy.sprite.clearTint();
-                }
+            }
+            
+            // updateTint 호출하여 우선순위에 따라 tint 적용
+            if (enemy.updateTint) {
+                enemy.updateTint();
             }
         }
     }
@@ -2068,6 +2111,22 @@ export default class NetworkEventManager {
                 const enemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyData.enemyId);
                 if (enemy) {
                     this.effectManager.showDamageText(enemy.x, enemy.y, enemyData.damage, 'red');
+                    
+                    // 피격 상태 설정 및 tint 업데이트
+                    enemy.isDamaged = true;
+                    if (enemy.updateTint) {
+                        enemy.updateTint();
+                    }
+                    
+                    // 200ms 후 피격 상태 해제
+                    this.scene.time.delayedCall(200, () => {
+                        if (enemy && enemy.active && !enemy.isDead) {
+                            enemy.isDamaged = false;
+                            if (enemy.updateTint) {
+                                enemy.updateTint();
+                            }
+                        }
+                    });
                 }
             });
         }
@@ -2085,58 +2144,40 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 적 슬로우 효과 처리
+     * 적 슬로우 상태 처리
      */
     handleEnemySlowed(data) {
-        console.log('적 슬로우 효과 받음:', data);
-        console.log('적 슬로우 효과 처리 시작');
-        const { enemyId, effectId, speedReduction, duration } = data;
+        console.log('몬스터 슬로우 상태 변경:', data);
         
-        const enemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyId);
+        const enemy = this.scene.enemies?.getChildren().find(e => e.networkId === data.enemyId);
         if (enemy) {
-            // 슬로우 효과 적용
-            if (!enemy.slowEffects) {
-                enemy.slowEffects = [];
-            }
+            // 슬로우 상태 업데이트
+            enemy.isSlowedTint = data.isSlowed;
             
-            const slowEffect = {
-                id: effectId,
-                speedReduction: speedReduction,
-                duration: duration,
-                startTime: Date.now()
-            };
-            
-            enemy.slowEffects.push(slowEffect);
-            
-            // 시각적 효과 (파란색 틴트)
-            enemy.setTint(0x87ceeb);
-            
-            // 슬로우 효과 메시지 표시
-            this.effectManager.showSkillMessage(enemy.x, enemy.y, '슬로우!');
-            
-            // 절대 시간 기준 타이머 매니저 사용 (WarriorJob과 동일한 방식)
-            const timerManager = getGlobalTimerManager();
-            const targetEndTime = Date.now() + duration;
-            const eventId = timerManager.addEvent(targetEndTime, () => {
-                if (enemy.active) {
-                    // 슬로우 효과 제거
-                    enemy.slowEffects = enemy.slowEffects.filter(effect => effect.id !== effectId);
-                    
-                    // 다른 슬로우 효과가 없으면 틴트 제거
-                    if (enemy.slowEffects.length === 0) {
-                        enemy.clearTint();
+            if (data.isSlowed) {
+                console.log(`몬스터 ${data.enemyId} 슬로우 적용: 지속시간=${data.duration}ms`);
+                
+                // 슬로우 메시지 표시
+                this.scene.effectManager.showSkillMessage(
+                    enemy.x,
+                    enemy.y - 30,
+                    '슬로우!', 
+                    { 
+                        fill: '#87ceeb',
+                        fontSize: '12px',
+                        fontStyle: 'bold'
                     }
-                }
-            });
-            
-            // 호환성을 위한 타이머 객체
-            const slowEffectTimer = {
-                remove: () => timerManager.removeEvent(eventId)
-            };
-            
-            if (enemy.delayedSkillTimers) {
-                enemy.delayedSkillTimers.add(slowEffectTimer);
+                );
+            } else {
+                console.log(`몬스터 ${data.enemyId} 슬로우 해제됨`);
             }
+            
+            // tint 상태 업데이트
+            if (enemy.updateTint) {
+                enemy.updateTint();
+            }
+        } else {
+            console.warn(`슬로우 대상 몬스터를 찾을 수 없음: ${data.enemyId}`);
         }
     }
 
@@ -2164,8 +2205,11 @@ export default class NetworkEventManager {
             
             targetPlayer.slowEffects.push(slowEffect);
             
-            // 시각적 효과 (파란색 틴트)
-            targetPlayer.setTint(0x87ceeb);
+            // 슬로우 tint 상태 설정
+            targetPlayer.isSlowedTint = true;
+            if (targetPlayer.updateTint) {
+                targetPlayer.updateTint();
+            }
             
             // 슬로우 효과 메시지 표시
             this.effectManager.showSkillMessage(targetPlayer.x, targetPlayer.y, '슬로우!');
@@ -2178,9 +2222,12 @@ export default class NetworkEventManager {
                     // 슬로우 효과 제거
                     targetPlayer.slowEffects = targetPlayer.slowEffects.filter(effect => effect.id !== effectId);
                     
-                    // 다른 슬로우 효과가 없으면 틴트 제거
+                    // 다른 슬로우 효과가 없으면 슬로우 tint 상태 해제
                     if (targetPlayer.slowEffects.length === 0) {
-                        targetPlayer.clearTint();
+                        targetPlayer.isSlowedTint = false;
+                        if (targetPlayer.updateTint) {
+                            targetPlayer.updateTint();
+                        }
                     }
                 }
             });
@@ -2195,10 +2242,7 @@ export default class NetworkEventManager {
             }
         }
     }
-    
-    /**
-     * 플레이어 위치와 속도를 고정 (시전시간 동안)
-     */
+  
     freezePlayerPosition(player, serverX, serverY) {
         if (!player || !player.body) return;
 
@@ -2257,5 +2301,107 @@ export default class NetworkEventManager {
         ];
         
         return freezeSkills.includes(skillType);
+    }
+
+    handleShieldExploded(data) {
+        console.log('보호막 폭발 이벤트 받음 - 상세 데이터:', JSON.stringify(data, null, 2));
+        
+        // 폭발 이펙트 생성 (서버에서 받은 범위 사용)
+        const explosionRadius = data.knockbackDistance || 80; // 서버에서 받은 밀어내기 거리와 동일한 범위
+        const explosion = this.scene.add.circle(data.x, data.y, explosionRadius, 0x00ffff, 0.4);
+        explosion.setDepth(750);
+        explosion.setStrokeStyle(4, 0x00ffff, 0.8);
+        
+        console.log(`보호막 폭발 이펙트 생성: 위치=(${data.x}, ${data.y}), 반지름=${explosionRadius}`);
+        
+        // 폭발 애니메이션
+        this.scene.tweens.add({
+            targets: explosion,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            alpha: 0,
+            duration: 600,
+            ease: 'Power2',
+            onComplete: () => {
+                explosion.destroy();
+                console.log('보호막 폭발 애니메이션 완료');
+            }
+        });
+        
+        // 폭발 메시지 표시
+        this.scene.effectManager.showSkillMessage(
+            data.x, 
+            data.y, 
+            '보호막 폭발!',
+            { 
+                fill: '#00ffff',
+                fontSize: '16px',
+                fontStyle: 'bold'
+            }
+        );
+    }
+
+    handleEnemiesKnockback(data) {
+        console.log('몬스터 밀어내기 이벤트 받음:', data);
+        
+        // 각 몬스터에 대해 밀어내기 애니메이션 적용
+        data.affectedEnemies.forEach(enemyData => {
+            const enemy = this.scene.enemies?.getChildren().find(e => e.networkId === enemyData.enemyId);
+            if (enemy) {
+                // 현재 위치에서 새 위치로 밀어내기 애니메이션
+                this.scene.tweens.add({
+                    targets: enemy,
+                    x: enemyData.newX,
+                    y: enemyData.newY,
+                    duration: 300,
+                    ease: 'Power2',
+                    onUpdate: () => {
+                        // 물리 바디 위치 동기화
+                        if (enemy.body) {
+                            enemy.body.reset(enemy.x, enemy.y);
+                        }
+                        // 체력바 위치 업데이트
+                        if (enemy.updateHealthBar) {
+                            enemy.updateHealthBar();
+                        }
+                    },
+                    onComplete: () => {
+                        // 밀어내기 완료 후 서버 위치와 동기화
+                        if (enemy.body) {
+                            enemy.body.reset(enemyData.newX, enemyData.newY);
+                        }
+                    }
+                });
+                
+                // 밀어내기 이펙트 (작은 폭발 효과)
+                const knockbackEffect = this.scene.add.circle(enemy.x, enemy.y, 15, 0x00ffff, 0.6);
+                knockbackEffect.setDepth(750);
+                this.scene.tweens.add({
+                    targets: knockbackEffect,
+                    scaleX: 2,
+                    scaleY: 2,
+                    alpha: 0,
+                    duration: 400,
+                    onComplete: () => {
+                        knockbackEffect.destroy();
+                    }
+                });
+            }
+        });
+    }
+
+    handleShieldRemoved(data) {
+        console.log('보호막 제거 이벤트 받음:', data);
+        
+        // 해당 플레이어가 본인인지 확인
+        if (data.playerId === this.networkManager.playerId && this.scene.player) {
+            const player = this.scene.player;
+            
+            // 마법사 직업이고 보호막 제거 메서드가 있으면 호출
+            if (player.job && typeof player.job.removeShieldEffect === 'function') {
+                player.job.removeShieldEffect();
+                console.log('보호막 이펙트 즉시 제거 완료');
+            }
+        }
     }
 }

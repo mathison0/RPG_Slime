@@ -697,7 +697,11 @@ export default class GameScene extends Phaser.Scene {
         this.player.clearDelayedSkillEffects();
         
         // 색상 초기화 (데미지로 인한 빨간색 제거)
-        this.player.clearTint();
+        this.player.isDamaged = false;
+        this.player.isStunnedTint = false;
+        this.player.isStealthTint = false;
+        this.player.isSlowedTint = false;
+        this.player.updateTint();
         
         // 진행 중인 모든 타이머 정리 (데미지 틴트 타이머 등)
         if (this.time && this.time.getAllEvents) {

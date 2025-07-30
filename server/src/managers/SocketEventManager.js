@@ -134,6 +134,12 @@ class SocketEventManager {
         return;
       }
       
+      // 기절 상태에서는 이동 업데이트 무시
+      if (player.isStunned) {
+        console.log(`플레이어 ${socket.id}가 기절 상태에서 이동 시도 - 무시됨`);
+        return;
+      }
+      
       player.update(data);
       
       // 크기 정보가 있으면 업데이트
@@ -258,7 +264,12 @@ class SocketEventManager {
         y: player.y, // 항상 플레이어의 실제 서버 위치 사용
         team: player.team,
         skillInfo: skillResult.skillInfo,
-        damageResult: damageResult // 데미지 결과 추가
+        damageResult: damageResult, // 데미지 결과 추가
+        // 쿨타임 정보 명시적 추가
+        cooldownInfo: {
+          totalCooldown: skillResult.skillInfo.cooldown || 0, // 총 쿨타임 시간
+          cooldownEndTime: player.skillCooldowns[skillResult.skillType] || 0 // 쿨타임 종료 시간
+        }
       };
 
       // direction 정보가 있으면 추가
@@ -304,6 +315,13 @@ class SocketEventManager {
             reason: 'replaced'
           });
         }
+      }
+
+      // 얼음 장판 스킬의 경우 실제 시전 위치 정보 추가 (마법사)
+      if (skillResult.skillType === 'ice_field') {
+        broadcastData.x = skillResult.x || player.x; // 실제 얼음 장판 시전 위치
+        broadcastData.y = skillResult.y || player.y; // 실제 얼음 장판 시전 위치
+        console.log(`얼음 장판 브로드캐스트 데이터: skillResult.x=${skillResult.x}, skillResult.y=${skillResult.y}, 최종 broadcastData.x=${broadcastData.x}, broadcastData.y=${broadcastData.y}`);
       }
 
       // 타겟 위치가 있는 경우 추가
