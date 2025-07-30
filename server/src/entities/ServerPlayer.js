@@ -1,13 +1,17 @@
 const gameConfig = require('../config/GameConfig');
 const { getSkillInfo, calculateStats } = require('../../shared/JobClasses');
 
-// 직업별 Job 클래스들 import
+
+// 직업별 클래스 import
 const SlimeJob = require('./jobs/SlimeJob');
-const WarriorJob = require('./jobs/WarriorJob');
 const MageJob = require('./jobs/MageJob');
 const AssassinJob = require('./jobs/AssassinJob');
 const NinjaJob = require('./jobs/NinjaJob');
-// 추가 직업들은 구현 후 import
+const WarriorJob = require('./jobs/WarriorJob');
+const MechanicJob = require('./jobs/MechanicJob');
+const ArcherJob = require('./jobs/ArcherJob');
+const SupporterJob = require('./jobs/SupporterJob');
+
 
 /**
  * 서버측 플레이어 클래스
@@ -26,6 +30,7 @@ class ServerPlayer {
     this.speed = 200;
     this.attack = 20;
     this.jobClass = 'slime';
+    this.job = null; // 직업 클래스 인스턴스
     this.direction = 'front';
     this.isJumping = false;
     this.size = 32;
@@ -88,6 +93,12 @@ class ServerPlayer {
       case 'ninja':
         this.job = new NinjaJob(this);
         break;
+      case 'archer':
+          this.job = new ArcherJob(this);
+          break;
+        case 'supporter':
+          this.job = new SupporterJob(this);
+          break;
       // 추가 직업들 구현 후 추가
       default:
         this.job = new SlimeJob(this); // 기본값
@@ -378,6 +389,9 @@ class ServerPlayer {
    */
   changeJob(newJobClass) {
     this.jobClass = newJobClass;
+    
+    // 직업 변경 시 새로운 job 인스턴스 생성
+    this.initializeJob();
     
     // 직업 변경 시 즉시 스탯 업데이트
     this.initializeStatsFromJobClass();

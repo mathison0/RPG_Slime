@@ -186,6 +186,7 @@ class SocketEventManager {
   setupPlayerSkillHandler(socket) {
     socket.on('player-skill', (data) => {
       console.log(`스킬 요청 받음: ${data.skillType}, 플레이어: ${socket.id}`);
+      console.log(`받은 스킬 데이터:`, data);
       
       const player = this.gameStateManager.getPlayer(socket.id);
       if (!player) {
@@ -211,11 +212,18 @@ class SocketEventManager {
       }
 
       // 서버에서 스킬 사용 검증 및 처리 (모든 조건 체크는 SkillManager에서 수행)
+      const skillOptions = { 
+        direction: data.direction, // 클라이언트에서 받은 방향 정보 전달
+        rotationDirection: data.rotationDirection // 회전 방향 정보 추가
+      };
+      console.log(`스킬 사용 옵션:`, skillOptions);
+      
       const skillResult = this.skillManager.useSkill(
         player,
         actualSkillType, 
         data.targetX, 
-        data.targetY
+        data.targetY,
+        skillOptions
       );
 
       if (!skillResult.success) {
@@ -263,6 +271,29 @@ class SocketEventManager {
           cooldownEndTime: player.skillCooldowns[skillResult.skillType] || 0 // 쿨타임 종료 시간
         }
       };
+
+      // direction 정보가 있으면 추가
+      if (skillResult.direction) {
+        broadcastData.direction = skillResult.direction;
+        console.log(`방향 정보 추가: ${skillResult.direction}`);
+      } else {
+        console.log(`방향 정보 없음: skillResult=`, skillResult);
+      }
+
+      // rotationDirection 정보가 있으면 추가
+      if (skillResult.rotationDirection) {
+        broadcastData.rotationDirection = skillResult.rotationDirection;
+        console.log(`회전 방향 정보 추가: ${skillResult.rotationDirection}`);
+      }
+
+      // 구르기 스킬의 경우 시작 위치와 최종 위치 정보 추가
+      if (skillResult.skillType === 'roll') {
+        broadcastData.startX = skillResult.startX;
+        broadcastData.startY = skillResult.startY;
+        broadcastData.endX = skillResult.endX;
+        broadcastData.endY = skillResult.endY;
+        console.log(`구르기 위치 정보 추가: 시작(${skillResult.startX}, ${skillResult.startY}) -> 끝(${skillResult.endX}, ${skillResult.endY})`);
+      }
 
       // 와드 스킬의 경우 크기 정보 추가 (서포터만)
       if (skillResult.skillType === 'ward') {
