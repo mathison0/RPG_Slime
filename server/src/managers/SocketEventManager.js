@@ -258,11 +258,12 @@ class SocketEventManager {
         // 와드 ID 추가
         broadcastData.wardId = skillResult.wardId;
         
-        // 기존 와드가 제거된 경우 제거 이벤트도 브로드캐스트
-        if (skillResult.removedWardId) {
-          this.io.emit('ward-removed', {
+        // 와드가 제거된 경우 제거 이벤트도 브로드캐스트
+        if (skillResult.removedWard) {
+          this.io.emit('ward-destroyed', {
             playerId: socket.id,
-            wardId: skillResult.removedWardId
+            wardId: skillResult.removedWard.id,
+            reason: 'replaced'
           });
         }
       }

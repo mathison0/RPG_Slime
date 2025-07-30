@@ -159,8 +159,12 @@ export default class MageJob extends BaseJob {
             ward.wardOwnerTeam = data.playerTeam; // 와드 소유자 팀 정보 저장
         }
         
-        // 모든 와드는 같은 depth로 설정
-        ward.setDepth(1001);
+        // 와드 depth 설정 (다른 팀 플레이어의 와드는 시야 그림자보다 낮게)
+        if (isOtherPlayer) {
+            ward.setDepth(999); // 시야 그림자(1000)보다 낮게
+        } else {
+            ward.setDepth(1001); // 자신의 와드는 기존과 동일
+        }
         
         // 와드에 물리 바디 추가
         this.player.scene.physics.add.existing(ward);
@@ -198,13 +202,19 @@ export default class MageJob extends BaseJob {
         
         // 와드 범위 표시 (하얀색 반투명 원형, 거의 투명)
         const rangeIndicator = this.player.scene.add.circle(ward.x, ward.y, range, 0xffffff, 0.1);
-        rangeIndicator.setDepth(1000);
+        if (isOtherPlayer) {
+            rangeIndicator.setDepth(998); // 와드 스프라이트(999)보다 낮게
+        } else {
+            rangeIndicator.setDepth(1000); // 자신의 와드 범위는 기존과 동일
+        }
         
         // 와드와 함께 파괴되도록 설정
         ward.rangeIndicator = rangeIndicator;
         
         // 와드 소유자 정보 설정 (서버에서 받은 설치자 ID 사용)
         ward.ownerId = data?.playerId || this.player.networkId;
+        // 와드 ID 설정
+        ward.wardId = data?.wardId || wardInfo.id;
         
         // 와드 파괴 함수
         const destroyWard = () => {

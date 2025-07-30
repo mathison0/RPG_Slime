@@ -97,11 +97,6 @@ export default class NetworkEventManager {
         this.networkManager.on('ward-destroyed', (data) => {
             this.handleWardDestroyed(data);
         });
-
-        // 와드 제거 (최대 개수 초과로 인한 자동 제거)
-        this.networkManager.on('ward-removed', (data) => {
-            this.handleWardRemoved(data);
-        });
         
 
 
@@ -1036,46 +1031,22 @@ export default class NetworkEventManager {
      * 와드 파괴 처리
      */
     handleWardDestroyed(data) {
-        this.scene.children.list.forEach(child => {
-            if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
-                // 파괴 이펙트
-                const explosion = this.scene.add.circle(child.x, child.y, 50, 0xff0000, 0.5);
-                this.scene.tweens.add({
-                    targets: explosion,
-                    scaleX: 2,
-                    scaleY: 2,
-                    alpha: 0,
-                    duration: 500,
-                    onComplete: () => explosion.destroy()
-                });
-                
-                child.destroy();
-            }
-        });
-    }
-
-    /**
-     * 와드 제거 처리 (최대 개수 초과로 인한 자동 제거)
-     */
-    handleWardRemoved(data) {
-        console.log('와드 제거됨:', data);
+        console.log('와드 파괴 이벤트 받음:', data);
         
-        // 다른 플레이어의 와드 제거
+        // 와드 ID로 해당 와드 찾기
         this.scene.children.list.forEach(child => {
-            if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
-                if (child.wardOwnerId === data.playerId) {
-                    // 부드러운 페이드 아웃 효과
-                    this.scene.tweens.add({
-                        targets: child,
-                        alpha: 0,
-                        duration: 300,
-                        onComplete: () => {
-                            if (child.rangeIndicator) {
-                                child.rangeIndicator.destroy();
-                            }
-                            child.destroy();
-                        }
-                    });
+            if (child.texture && child.texture.key === 'ward') {
+                // 와드 ID가 일치하거나, 소유자가 일치하는 와드 찾기
+                if (child.wardId === data.wardId || 
+                    (child.ownerId === data.playerId && !child.isOtherPlayerWard)) {
+                    
+                    console.log('와드 파괴됨:', child);
+                    
+                    if (child.destroyWard) {
+                        child.destroyWard();
+                    } else {
+                        child.destroy();
+                    }
                 }
             }
         });

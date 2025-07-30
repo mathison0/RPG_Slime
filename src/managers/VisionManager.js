@@ -233,13 +233,14 @@ export default class VisionManager {
     }
 
     /**
-     * 다른 플레이어들의 가시성 업데이트
+     * 다른 플레이어들과 와드들의 가시성 업데이트
      */
     updateOtherPlayersDepth(playerPos, endpoints, visionRadius) {
         if (!this.scene.otherPlayers?.children || !this.scene.mapManager.wallLines) {
             return;
         }
         
+        // 다른 플레이어들의 가시성 업데이트
         this.scene.otherPlayers.getChildren().forEach(otherPlayer => {
             // 점프 중일 때는 점프 전 위치 기준
             let checkX, checkY;
@@ -297,6 +298,50 @@ export default class VisionManager {
             
             if (otherPlayer.depth !== targetDepth) {
                 this.setPlayerDepthWithNameTag(otherPlayer, targetDepth, allPointsVisible);
+            }
+        });
+        
+        // 다른 팀의 와드들의 가시성 업데이트
+        this.scene.children.list.forEach(child => {
+            if (child.texture && child.texture.key === 'ward' && child.isOtherPlayerWard) {
+                const wardOwner = this.scene.otherPlayers.getChildren().find(p => p.networkId === child.ownerId);
+                
+                // 다른 팀의 와드만 처리
+                if (wardOwner && wardOwner.team !== this.scene.player.team) {
+                    // 시야 범위 체크
+                    const distance = Phaser.Math.Distance.Between(playerPos.x, playerPos.y, child.x, child.y);
+                    if (distance > visionRadius) {
+                        // 시야 밖이면 숨김
+                        if (child.visible) {
+                            child.setVisible(false);
+                            if (child.rangeIndicator) {
+                                child.rangeIndicator.setVisible(false);
+                            }
+                        }
+                        return;
+                    }
+                    
+                    // 시야 범위 내에 있으면 가시성 체크
+                    const isVisible = this.isPointVisibleFromPlayer(playerPos, new Phaser.Math.Vector2(child.x, child.y));
+                    
+                    if (isVisible) {
+                        // 보이는 경우 표시
+                        if (!child.visible) {
+                            child.setVisible(true);
+                            if (child.rangeIndicator) {
+                                child.rangeIndicator.setVisible(true);
+                            }
+                        }
+                    } else {
+                        // 보이지 않는 경우 숨김
+                        if (child.visible) {
+                            child.setVisible(false);
+                            if (child.rangeIndicator) {
+                                child.rangeIndicator.setVisible(false);
+                            }
+                        }
+                    }
+                }
             }
         });
     }

@@ -202,10 +202,6 @@ class NetworkManager {
             this.emit('ward-destroyed', data);
         });
 
-        this.socket.on('ward-removed', (data) => {
-            this.emit('ward-removed', data);
-        });
-
         this.socket.on('player-stunned', (data) => {
             this.emit('player-stunned', data);
         });

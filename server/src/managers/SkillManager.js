@@ -126,7 +126,7 @@ class SkillManager {
       originalSkillInfo: skillInfo
     };
 
-    return {
+    const result = {
       success: true,
       skillType,
       endTime: now + totalSkillTime, // 스킬 완료 시간 (후딜레이 포함)
@@ -137,6 +137,39 @@ class SkillManager {
       targetY,
       skillInfo: completeSkillInfo
     };
+    
+    // 와드 스킬의 경우 추가 정보 설정
+    if (skillType === 'ward') {
+      // 와드 개수 제한 체크 (최대 2개)
+      if (!player.wardList) {
+        player.wardList = [];
+      }
+      
+      // 기존 와드가 2개 이상이면 가장 오래된 와드 제거
+      if (player.wardList.length >= 2) {
+        const oldestWard = player.wardList.shift();
+        console.log(`기존 와드 제거: ${oldestWard.id}`);
+        result.removedWard = oldestWard;
+      }
+      
+      // 새 와드 정보 생성
+      const newWard = {
+        id: Date.now() + Math.random(), // 고유 ID
+        x: targetX || player.x,
+        y: targetY || player.y,
+        range: completeSkillInfo.range,
+        duration: completeSkillInfo.duration,
+        createdAt: Date.now()
+      };
+      
+      // 와드 리스트에 추가
+      player.wardList.push(newWard);
+      result.wardId = newWard.id;
+      
+      console.log(`마법사 와드 설치! 위치: (${newWard.x}, ${newWard.y}), 현재 와드 개수: ${player.wardList.length}`);
+    }
+    
+    return result;
   }
 
   /**

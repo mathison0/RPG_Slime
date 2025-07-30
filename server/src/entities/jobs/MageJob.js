@@ -57,19 +57,6 @@ class MageJob extends BaseJob {
             return { success: false, reason: 'skill not found' };
         }
 
-        // 와드 개수 제한 체크 (최대 2개)
-        if (!this.player.wardList) {
-            this.player.wardList = [];
-        }
-        
-        // 기존 와드가 2개 이상이면 가장 오래된 와드 제거
-        let removedWardId = null;
-        if (this.player.wardList.length >= 2) {
-            const oldestWard = this.player.wardList.shift();
-            removedWardId = oldestWard.id;
-            console.log(`기존 와드 제거: ${removedWardId}`);
-        }
-
         // 쿨타임 설정
         this.setSkillCooldown('ward');
 
@@ -77,20 +64,7 @@ class MageJob extends BaseJob {
         const wardX = options.targetX || this.player.x;
         const wardY = options.targetY || this.player.y;
 
-        // 새 와드 정보 생성
-        const newWard = {
-            id: Date.now() + Math.random(), // 고유 ID
-            x: wardX,
-            y: wardY,
-            range: skillInfo.range,
-            duration: skillInfo.duration,
-            createdAt: Date.now()
-        };
-
-        // 와드 리스트에 추가
-        this.player.wardList.push(newWard);
-
-        console.log(`마법사 와드 설치! 위치: (${wardX}, ${wardY}), 지속시간: ${skillInfo.duration}ms, 현재 와드 개수: ${this.player.wardList.length}`);
+        console.log(`마법사 와드 설치! 위치: (${wardX}, ${wardY}), 지속시간: ${skillInfo.duration}ms`);
 
         return {
             success: true,
@@ -99,8 +73,6 @@ class MageJob extends BaseJob {
             wardY: wardY,
             range: skillInfo.range,
             duration: skillInfo.duration,
-            wardId: newWard.id,
-            removedWardId: removedWardId,
             caster: {
                 id: this.player.id,
                 x: this.player.x,
