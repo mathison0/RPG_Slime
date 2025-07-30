@@ -38,6 +38,7 @@ export default class MageJob extends BaseJob {
             case 2: // E키 - 마법 투사체
                 const pointer2 = this.scene.input.activePointer;
                 const worldPoint2 = this.scene.cameras.main.getWorldPoint(pointer2.x, pointer2.y);
+                console.log(`클라이언트 마법 미사일 요청: 마우스 좌표=(${worldPoint2.x}, ${worldPoint2.y})`);
                 this.player.networkManager.useSkill('magic_missile', {
                     targetX: worldPoint2.x,
                     targetY: worldPoint2.y
@@ -78,7 +79,7 @@ export default class MageJob extends BaseJob {
         
         // 얼음 장판 생성 (서버에서 받은 위치에)
         const iceField = this.player.scene.add.circle(iceX, iceY, range, 0x87ceeb, 0.4);
-        iceField.setDepth(700);
+        iceField.setDepth(650);
         
         // EffectManager를 사용한 스킬 메시지
         const skillText = this.effectManager.showSkillMessage(

@@ -28,6 +28,11 @@ const JobClasses = {
             attack: 1,
             speed: 0
         },
+        projectile: {
+            speed: 350,
+            size: 12,
+            maxDistance: 250
+        },
         skills: [
             {
                 name: '퍼지기',
@@ -59,6 +64,7 @@ const JobClasses = {
             attack: 7,
             speed: 0
         },
+        projectile: null, // 근접 직업
         skills: [
             {
                 name: '은신',
@@ -88,6 +94,11 @@ const JobClasses = {
             hp: 12,
             attack: 8,
             speed: 0
+        },
+        projectile: {
+            speed: 450,
+            size: 18,
+            maxDistance: 300
         },
         skills: [
             {
@@ -119,6 +130,7 @@ const JobClasses = {
             attack: 6,
             speed: 0
         },
+        projectile: null, // 근접 직업
         skills: [
             {
                 name: '울부짖기',
@@ -176,13 +188,18 @@ const JobClasses = {
             attack: 8,
             speed: 0
         },
+        projectile: {
+            speed: 280,
+            size: 8,
+            maxDistance: 400
+        },
         skills: [
             {
                 name: '얼음 장판',
                 description: '범위 내 적들의 속도를 감소시킵니다.',
                 cooldown: 12000,
-                damage: 0,
-                range: 100,  // 얼음 장판의 효과 범위 (반지름)
+                damage: 5,
+                range: 150,  // 얼음 장판의 효과 범위 (반지름)
                 maxCastRange: 300, // 최대 시전 사거리
                 duration: 6000,
                 effect: 'slow',
@@ -198,7 +215,12 @@ const JobClasses = {
                 explosionRadius: 90, // 폭발 범위
                 afterDelay: 200,
                 key: '2',
-                type: 'magic_missile'
+                type: 'magic_missile',
+                projectile: {
+                    speed: 600,
+                    size: 6,
+                    maxDistance: 500
+                }
             },
             {
                 name: '보호막',
@@ -231,6 +253,7 @@ const JobClasses = {
             attack: 6,
             speed: 0
         },
+        projectile: null, // 근접 직업
         skills: [
             {
                 name: '기계 수리',
@@ -261,6 +284,11 @@ const JobClasses = {
             hp: 15,
             attack: 8,
             speed: 0
+        },
+        projectile: {
+            speed: 500,
+            size: 16,
+            maxDistance: 450
         },
         skills: [
             {
@@ -303,6 +331,7 @@ const JobClasses = {
             attack: 3,
             speed: 0
         },
+        projectile: null, // 근접 직업
         skills: [
             {
                 name: '와드 설치',

@@ -194,8 +194,8 @@ export default class BaseJob {
      * 점프 기능 (모든 직업 공통) - 서버에 요청만 전송
      */
     useJump() {
-        // 이미 점프 중이거나 다른 플레이어면 실행하지 않음
-        if (this.player.isJumping || this.player.isOtherPlayer) {
+        // 이미 점프 애니메이션 중이거나 다른 플레이어면 실행하지 않음
+        if (this.player.jumpAnimationInProgress || this.player.isOtherPlayer) {
             return;
         }
         
@@ -206,11 +206,6 @@ export default class BaseJob {
         
         // 네트워크 동기화 (서버에 점프 요청만 전송)
         if (this.player.networkManager && !this.player.isOtherPlayer) {
-            // 임시로 jumpEndTime 설정 (서버 응답 대기 중 연속 요청 방지)
-            const tempJumpDuration = 400; // 기본 점프 지속시간
-            this.player.jumpEndTime = Date.now() + tempJumpDuration;
-            console.log(`임시 점프 endTime 설정: ${this.player.jumpEndTime}`);
-            
             this.player.networkManager.useSkill('jump');
         }
 

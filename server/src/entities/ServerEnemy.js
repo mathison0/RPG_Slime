@@ -116,8 +116,11 @@ class ServerEnemy {
   getEffectiveSpeed(baseSpeed) {
     let effectiveSpeed = baseSpeed;
     
-    // 슬로우 효과 적용 (50% 속도 감소)
-    if (this.activeEffects.has('slow')) {
+    // 슬로우 효과 적용
+    if (this.isSlowed && this.slowAmount) {
+      effectiveSpeed *= this.slowAmount;
+    } else if (this.activeEffects.has('slow')) {
+      // 구버전 호환성
       effectiveSpeed *= 0.5;
     }
     
@@ -130,6 +133,14 @@ class ServerEnemy {
   update(players, walls, delta) {
     const now = Date.now();
     this.lastUpdate = now;
+    
+    // 슬로우 효과 만료 체크
+    if (this.isSlowed && this.slowedUntil && now > this.slowedUntil) {
+      this.isSlowed = false;
+      this.slowedUntil = null;
+      this.slowAmount = 1;
+      console.log(`몬스터 ${this.id} 슬로우 효과 해제`);
+    }
     
     // 기절 상태에서는 행동 제한
     if (this.isStunned) {
