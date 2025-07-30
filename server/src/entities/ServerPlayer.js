@@ -109,10 +109,20 @@ class ServerPlayer {
           this.job = new SlimeJob(this);
           break;
       }
-      console.log(`플레이어 ${this.id} 직업 인스턴스 생성 완료: ${this.jobClass}`);
+      
+      // 직업별 기본 공격 쿨다운 설정
+      if (this.job && this.job.basicAttackCooldown) {
+        this.basicAttackCooldown = this.job.basicAttackCooldown;
+      } else {
+        // 기본값 설정
+        this.basicAttackCooldown = 500;
+      }
+      
+      console.log(`플레이어 ${this.id} 직업 인스턴스 생성 완료: ${this.jobClass}, 기본공격 쿨다운: ${this.basicAttackCooldown}ms`);
     } catch (error) {
       console.error(`플레이어 ${this.id} 직업 인스턴스 생성 실패:`, error);
       this.job = null;
+      this.basicAttackCooldown = 500; // 기본값
     }
   }
 
@@ -264,6 +274,8 @@ class ServerPlayer {
       }
     }
     
+    const buffState = this.getBuffState();
+    
     return {
       id: this.id,
       x: this.x,
@@ -286,7 +298,7 @@ class ServerPlayer {
       isInvincible: this.isInvincible, // 무적 상태 추가
       activeActions: activeActions,  // 액션 상태 정보 추가
       skillCooldowns: this.getClientSkillCooldowns(), // 클라이언트용 스킬 쿨타임 정보 추가
-      buffs: this.getBuffState() // 버프 상태 정보 추가
+      buffs: buffState // 버프 상태 정보 추가
     };
   }
 
@@ -404,7 +416,7 @@ class ServerPlayer {
     // 직업 변경 시 즉시 스탯 업데이트
     this.initializeStatsFromJobClass();
 
-    console.log(`플레이어 ${this.id} 직업 변경: ${newJobClass}, 새로운 스탯 적용 완료`);
+    console.log(`플레이어 ${this.id} 직업 변경: ${newJobClass}, 새로운 스탯 적용 완료, 기본공격 쿨다운: ${this.basicAttackCooldown}ms`);
   }
 
   /**
@@ -507,6 +519,8 @@ class ServerPlayer {
     const now = Date.now();
     const endTime = now + duration;
     
+    console.log(`[서버] applyBuff 호출됨: buffType=${buffType}, duration=${duration}ms, effect=`, effect);
+    
     this.buffs.set(buffType, {
       startTime: now,
       duration: duration,
@@ -521,12 +535,15 @@ class ServerPlayer {
         speed: this.speed,
         attack: this.attack
       };
+      console.log(`[서버] 원본 스탯 저장: ${buffType}`, this.originalStats[buffType]);
     }
 
     // 버프 효과 적용
+    console.log(`[서버] applyBuffEffect 호출 전: basicAttackCooldown=${this.basicAttackCooldown}ms`);
     this.applyBuffEffect(buffType, effect);
+    console.log(`[서버] applyBuffEffect 호출 후: basicAttackCooldown=${this.basicAttackCooldown}ms`);
     
-    console.log(`버프 적용: ${buffType}, 지속시간: ${duration}ms, 효과:`, effect);
+    console.log(`[서버] 버프 적용: ${buffType}, 지속시간: ${duration}ms`);
   }
 
   /**
@@ -536,7 +553,9 @@ class ServerPlayer {
     switch (buffType) {
       case 'attack_speed_boost':
         if (effect.attackSpeedMultiplier) {
-          this.basicAttackCooldown = Math.floor(this.originalStats[buffType].attackSpeed / effect.attackSpeedMultiplier);
+          const originalCooldown = this.originalStats[buffType].attackSpeed;
+          this.basicAttackCooldown = Math.floor(originalCooldown / effect.attackSpeedMultiplier);
+          console.log(`[서버] 공격속도 버프: ${originalCooldown}ms → ${this.basicAttackCooldown}ms (배율: ${effect.attackSpeedMultiplier})`);
         }
         break;
       case 'speed_attack_boost':
@@ -544,7 +563,9 @@ class ServerPlayer {
           this.speed = Math.floor(this.originalStats[buffType].speed * effect.speedMultiplier);
         }
         if (effect.attackSpeedMultiplier) {
-          this.basicAttackCooldown = Math.floor(this.originalStats[buffType].attackSpeed / effect.attackSpeedMultiplier);
+          const originalCooldown = this.originalStats[buffType].attackSpeed;
+          this.basicAttackCooldown = Math.floor(originalCooldown / effect.attackSpeedMultiplier);
+          console.log(`[서버] 속도+공격속도 버프: ${originalCooldown}ms → ${this.basicAttackCooldown}ms (배율: ${effect.attackSpeedMultiplier})`);
         }
         break;
     }

@@ -173,7 +173,7 @@ class ArcherJob extends BaseJob {
 
         // 새로운 버프 시스템 사용
         const focusEffect = {
-            attackSpeedMultiplier: 2.0 // 공격속도 2배 증가
+            attackSpeedMultiplier: 3.0 // 공격속도 4배 증가
         };
         this.player.applyBuff('attack_speed_boost', skillInfo.duration, focusEffect);
 
@@ -203,7 +203,7 @@ class ArcherJob extends BaseJob {
      */
     canUseBasicAttack() {
         const now = Date.now();
-        let cooldown = this.basicAttackCooldown;
+        let cooldown = this.player.basicAttackCooldown || this.basicAttackCooldown;
         
         // 새로운 버프 시스템 사용
         if (this.player.hasBuff('attack_speed_boost')) {
@@ -211,10 +211,18 @@ class ArcherJob extends BaseJob {
             const buff = this.player.buffs.get('attack_speed_boost');
             if (buff && buff.effect.attackSpeedMultiplier) {
                 cooldown = Math.floor(cooldown / buff.effect.attackSpeedMultiplier);
+                console.log(`궁수 공격속도 버프 적용됨: 기본 쿨다운=${this.player.basicAttackCooldown || this.basicAttackCooldown}ms, 버프 적용 후 쿨다운=${cooldown}ms`);
             }
         }
         
-        return now - this.lastBasicAttackTime >= cooldown;
+        const timeSinceLastAttack = now - this.lastBasicAttackTime;
+        const canUse = timeSinceLastAttack >= cooldown;
+        
+        if (!canUse) {
+            console.log(`궁수 기본공격 쿨다운: 경과시간=${timeSinceLastAttack}ms, 필요시간=${cooldown}ms`);
+        }
+        
+        return canUse;
     }
 
     /**
@@ -269,4 +277,5 @@ class ArcherJob extends BaseJob {
     }
 }
 
+module.exports = ArcherJob; 
 module.exports = ArcherJob; 

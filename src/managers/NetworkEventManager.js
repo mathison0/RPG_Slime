@@ -441,6 +441,11 @@ export default class NetworkEventManager {
                     onUpdate: () => {
                         otherPlayer.updateNameTextPosition();
                         otherPlayer.updateHealthBar();
+                        
+                        // 집중 이펙트가 있다면 함께 이동
+                        if (otherPlayer.focusEffect && otherPlayer.focusEffect.active) {
+                            otherPlayer.focusEffect.setPosition(otherPlayer.x, otherPlayer.y);
+                        }
                     }
                 });
                 
@@ -1047,6 +1052,7 @@ export default class NetworkEventManager {
             
             // 버프 상태 동기화
             if (myPlayerState.buffs) {
+                // console.log(`[클라이언트] 서버에서 받은 버프 정보:`, myPlayerState.buffs);
                 // 기존 버프들 제거
                 this.scene.player.buffs.clear();
                 
@@ -1055,13 +1061,16 @@ export default class NetworkEventManager {
                     const buffInfo = myPlayerState.buffs[buffType];
                     if (buffInfo.remainingTime > 0) {
                         this.scene.player.buffs.set(buffType, {
-                            startTime: Date.now() - (buffInfo.remainingTime - buffInfo.remainingTime),
+                            startTime: Date.now(),
                             duration: buffInfo.remainingTime,
                             endTime: Date.now() + buffInfo.remainingTime,
                             effect: buffInfo.effect
                         });
+                        // console.log(`[클라이언트] 버프 적용됨: ${buffType}, 지속시간=${buffInfo.remainingTime}ms, 효과=`, buffInfo.effect);
                     }
                 });
+            } else {
+                console.log(`[클라이언트] 서버에서 받은 버프 정보 없음`);
             }
             
             // 은신 상태

@@ -49,8 +49,8 @@ export default class BaseJob {
             return;
         }
         
-        // 클라이언트 사이드 쿨다운 체크
-        if (this.player.isSkillOnCooldown('basic_attack')) {
+        // 클라이언트 사이드 쿨다운 체크 (BaseJob의 메서드 사용)
+        if (this.isBasicAttackOnCooldown()) {
             return; // 서버에 요청을 보내지 않음
         }
         
@@ -77,11 +77,35 @@ export default class BaseJob {
         const jobClass = this.player.jobClass;
         let cooldown = 600; // 기본값
         
+        console.log(`[클라이언트] 쿨다운 계산 시작: jobClass=${jobClass}, scene.jobCooldowns=`, this.scene.jobCooldowns);
+        
         if (this.scene.jobCooldowns && this.scene.jobCooldowns[jobClass]) {
             cooldown = this.scene.jobCooldowns[jobClass].basicAttackCooldown;
+            console.log(`[클라이언트] 직업별 쿨다운 사용: ${cooldown}ms`);
+        } else {
+            console.log(`[클라이언트] 직업별 쿨다운 정보 없음, 기본값 사용: ${cooldown}ms`);
         }
         
-        return (now - lastUsed) < cooldown;
+        // 버프 효과 적용
+        if (this.player.hasBuff && this.player.hasBuff('attack_speed_boost')) {
+            const buff = this.player.buffs.get('attack_speed_boost');
+            if (buff && buff.effect && buff.effect.attackSpeedMultiplier) {
+                const originalCooldown = cooldown;
+                cooldown = Math.floor(cooldown / buff.effect.attackSpeedMultiplier);
+                console.log(`[클라이언트] 공격속도 버프 적용: ${originalCooldown}ms → ${cooldown}ms (배율: ${buff.effect.attackSpeedMultiplier})`);
+            }
+        }
+        
+        const timeSinceLastAttack = now - lastUsed;
+        const isOnCooldown = (timeSinceLastAttack) < cooldown;
+        
+        console.log(`[클라이언트] 최종 쿨다운 계산: 경과시간=${timeSinceLastAttack}ms, 필요시간=${cooldown}ms, 쿨다운중=${isOnCooldown}`);
+        
+        if (isOnCooldown) {
+            console.log(`[클라이언트] 기본공격 쿨다운: ${cooldown - timeSinceLastAttack}ms 남음`);
+        }
+        
+        return isOnCooldown;
     }
 
     /**
