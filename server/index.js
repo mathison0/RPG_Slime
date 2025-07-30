@@ -50,6 +50,9 @@ class GameServer {
     this.enemyManager = new EnemyManager(this.io, this.gameStateManager);
     this.socketEventManager = new SocketEventManager(this.io, this.gameStateManager, this.enemyManager, this.skillManager, this.projectileManager);
     
+    // global.io 설정 - ServerPlayer의 stunned 이벤트 발송을 위해 필요
+    global.io = this.io;
+    
     // 게임 루프 타이머
     this.gameLoopInterval = null;
     
@@ -215,7 +218,6 @@ class GameServer {
       if (damagedPlayers.length > 0) {
         damagedPlayers.forEach(damageInfo => {
           this.io.emit('spawn-barrier-damage', damageInfo);
-          console.log(`스폰 배리어 데미지 이벤트 전송: ${damageInfo.playerId}, -${damageInfo.damage}HP`);
         });
       }
       

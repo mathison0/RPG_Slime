@@ -48,6 +48,9 @@ class ServerEnemy {
     this.stunStartTime = 0;
     this.stunDuration = 0;
     
+    // 효과 상태 관리 (슬로우 등)
+    this.activeEffects = new Set();
+    
     // 이동 관련
     this.vx = 0;
     this.vy = 0;
@@ -106,7 +109,23 @@ class ServerEnemy {
   }
 
   /**
-   * 몬스터 AI 업데이트
+   * 효과가 적용된 실제 속도 계산
+   * @param {number} baseSpeed - 기본 속도
+   * @returns {number} - 효과가 적용된 속도
+   */
+  getEffectiveSpeed(baseSpeed) {
+    let effectiveSpeed = baseSpeed;
+    
+    // 슬로우 효과 적용 (50% 속도 감소)
+    if (this.activeEffects.has('slow')) {
+      effectiveSpeed *= 0.5;
+    }
+    
+    return effectiveSpeed;
+  }
+
+  /**
+   * 몬스터 업데이트
    */
   update(players, walls, delta) {
     const now = Date.now();
@@ -217,8 +236,9 @@ class ServerEnemy {
     const dirX = dx / distance;
     const dirY = dy / distance;
     
-    this.vx = dirX * this.speed;
-    this.vy = dirY * this.speed;
+    const effectiveSpeed = this.getEffectiveSpeed(this.speed);
+    this.vx = dirX * effectiveSpeed;
+    this.vy = dirY * effectiveSpeed;
   }
 
   /**
@@ -230,8 +250,9 @@ class ServerEnemy {
       this.wanderChangeTime = now + Math.random() * 3000 + 2000;
     }
     
-    this.vx = Math.cos(this.wanderDirection) * this.wanderSpeed;
-    this.vy = Math.sin(this.wanderDirection) * this.wanderSpeed;
+    const effectiveWanderSpeed = this.getEffectiveSpeed(this.wanderSpeed);
+    this.vx = Math.cos(this.wanderDirection) * effectiveWanderSpeed;
+    this.vy = Math.sin(this.wanderDirection) * effectiveWanderSpeed;
   }
 
   /**

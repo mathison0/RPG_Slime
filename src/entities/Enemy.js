@@ -30,6 +30,11 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         // 상태 플래그
         this.isDead = false;
         
+        // Tint 상태 관리 (우선순위: 피격 > 기절 > 슬로우)
+        this.isDamaged = false;        // 피격 상태 (0xff0000)
+        this.isStunnedTint = false;    // 기절 상태 (0x888888)
+        this.isSlowedTint = false;     // 슬로우 상태 (0x87ceeb)
+        
         // UI 요소
         this.healthBar = null;
         
@@ -280,18 +285,6 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
             this.applyServerSize(enemyData.size);
         }
         
-        // 기절 상태 적용
-        if (enemyData.isStunned !== undefined) {
-            this.isStunned = enemyData.isStunned;
-            if (this.isStunned) {
-                // 기절 상태일 때 색상 변경
-                this.setTint(0x888888);
-            } else {
-                // 기절 해제 시 색상 복구
-                this.clearTint();
-            }
-        }
-        
         // 어그로 정보 처리
         this.handleAggroUpdate(enemyData.targetId);
         
@@ -333,6 +326,41 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
                 if (this.active) {
                     this.destroy();
                 }
+            }
+        });
+    }
+    
+    /**
+     * Tint 상태를 우선순위에 따라 업데이트
+     * 우선순위: 피격 > 기절 > 슬로우
+     */
+    updateTint() {
+        // 우선순위에 따라 tint 결정
+        if (this.isDamaged) {
+            this.setTint(0xff0000); // 빨간색 (피격)
+        } else if (this.isStunnedTint) {
+            this.setTint(0x888888); // 회색 (기절)
+        } else if (this.isSlowedTint) {
+            this.setTint(0x87ceeb); // 하늘색 (슬로우)
+        } else {
+            this.clearTint(); // 모든 효과가 없으면 원래 색상
+        }
+    }
+    
+    /**
+     * 피격 효과 처리
+     * @param {number} damage - 데미지 양 (옵션)
+     */
+    takeDamage(damage = 0) {
+        // 피격 상태 설정
+        this.isDamaged = true;
+        this.updateTint();
+        
+        // 200ms 후 피격 상태 해제
+        this.scene.time.delayedCall(200, () => {
+            if (this && this.active && !this.isDead) {
+                this.isDamaged = false;
+                this.updateTint();
             }
         });
     }
