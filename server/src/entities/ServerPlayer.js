@@ -23,7 +23,7 @@ class ServerPlayer {
     this.team = team;
     this.level = 1;
     this.exp = 0;
-    this.expToNext = 100;
+    this.expToNext = 25;
     this.maxHp = 100;
     this.hp = this.maxHp;
     this.speed = 200;
@@ -304,7 +304,7 @@ class ServerPlayer {
   levelUp() {
     this.level++;
     // exp는 GameStateManager.giveExperience()에서 초과분 이월 처리하므로 여기서 0으로 초기화하지 않음
-    this.expToNext = this.level * gameConfig.PLAYER.EXP.BASE_REQUIRED * gameConfig.PLAYER.EXP.MULTIPLIER;
+    this.expToNext = gameConfig.PLAYER.EXP[this.level];
     
     // JobClasses를 사용한 올바른 스탯 계산
     const oldMaxHp = this.maxHp;
