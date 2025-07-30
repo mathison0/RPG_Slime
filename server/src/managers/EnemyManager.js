@@ -293,8 +293,8 @@ class EnemyManager {
       }
     }
     
-    // 클라이언트 동기화는 게임 루프에서 별도로 처리
-    // this.broadcastMonsterStates(); // 제거: 게임 루프에서 빈도 조절하여 호출
+    // 클라이언트에게 몬스터 상태 전송
+    this.broadcastMonsterStates();
   }
 
   /**
@@ -327,31 +327,23 @@ class EnemyManager {
   }
 
   /**
-   * 몬스터 상태 브로드캐스트 (최적화)
+   * 클라이언트에게 몬스터 상태 브로드캐스트
    */
   broadcastMonsterStates() {
-    const monsters = Array.from(this.gameStateManager.enemies.values());
+    const monstersState = [];
     
-    // 몬스터가 있을 때만 전송
-    if (monsters.length > 0) {
-      // 필수 정보만 전송
-      const monsterData = monsters.map(monster => ({
-        id: monster.id,
-        x: Math.round(monster.x), // 소수점 제거로 데이터 크기 감소
-        y: Math.round(monster.y),
-        hp: monster.hp,
-        maxHp: monster.maxHp,
-        level: monster.level,
-        type: monster.type,
-        isDead: monster.isDead || false,
-        isStunned: monster.isStunned || false
-      }));
-      
-      this.io.emit('enemies-update', {
-        enemies: monsterData,
-        timestamp: Date.now()
-      });
+    for (const monster of this.gameStateManager.enemies.values()) {
+      monstersState.push(monster.getState());
     }
+    
+    // 첫 번째 브로드캐스트에서만 디버깅 정보 출력
+    if (!this.broadcastLogged) {
+      console.log(`enemies-update 브로드캐스트: ${monstersState.length}마리 몬스터 데이터 전송`);
+      this.broadcastLogged = true;
+    }
+    
+    // 모든 클라이언트에게 몬스터 상태 전송
+    this.io.emit('enemies-update', monstersState);
   }
 
   /**

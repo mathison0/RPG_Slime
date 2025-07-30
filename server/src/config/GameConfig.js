@@ -79,12 +79,8 @@ const gameConfig = {
   
   // 서버 관련 설정
   SERVER: {
-    GAME_LOOP_INTERVAL: 50,  // 50ms -> 100ms로 변경하여 서버 부하 절반으로 감소
-    PLAYER_UPDATE_INTERVAL: 50,  // 플레이어 상태 업데이트는 더 느리게
-    POSITION_UPDATE_INTERVAL: 50,  // 위치 업데이트는 별도로 관리
-    PROJECTILE_UPDATE_INTERVAL: 50,  // 투사체 업데이트 간격
-    ENEMY_UPDATE_INTERVAL: 50,  // 몬스터 상태 업데이트 간격
-    DEFAULT_PORT: 3000
+    GAME_LOOP_INTERVAL: 50,
+    DEFAULT_PORT: 80
   }
 };
 
