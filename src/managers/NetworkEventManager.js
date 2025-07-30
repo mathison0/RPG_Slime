@@ -2158,6 +2158,8 @@ export default class NetworkEventManager {
             }
         }
     }
+    
+    /**
      * 플레이어 위치와 속도를 고정 (시전시간 동안)
      */
     freezePlayerPosition(player, serverX, serverY) {
