@@ -724,22 +724,6 @@ class SocketEventManager {
   }
 
   /**
-   * 플레이어 전직 이벤트 핸들러
-   */
-  setupPlayerJobChangeHandler(socket) {
-    socket.on('player-job-change', (data) => {
-      const player = this.gameStateManager.getPlayer(socket.id);
-      if (player) {
-        player.changeJob(data.jobClass);
-        this.io.emit('player-job-changed', {
-          id: socket.id,
-          jobClass: data.jobClass
-        });
-      }
-    });
-  }
-
-  /**
    * 플레이어 자살 치트 요청 이벤트 핸들러
    */
   setupPlayerSuicideHandler(socket) {
