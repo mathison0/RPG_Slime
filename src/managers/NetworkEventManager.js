@@ -54,7 +54,6 @@ export default class NetworkEventManager {
         this.networkManager.off('disconnect');
         this.networkManager.off('connect_error');
         this.networkManager.off('player-stunned');
-        this.networkManager.off('projectile-created');
         this.networkManager.off('projectiles-update');
         this.networkManager.off('attack-invalid');
         this.networkManager.off('enemy-stunned');
@@ -168,12 +167,7 @@ export default class NetworkEventManager {
             this.handlePlayerStunned(data);
         });
 
-        // 투사체 생성
-        this.networkManager.on('projectile-created', (data) => {
-            this.handleProjectileCreated(data);
-        });
-
-        // 투사체 업데이트
+        // 투사체 업데이트 (스킬로 통합된 이후에도 필요)
         this.networkManager.on('projectiles-update', (data) => {
             this.handleProjectilesUpdate(data);
         });
@@ -181,11 +175,6 @@ export default class NetworkEventManager {
         // 투사체 제거
         this.networkManager.on('projectile-removed', (data) => {
             this.handleProjectileRemoved(data);
-        });
-
-        // 근접 공격 수행
-        this.networkManager.on('melee-attack-performed', (data) => {
-            this.handleMeleeAttackPerformed(data);
         });
 
         // 기타 이벤트
@@ -454,7 +443,6 @@ export default class NetworkEventManager {
                     otherPlayer.level = data.level;
                     otherPlayer.updateCharacterSize();
                 }
-                // size 업데이트는 handlePlayersStateUpdate에서 일괄 처리됨
                 
                 otherPlayer.updateJobSprite();
             }
@@ -538,6 +526,14 @@ export default class NetworkEventManager {
         const currentTime = Date.now();
         const timeUntilCastEnd = effectEndTime - currentTime;
 
+        // 위치 고정이 필요한 스킬인지 확인
+        const needsPositionFreeze = this.shouldFreezePosition(data.skillType);
+        
+        // 플레이어 위치를 서버 위치로 고정 (시전시간 동안)
+        if (needsPositionFreeze) {
+            this.freezePlayerPosition(player, data.x, data.y);
+        }
+
         // 후딜레이가 있는 스킬이면 플레이어 상태 설정
         if (afterDelay > 0) {
             player.isInAfterDelay = true;
@@ -551,17 +547,36 @@ export default class NetworkEventManager {
                 effectEndTime: effectEndTime,
                 endTime: endTime,
             });
+
+            // 시전 완료 시 위치 고정 해제
+            if (needsPositionFreeze) {
+                setTimeout(() => {
+                    this.restorePlayerMovement(player);
+                }, Math.max(0, timeUntilCastEnd));
+            }
         } else {
             console.log(`스킬 효과 완료됨: ${data.skillType}`);
+            // 이미 완료된 스킬인 경우 즉시 복원
+            if (needsPositionFreeze) {
+                this.restorePlayerMovement(player);
+            }
         }
     }
 
     /**
-     * 즉시 시작되는 지속 스킬 처리 (은신, 와드 등)
+     * 즉시 시작되는 지속 스킬 처리 (은신, 와드, 슬라임 퍼지기 등)
      */
     handleDurationSkill(player, data, duration, afterDelay, endTime, effectEndTime) {
         const currentTime = Date.now();
         const timeUntilEffectEnd = effectEndTime - currentTime;
+        
+        // 위치 고정이 필요한 스킬인지 확인 (슬라임 퍼지기 등)
+        const needsPositionFreeze = this.shouldFreezePosition(data.skillType);
+        
+        // 플레이어 위치를 서버 위치로 고정 (지속시간 동안)
+        if (needsPositionFreeze) {
+            this.freezePlayerPosition(player, data.x, data.y);
+        }
         
         if (timeUntilEffectEnd > 0) {
             this.showSkillEffect(player, data.skillType, {
@@ -570,9 +585,20 @@ export default class NetworkEventManager {
                 endTime: endTime,
                 effectEndTime: effectEndTime
             });
+
+            // 스킬 효과 완료 시 위치 고정 해제
+            if (needsPositionFreeze) {
+                setTimeout(() => {
+                    this.restorePlayerMovement(player);
+                }, Math.max(0, timeUntilEffectEnd));
+            }
         } else {
             // 스킬 효과는 끝났지만 아직 후딜레이 진행 중일 수 있음
             console.log(`지속 스킬 효과 완료됨: ${data.skillType}`);
+            // 이미 완료된 스킬인 경우 즉시 복원
+            if (needsPositionFreeze) {
+                this.restorePlayerMovement(player);
+            }
         }
     }
 
@@ -923,7 +949,6 @@ export default class NetworkEventManager {
             // 직업 정보 저장 (UI에서 사용)
             this.scene.player.jobInfo = myPlayerState.jobInfo;
             
-            // 스킬 쿨타임 정보 저장
             this.scene.player.serverSkillCooldowns = myPlayerState.skillCooldowns;
             
             // 활성 효과 정보
@@ -1103,15 +1128,6 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 투사체 생성 처리
-     */
-    handleProjectileCreated(data) {
-        if (this.scene.projectileManager) {
-            this.scene.projectileManager.handleProjectileCreated(data);
-        }
-    }
-
-    /**
      * 투사체 업데이트 처리
      */
     handleProjectilesUpdate(data) {
@@ -1124,61 +1140,6 @@ export default class NetworkEventManager {
      * 투사체 제거 처리
      */
     handleProjectileRemoved(data) {
-    }
-
-    /**
-     * 근접 공격 수행 처리
-     */
-    handleMeleeAttackPerformed(data) {
-        console.log('근접 공격 수행됨:', data);
-        
-        const player = this.findPlayerById(data.playerId);
-        if (!player) {
-            console.warn('근접 공격 플레이어를 찾을 수 없음:', data.playerId);
-            return;
-        }
-
-        console.log('플레이어 찾음:', player);
-        console.log('플레이어 직업:', player.jobClass);
-        console.log('플레이어 job 객체:', player.job);
-
-        // 근접 공격 이펙트 표시
-        this.showMeleeAttackEffect(player, data);
-        
-        // 데미지 결과 처리
-        if (data.damageResult) {
-            this.handleSkillDamageResult(data.damageResult);
-        }
-    }
-
-    /**
-     * 근접 공격 이펙트 표시
-     */
-    showMeleeAttackEffect(player, data) {
-        const jobClass = data.jobClass;
-        const targetX = data.targetX;
-        const targetY = data.targetY;
-        
-        // 직업별 근접 공격 이펙트 처리
-        switch (jobClass) {
-            case 'warrior':
-            case 'supporter':
-            case 'mechanic':
-            case 'assassin':
-                // 각 직업 클래스의 showBasicAttackEffect 메서드 사용
-                if (player.job && player.job.showBasicAttackEffect) {
-                    console.log('showBasicAttackEffect 메서드 호출');
-                    player.job.showBasicAttackEffect(targetX, targetY);
-                } else {
-                    console.warn('player.job 또는 showBasicAttackEffect 메서드가 없음:', {
-                        hasJob: !!player.job,
-                        hasMethod: player.job ? !!player.job.showBasicAttackEffect : false
-                    });
-                }
-                break;
-            default:
-                console.warn('알 수 없는 직업의 근접 공격:', jobClass);
-        }
     }
 
     /**
@@ -2056,9 +2017,6 @@ export default class NetworkEventManager {
         }
     }
 
-    /**
-     * 마법 투사체 폭발 이벤트 처리
-     */
     handleMagicMissileExplosion(data) {
         console.log('마법 투사체 폭발 이벤트 받음:', data);
         
@@ -2199,5 +2157,66 @@ export default class NetworkEventManager {
                 targetPlayer.delayedSkillTimers.add(slowEffectTimer);
             }
         }
+    }
+     * 플레이어 위치와 속도를 고정 (시전시간 동안)
+     */
+    freezePlayerPosition(player, serverX, serverY) {
+        if (!player || !player.body) return;
+
+        // 기존 상태 백업 (복원을 위해)
+        if (!player.frozenState) {
+            player.frozenState = {
+                wasFrozen: false,
+                originalVelocityX: player.body.velocity.x,
+                originalVelocityY: player.body.velocity.y
+            };
+        }
+
+        // 플레이어 위치를 서버 위치로 설정
+        player.setPosition(serverX, serverY);
+        
+        // 속도를 0으로 고정
+        player.body.setVelocity(0, 0);
+        
+        // 고정 상태 표시
+        player.frozenState.wasFrozen = true;
+        player.isCasting = true; // 시전 중 표시
+
+        console.log(`플레이어 위치 고정: (${serverX}, ${serverY}), 속도: 0`);
+    }
+
+    /**
+     * 플레이어 이동 상태 복원
+     */
+    restorePlayerMovement(player) {
+        if (!player || !player.frozenState || !player.frozenState.wasFrozen) return;
+
+        // 시전 상태 해제
+        player.isCasting = false;
+        
+        // 원래 속도는 복원하지 않음 (현재 입력 상태에 따라 자연스럽게 변경되도록)
+        // 대신 현재 속도만 0으로 리셋하여 부드러운 전환
+        if (player.body) {
+            player.body.setVelocity(0, 0);
+        }
+
+        // 상태 정리
+        player.frozenState = null;
+
+        console.log(`플레이어 이동 상태 복원 완료`);
+    }
+
+    /**
+     * 스킬이 위치 고정이 필요한지 확인
+     */
+    shouldFreezePosition(skillType) {
+        const freezeSkills = [
+            'sweep',    // 전사 휩쓸기
+            'thrust',   // 전사 찌르기  
+            'roar',     // 전사 포효
+            'spread'    // 슬라임 퍼지기
+        ];
+        
+        return freezeSkills.includes(skillType);
     }
 }

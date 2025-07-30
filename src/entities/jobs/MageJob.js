@@ -123,10 +123,26 @@ export default class MageJob extends BaseJob {
     /**
      * 보호막 이펙트 (서버에서 스킬 승인 시 호출)
      */
-    showShieldEffect(data = null) {
-        // 보호막 이펙트 생성
-        const shield = this.player.scene.add.circle(this.player.x, this.player.y, 50, 0x00ffff, 0.3);
-        shield.setDepth(1002);
+    showWardEffect(data = null) {
+        // 서버에서 받은 와드 설치 위치 정보 사용 (wardX, wardY는 설치 위치, x, y는 플레이어 위치)
+        const wardX = data?.wardX || data?.x || this.player.x;
+        const wardY = data?.wardY || data?.y || this.player.y;
+        
+        // 와드 관리 배열 초기화 (없으면 생성)
+        if (!this.player.scene.wardList) {
+            this.player.scene.wardList = [];
+        }
+        
+        // 다른 플레이어의 와드인지 확인 
+        const isOtherPlayer = data?.playerId && data.playerId !== this.player.networkManager?.playerId;
+        
+        // 내 와드이고 최대 개수(2개)에 도달했다면 가장 오래된 와드 제거
+        if (!isOtherPlayer && this.player.scene.wardList.length >= 2) {
+            const oldestWard = this.player.scene.wardList.shift(); // 첫 번째 와드 제거
+            if (oldestWard && oldestWard.sprite && oldestWard.sprite.active) {
+                oldestWard.sprite.destroyWard();
+            }
+        }
         
         // 보호막 애니메이션
         this.player.scene.tweens.add({

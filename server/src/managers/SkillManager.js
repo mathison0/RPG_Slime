@@ -7,8 +7,9 @@ const MonsterConfig = require('../../shared/MonsterConfig');
  * 모든 스킬의 데미지 계산과 효과를 중앙에서 관리
  */
 class SkillManager {
-  constructor(gameStateManager) {
+  constructor(gameStateManager, projectileManager = null) {
     this.gameStateManager = gameStateManager;
+    this.projectileManager = projectileManager;
   }
 
   /**
@@ -25,7 +26,7 @@ class SkillManager {
       return { success: false, error: 'Cannot use skills while stunned' };
     }
 
-    // 기본 공격 처리
+    // 기본 공격 처리 (별도 처리)
     if (skillType === 'basic_attack') {
       const basicAttackResult = this.handleBasicAttack(player, targetX, targetY);
       
@@ -50,8 +51,8 @@ class SkillManager {
       return { success: false, error: 'Skill on cooldown' };
     }
 
-    // 점프 중인 경우 은신 스킬을 제외하고 스킬 사용 불가
-    if (player.isJumping && skillType !== 'stealth') {
+    // 점프 중인 경우 스킬 사용 불가
+    if (player.isJumping) {
       return { success: false, error: 'Cannot use skill while jumping' };
     }
 
@@ -730,18 +731,8 @@ class SkillManager {
    * 기본 공격 처리
    */
   handleBasicAttack(player, targetX, targetY) {
-    // 죽은 플레이어는 기본 공격 불가
-    if (player.isDead) {
-      return { success: false, error: 'Cannot attack while dead' };
-    }
-
     const now = Date.now();
-    
-    // 기절 상태에서는 기본 공격 사용 불가
-    if (player.isStunned) {
-      return { success: false, error: 'Cannot use basic attack while stunned' };
-    }
-    
+
     // 기본 공격 쿨다운 체크 (endTime 기반)
     const { getJobInfo } = require('../../shared/JobClasses.js');
     const jobInfo = getJobInfo(player.jobClass);
@@ -751,6 +742,8 @@ class SkillManager {
     if (now < basicAttackEndTime) {
       return { success: false, error: 'Basic attack on cooldown' };
     }
+
+    console.log('basic_attack now:', now, 'cooldown:', cooldown);
 
     // 기본 공격 쿨다운 설정 (endTime 저장)
     player.skillCooldowns['basic_attack'] = now + cooldown;
@@ -1554,6 +1547,42 @@ class SkillManager {
 
   applyFlaskDamage(player, x, y, targetX, targetY, damage, damageResult) {
     // 플라스크 데미지 로직
+  }
+
+  /**
+   * 원거리 기본 공격 처리 (투사체 생성)
+   */
+  applyRangedBasicAttack(player, baseDamage, x, y, targetX, targetY) {
+    const damageResult = {
+      affectedEnemies: [],
+      affectedPlayers: [],
+      totalDamage: 0
+    };
+
+    // 투사체 매니저가 없으면 빈 결과 반환
+    if (!this.projectileManager) {
+      console.warn('ProjectileManager가 없어 원거리 기본공격을 처리할 수 없습니다.');
+      return damageResult;
+    }
+
+    // 투사체 생성
+    const projectileId = this.projectileManager.createProjectile(
+      player.id, 
+      targetX, 
+      targetY, 
+      player.jobClass
+    );
+
+    if (projectileId) {
+      console.log(`원거리 기본공격 투사체 생성: ${projectileId} (${player.jobClass})`);
+      
+      // 투사체가 생성되면 ProjectileManager가 데미지를 처리하므로
+      // 여기서는 빈 결과를 반환 (실제 데미지는 투사체 충돌 시 적용됨)
+      return damageResult;
+    } else {
+      console.warn('투사체 생성 실패');
+      return damageResult;
+    }
   }
 }
 

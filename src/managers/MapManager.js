@@ -395,7 +395,7 @@ export default class MapManager {
             this.scene.player, 
             this.scene.enemies, 
             this.handlePlayerEnemyCollision, 
-            null, 
+            () => false, // 물리적 분리 방지 (플레이어가 밀리지 않음)
             this.scene
         );
         
