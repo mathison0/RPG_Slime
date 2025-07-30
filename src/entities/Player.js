@@ -723,18 +723,22 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         }
         
         if (pingElement) {
-            const ping = this.networkPing || '--';
+            // NetworkManager에서 전용 핑 값 사용
+            const networkManager = this.scene?.networkManager;
+            const ping = networkManager ? networkManager.getPing() : (this.networkPing || '--');
             const pingText = ping === '--' ? ping : `${ping}ms`;
             pingElement.textContent = `핑: ${pingText}`;
             
             // 핑에 따라 색상 변경
-            if (ping !== '--') {
+            if (ping !== '--' && typeof ping === 'number') {
                 if (ping < 50) {
                     pingElement.style.color = '#00ff00'; // 녹색 (좋음)
                 } else if (ping < 100) {
                     pingElement.style.color = '#ffff00'; // 노란색 (보통)
+                } else if (ping < 200) {
+                    pingElement.style.color = '#ffa500'; // 주황색 (나쁨)
                 } else {
-                    pingElement.style.color = '#ff0000'; // 빨간색 (나쁨)
+                    pingElement.style.color = '#ff0000'; // 빨간색 (매우 나쁨)
                 }
             } else {
                 pingElement.style.color = '#ffffff'; // 흰색 (기본)

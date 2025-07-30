@@ -4,8 +4,8 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "npm start",
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10
+    "numReplicas": 1,
+    "region": "ap-southeast-1",
+    "restartPolicyType": "ON_FAILURE"
   }
 } 

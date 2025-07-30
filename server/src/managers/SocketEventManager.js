@@ -21,7 +21,7 @@ class SocketEventManager {
     this.io.on('connection', (socket) => {
       console.log(`\n=== 새로운 소켓 연결: ${socket.id} ===`);
       console.log(`현재 연결된 플레이어 수: ${this.gameStateManager.players.size}`);
-
+      
       // 소켓을 맵에 저장
       this.playerSockets.set(socket.id, socket);
 
@@ -40,6 +40,7 @@ class SocketEventManager {
       this.setupProjectileHandler(socket);
       this.setupGameSyncHandler(socket);
       this.setupPlayerRespawnHandler(socket);
+      this.setupPingTestHandler(socket); // 핑 테스트 핸들러 추가
       this.setupDisconnectHandler(socket);
     });
   }
@@ -817,6 +818,16 @@ class SocketEventManager {
   }
 
   /**
+   * 핑 테스트 핸들러 설정
+   */
+  setupPingTestHandler(socket) {
+    socket.on('ping-test', (clientTimestamp) => {
+      // 즉시 응답 (서버 처리 시간 최소화)
+      socket.emit('ping-response', clientTimestamp);
+    });
+  }
+
+  /**
    * 특정 팀에게만 메시지 전송
    */
   broadcastToTeam(team, event, data) {
@@ -826,6 +837,16 @@ class SocketEventManager {
       if (socket) {
         socket.emit(event, data);
       }
+    });
+  }
+
+  /**
+   * 핑 테스트 핸들러 설정
+   */
+  setupPingTestHandler(socket) {
+    socket.on('ping-test', (clientTimestamp) => {
+      // 즉시 응답 (서버 처리 시간 최소화)
+      socket.emit('ping-response', clientTimestamp);
     });
   }
 }

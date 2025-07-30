@@ -15,12 +15,26 @@ class NetworkManager {
             ? 'http://localhost:3000' 
             : window.location.origin;
         
-        this.socket = io(serverUrl);
+        // Socket.IO 연결 옵션 최적화
+        this.socket = io(serverUrl, {
+            timeout: 10000,          // 연결 타임아웃 10초
+            forceNew: true,          // 새 연결 강제
+            transports: ['websocket', 'polling'], // WebSocket 우선, polling 백업
+            upgrade: true,           // 자동 업그레이드 활성화
+            rememberUpgrade: true    // 업그레이드 기억
+        });
+        
         this.isConnected = false;
         this.playerId = null;
         this.callbacks = new Map();
         this.pendingJoinGameData = null; // 게임 입장 대기 데이터
         this.hasJoinedGame = false; // 게임 입장 완료 여부
+        
+        // 핑 테스트 관련 변수
+        this.ping = 0;
+        this.pingTestInterval = null;
+        this.lastPingTime = 0;
+        
         this.setupSocketEvents();
         
         // 싱글톤 인스턴스 저장
@@ -41,6 +55,9 @@ class NetworkManager {
             console.log('서버에 연결되었습니다.');
             this.isConnected = true;
             
+            // 핑 테스트 시작
+            this.startPingTest();
+            
             // 연결 완료 후 대기 중인 게임 입장 요청 처리
             if (this.pendingJoinGameData && !this.hasJoinedGame) {
                 const dataToSend = this.pendingJoinGameData;
@@ -55,6 +72,18 @@ class NetworkManager {
             this.isConnected = false;
             this.hasJoinedGame = false; // 연결이 끊어지면 다시 입장 가능하도록
             this.emit('disconnect'); // NetworkEventManager로 이벤트 전달
+            
+            // 핑 테스트 정지
+            this.stopPingTest();
+        });
+
+        // 핑 테스트 응답 처리
+        this.socket.on('ping-response', (serverTimestamp) => {
+            const now = Date.now();
+            if (this.lastPingTime && serverTimestamp === this.lastPingTime) {
+                this.ping = now - this.lastPingTime;
+                // console.log(`핑: ${this.ping}ms`); // 디버그용 (필요시 활성화)
+            }
         });
 
         this.socket.on('connect_error', (error) => {
@@ -62,6 +91,10 @@ class NetworkManager {
             this.isConnected = false;
             this.hasJoinedGame = false;
             this.emit('connect_error', error); // NetworkEventManager로 이벤트 전달
+        });
+
+        this.socket.on('error', (error) => {
+            console.error('Socket.IO 에러:', error);
         });
 
         // 게임 이벤트 리스너들
@@ -365,13 +398,18 @@ class NetworkManager {
 
     // 연결 해제 및 재시도
     disconnect() {
+        console.log('연결을 끊는 중...');
         if (this.socket) {
             this.socket.disconnect();
         }
+        
         this.isConnected = false;
         this.playerId = null;
         this.hasJoinedGame = false;
         this.pendingJoinGameData = null;
+        
+        // 핑 테스트 정지
+        this.stopPingTest();
     }
 
     /**
@@ -387,6 +425,9 @@ class NetworkManager {
                 this.socket.disconnect();
             }
             
+            // 핑 테스트 정지
+            this.stopPingTest();
+            
             // 상태 초기화
             this.isConnected = false;
             this.playerId = null;
@@ -399,13 +440,66 @@ class NetworkManager {
                 ? 'http://localhost:3000' 
                 : window.location.origin;
             
-            this.socket = io(serverUrl);
+            this.socket = io(serverUrl, {
+                timeout: 10000,
+                forceNew: true,
+                transports: ['websocket', 'polling'],
+                upgrade: true,
+                rememberUpgrade: true
+            });
             this.setupSocketEvents();
             
             console.log('NetworkManager 연결 초기화 완료');
         } catch (error) {
             console.error('NetworkManager 연결 초기화 중 오류:', error);
         }
+    }
+
+    /**
+     * 전용 핑 테스트 시작
+     */
+    startPingTest() {
+        // 기존 핑 테스트 정리
+        if (this.pingTestInterval) {
+            clearInterval(this.pingTestInterval);
+        }
+
+        // 3초마다 핑 테스트 실행
+        this.pingTestInterval = setInterval(() => {
+            if (this.isConnected) {
+                this.sendPingTest();
+            }
+        }, 3000);
+        
+        // 즉시 한 번 실행
+        if (this.isConnected) {
+            this.sendPingTest();
+        }
+    }
+
+    /**
+     * 핑 테스트 전송
+     */
+    sendPingTest() {
+        this.lastPingTime = Date.now();
+        this.socket.emit('ping-test', this.lastPingTime);
+    }
+
+    /**
+     * 핑 테스트 정지
+     */
+    stopPingTest() {
+        if (this.pingTestInterval) {
+            clearInterval(this.pingTestInterval);
+            this.pingTestInterval = null;
+        }
+    }
+
+    /**
+     * 현재 핑 값 반환
+     */
+    getPing() {
+        return this.ping;
     }
 } 
 
