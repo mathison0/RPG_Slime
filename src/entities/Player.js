@@ -58,6 +58,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // 상태
         this.isJumping = false;
+        this.jumpEndTime = null; // 점프 애니메이션 끝나는 시점
         this.team = team;
         this.isInvincible = false;
         this.isDead = false; // 사망 상태
@@ -538,6 +539,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      */
     requestSkillUse(skillType) {
         if (this.networkManager) {
+            // 클라이언트 사이드 쿨다운 체크
+            if (this.isSkillOnCooldown(skillType)) {
+                return; // 서버에 요청을 보내지 않음
+            }
+            
             // 타겟이 필요한 스킬의 경우 마우스 위치 전송
             const pointer = this.scene.input.activePointer;
             const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
@@ -1197,6 +1203,57 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             });
             this.enemyDebugTexts = [];
         }
+    }
+
+    /**
+     * 스킬이 쿨다운 중인지 확인 (endTime 기반)
+     */
+    isSkillOnCooldown(skillType) {
+        if (skillType === 'jump') {
+            return !this.isJumpAnimationFinished();
+        }
+        
+        if (!this.serverSkillCooldowns) {
+            console.log('서버 쿨다운 정보가 없음');
+            return false; // 서버 쿨다운 정보가 없으면 허용
+        }
+        
+        const cooldownInfo = this.serverSkillCooldowns[skillType];
+        if (!cooldownInfo) {
+            console.log('해당 스킬의 쿨다운 정보가 없음');
+            return false; // 해당 스킬의 쿨다운 정보가 없으면 허용
+        }
+
+        const now = Date.now();
+        const endTime = cooldownInfo.nextAvailableTime;
+        const isOnCooldown = now < endTime;
+        
+        console.log('remain:', endTime - now);
+        
+        return isOnCooldown;
+    }
+
+    /**
+     * 점프 애니메이션이 끝났는지 확인
+     */
+    isJumpAnimationFinished() {
+        // 점프 중이 아니면 바로 점프 가능
+        if (!this.isJumping) {
+            console.log('점프 체크: 점프 중이 아님 -> 가능');
+            return true;
+        }
+        
+        // 서버에서 받은 점프 액션 정보가 있는지 확인
+        if (this.jumpEndTime) {
+            const now = Date.now();
+            const finished = now >= this.jumpEndTime;
+            console.log(`점프 체크: jumpEndTime=${this.jumpEndTime}, now=${now}, finished=${finished}`);
+            return finished;
+        }
+        
+        // 점프 액션 정보가 없으면 현재 점프 상태를 기준으로 판단
+        console.log('점프 체크: jumpEndTime 없음, isJumping=true -> 불가능');
+        return false;
     }
 
     /**

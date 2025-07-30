@@ -38,8 +38,7 @@ class AssassinJob extends BaseJob {
         if (!this.isSkillAvailable('stealth')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('stealth')
+                reason: 'cooldown'
             };
         }
 
@@ -101,8 +100,7 @@ class AssassinJob extends BaseJob {
         if (!this.canUseBasicAttack()) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.basicAttackCooldown - (Date.now() - this.lastBasicAttackTime)
+                reason: 'cooldown'
             };
         }
 

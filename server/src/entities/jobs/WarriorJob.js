@@ -42,8 +42,7 @@ class WarriorJob extends BaseJob {
         if (!this.isSkillAvailable('roar')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('roar')
+                reason: 'cooldown'
             };
         }
 
@@ -113,8 +112,7 @@ class WarriorJob extends BaseJob {
         if (!this.isSkillAvailable('sweep')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('sweep')
+                reason: 'cooldown'
             };
         }
 
@@ -195,8 +193,7 @@ class WarriorJob extends BaseJob {
         if (!this.isSkillAvailable('thrust')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('thrust')
+                reason: 'cooldown'
             };
         }
 
@@ -286,8 +283,7 @@ class WarriorJob extends BaseJob {
         if (!this.canUseBasicAttack()) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.basicAttackCooldown - (Date.now() - this.lastBasicAttackTime)
+                reason: 'cooldown'
             };
         }
 

@@ -42,8 +42,7 @@ class SupporterJob extends BaseJob {
         if (!this.isSkillAvailable('ward')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('ward')
+                reason: 'cooldown'
             };
         }
 
@@ -91,8 +90,7 @@ class SupporterJob extends BaseJob {
         if (!this.isSkillAvailable('buff_field')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('buff_field')
+                reason: 'cooldown'
             };
         }
 
@@ -172,8 +170,7 @@ class SupporterJob extends BaseJob {
         if (!this.isSkillAvailable('heal_field')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('heal_field')
+                reason: 'cooldown'
             };
         }
 
@@ -261,8 +258,7 @@ class SupporterJob extends BaseJob {
         if (!this.canUseBasicAttack()) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.basicAttackCooldown - (Date.now() - this.lastBasicAttackTime)
+                reason: 'cooldown'
             };
         }
 

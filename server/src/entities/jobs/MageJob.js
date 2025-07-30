@@ -42,8 +42,7 @@ class MageJob extends BaseJob {
         if (!this.isSkillAvailable('ward')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('ward')
+                reason: 'cooldown'
             };
         }
 
@@ -91,8 +90,7 @@ class MageJob extends BaseJob {
         if (!this.isSkillAvailable('ice_field')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('ice_field')
+                reason: 'cooldown'
             };
         }
 
@@ -171,8 +169,7 @@ class MageJob extends BaseJob {
         if (!this.isSkillAvailable('magic_missile')) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.getRemainingCooldown('magic_missile')
+                reason: 'cooldown'
             };
         }
 
@@ -241,8 +238,7 @@ class MageJob extends BaseJob {
         if (!this.canUseBasicAttack()) {
             return { 
                 success: false, 
-                reason: 'cooldown',
-                remainingCooldown: this.basicAttackCooldown - (Date.now() - this.lastBasicAttackTime)
+                reason: 'cooldown'
             };
         }
 

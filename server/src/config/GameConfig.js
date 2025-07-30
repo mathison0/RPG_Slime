@@ -80,7 +80,7 @@ const gameConfig = {
   // 서버 관련 설정
   SERVER: {
     GAME_LOOP_INTERVAL: 50,
-    DEFAULT_PORT: 3000
+    DEFAULT_PORT: 80
   }
 };
 

@@ -497,8 +497,6 @@ export default class NetworkEventManager {
         // 후딜레이 완료 시간 계산
         const effectEndTime = endTime - afterDelay; // 실제 스킬 효과 종료 시간
         
-        console.log(`스킬 사용: ${data.skillType}, 전체완료까지: ${timeUntilEnd}ms, 효과완료까지: ${effectEndTime - currentTime}ms, 시전시간: ${delay}ms, 지속시간: ${duration}ms, 후딜레이: ${afterDelay}ms, endTime: ${endTime}`);
-
         // 스킬이 이미 완료된 경우 스킵
         if (timeUntilEnd < 0) {
             console.log(`스킬 이펙트 스킵: 이미 완료됨 (${timeUntilEnd}ms, ${data.skillType})`);
@@ -550,9 +548,6 @@ export default class NetworkEventManager {
         const timeUntilEffectEnd = effectEndTime - currentTime;
         
         if (timeUntilEffectEnd > 0) {
-            // 아직 지속 중 - 남은 시간만큼 효과 시작
-            console.log(`지속 스킬 시작: ${data.skillType}, 남은 지속시간: ${timeUntilEffectEnd}ms`);
-            
             this.showSkillEffect(player, data.skillType, {
                 ...data,
                 isDelayed: false,
@@ -945,6 +940,19 @@ export default class NetworkEventManager {
                 }
             }
             
+            // 활성 액션 정보 업데이트 (점프 endTime 포함)
+            if (myPlayerState.activeActions) {
+                // 점프 액션 처리
+                if (myPlayerState.activeActions.jump && myPlayerState.activeActions.jump.endTime > Date.now()) {
+                    this.scene.player.jumpEndTime = myPlayerState.activeActions.jump.endTime;
+                    console.log(`점프 endTime 업데이트: ${this.scene.player.jumpEndTime}`);
+                } else if (!myPlayerState.activeActions.jump && this.scene.player.jumpEndTime) {
+                    // 점프 액션이 없으면 초기화
+                    this.scene.player.jumpEndTime = null;
+                    console.log('점프 endTime 초기화');
+                }
+            }
+            
             // UI 업데이트 (클라이언트 로컬 정보 반영)
             this.scene.player.updateUI();
         }
@@ -1100,8 +1108,6 @@ export default class NetworkEventManager {
      * 투사체 제거 처리
      */
     handleProjectileRemoved(data) {
-        console.log('투사체 제거됨:', data);
-        // 투사체 제거 로직은 ProjectileManager에서 처리됨
     }
 
     /**
@@ -1769,14 +1775,26 @@ export default class NetworkEventManager {
             targets.push(player.healthBar.container);
         }
         
-        // 서버에서 받은 지속시간 사용 (기본값 400ms)
-        const skillInfo = data?.skillInfo || {};
-        const duration = skillInfo.duration || 400;
+        // 점프 애니메이션 끝나는 시점 저장 (서버에서 받은 endTime 사용)
+        let jumpEndTime;
+        if (data?.endTime) {
+            jumpEndTime = data.endTime;
+            player.jumpEndTime = data.endTime;
+        } else {
+            // endTime이 없으면 기본 지속시간(400ms)으로 계산
+            const defaultDuration = 400;
+            jumpEndTime = Date.now() + defaultDuration;
+            player.jumpEndTime = jumpEndTime;
+        }
+        
+        // endTime까지 남은 시간으로 애니메이션 지속시간 계산
+        const totalRemainingTime = Math.max(0, jumpEndTime - Date.now());
+        const halfDuration = totalRemainingTime / 2; // yoyo 애니메이션이므로 절반씩
         
         this.scene.tweens.add({
             targets: targets,
             y: '-=50',
-            duration: Math.min(duration / 2, 200), // 올라가는 시간
+            duration: halfDuration,
             yoyo: true,
             ease: 'Power2',
             onComplete: () => {
@@ -1789,6 +1807,7 @@ export default class NetworkEventManager {
                         player.healthBar.container.y = originalHealthBarY;
                     }
                     player.isJumping = false;
+                    player.jumpEndTime = null; // 점프 끝나면 초기화
                     player.updateNameTextPosition();
                     player.updateHealthBar();
                 }

@@ -12,7 +12,7 @@ class NetworkManager {
         
         // 개발환경과 프로덕션 환경 구분
         const serverUrl = window.location.hostname === 'localhost' 
-            ? 'http://localhost:3000' 
+            ? 'http://localhost:80' 
             : window.location.origin;
         
         // Socket.IO 연결 옵션 최적화
@@ -437,7 +437,7 @@ class NetworkManager {
             
             // 새로운 소켓 연결 생성
             const serverUrl = window.location.hostname === 'localhost' 
-                ? 'http://localhost:3000' 
+                ? 'http://localhost:80' 
                 : window.location.origin;
             
             this.socket = io(serverUrl, {
@@ -469,7 +469,7 @@ class NetworkManager {
             if (this.isConnected) {
                 this.sendPingTest();
             }
-        }, 3000);
+        }, 500);
         
         // 즉시 한 번 실행
         if (this.isConnected) {

@@ -37,6 +37,11 @@ export default class BaseJob {
      * @param {number} targetY - 목표 Y 좌표
      */
     useBasicAttack(targetX, targetY) {
+        // 클라이언트 사이드 쿨다운 체크
+        if (this.player.isSkillOnCooldown('basic_attack')) {
+            return; // 서버에 요청을 보내지 않음
+        }
+        
         // 기본 공격 쿨타임 설정
         this.setBasicAttackCooldown();
         
@@ -57,7 +62,6 @@ export default class BaseJob {
         } else {
             // 원거리 공격은 투사체 발사
             if (this.player.networkManager) {
-                console.log('투사체 발사 이벤트 전송:', { targetX, targetY });
                 this.player.networkManager.socket.emit('fire-projectile', {
                     targetX: targetX,
                     targetY: targetY
@@ -111,7 +115,7 @@ export default class BaseJob {
      * @param {number} duration - 쿨타임 지속시간 (ms)
      */
     setSkillCooldown(skillKey, duration) {
-        const cooldownEnd = this.scene.time.now + duration;
+        const cooldownEnd = Date.now() + duration;
         this.skillCooldowns.set(skillKey, cooldownEnd);
     }
 
@@ -121,7 +125,7 @@ export default class BaseJob {
      * @returns {number} - 남은 시간 (ms)
      */
     getRemainingCooldown(skillKey) {
-        const now = this.scene.time.now;
+        const now = Date.now();
         const cooldownEnd = this.skillCooldowns.get(skillKey) || 0;
         return Math.max(0, cooldownEnd - now);
     }
@@ -178,8 +182,18 @@ export default class BaseJob {
             return;
         }
         
+        // 클라이언트 사이드 점프 가능 여부 체크
+        if (this.player.isSkillOnCooldown('jump')) {
+            return; // 서버에 요청을 보내지 않음
+        }
+        
         // 네트워크 동기화 (서버에 점프 요청만 전송)
         if (this.player.networkManager && !this.player.isOtherPlayer) {
+            // 임시로 jumpEndTime 설정 (서버 응답 대기 중 연속 요청 방지)
+            const tempJumpDuration = 400; // 기본 점프 지속시간
+            this.player.jumpEndTime = Date.now() + tempJumpDuration;
+            console.log(`임시 점프 endTime 설정: ${this.player.jumpEndTime}`);
+            
             this.player.networkManager.useSkill('jump');
         }
 

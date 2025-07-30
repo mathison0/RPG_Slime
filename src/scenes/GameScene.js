@@ -379,11 +379,14 @@ export default class GameScene extends Phaser.Scene {
         if (!activeActions) return;
 
         // 점프 상태 복원
-        if (activeActions.jump && activeActions.jump.remainingTime > 0) {
+        if (activeActions.jump && activeActions.jump.endTime > Date.now()) {
             player.isJumping = true;
             
-            // 남은 시간만큼 점프 애니메이션 진행
-            const remainingTime = activeActions.jump.remainingTime;
+            // 점프 애니메이션 끝나는 시점 저장
+            player.jumpEndTime = activeActions.jump.endTime;
+            
+            // endTime까지 남은 시간만큼 점프 애니메이션 진행
+            const remainingTime = activeActions.jump.endTime - Date.now();
             this.tweens.add({
                 targets: player,
                 y: player.y - 40,
@@ -392,19 +395,21 @@ export default class GameScene extends Phaser.Scene {
                 yoyo: true,
                 onComplete: () => {
                     player.isJumping = false;
+                    player.jumpEndTime = null; // 점프 끝나면 초기화
                 }
             });
             
-            console.log(`점프 상태 복원: ${remainingTime}ms 남음`);
+            console.log(`점프 상태 복원: ${remainingTime}ms 남음 (endTime: ${activeActions.jump.endTime})`);
         }
 
         // 스킬 상태 복원
         if (activeActions.skills && activeActions.skills.length > 0) {
             activeActions.skills.forEach(skillData => {
-                if (skillData.remainingTime > 0) {
-                    // 스킬 효과 복원 (남은 시간 고려)
-                    this.restoreSkillEffect(player, skillData);
-                    console.log(`스킬 ${skillData.skillType} 상태 복원: ${skillData.remainingTime}ms 남음`);
+                if (skillData.endTime > Date.now()) {
+                    // 스킬 효과 복원 (endTime 기준으로 판단)
+                    const remainingTime = skillData.endTime - Date.now();
+                    this.restoreSkillEffect(player, skillData, remainingTime);
+                    console.log(`스킬 ${skillData.skillType} 상태 복원: ${remainingTime}ms 남음`);
                 }
             });
         }
@@ -413,13 +418,13 @@ export default class GameScene extends Phaser.Scene {
     /**
      * 스킬 효과 복원
      */
-    restoreSkillEffect(player, skillData) {
+    restoreSkillEffect(player, skillData, remainingTime) {
         // 스킬 타입별로 남은 시간만큼 효과 적용
         switch (skillData.skillType) {
             case 'stealth':
                 // 은신 효과 복원
                 player.setAlpha(0.3);
-                this.time.delayedCall(skillData.remainingTime, () => {
+                this.time.delayedCall(remainingTime, () => {
                     player.setAlpha(1);
                 });
                 break;
@@ -430,7 +435,7 @@ export default class GameScene extends Phaser.Scene {
                     player.wardEffect.destroy();
                 }
                 player.wardEffect = this.add.circle(player.x, player.y, 30, 0x00ff00, 0.3);
-                this.time.delayedCall(skillData.remainingTime, () => {
+                this.time.delayedCall(remainingTime, () => {
                     if (player.wardEffect) {
                         player.wardEffect.destroy();
                         player.wardEffect = null;
@@ -444,7 +449,7 @@ export default class GameScene extends Phaser.Scene {
                 
             default:
                 // 기타 스킬들은 남은 시간만큼 대기
-                this.time.delayedCall(skillData.remainingTime, () => {
+                this.time.delayedCall(remainingTime, () => {
                     console.log(`스킬 ${skillData.skillType} 효과 종료`);
                 });
                 break;
