@@ -185,7 +185,12 @@ export default class AssassinJob extends BaseJob {
     showStealthEffect(data = null) {
         this.isStealth = true;
         this.player.setAlpha(0.3);
-        this.player.setTint(0x888888);
+        
+        // 은신 tint 상태 설정
+        this.player.isStealthTint = true;
+        if (this.player.updateTint) {
+            this.player.updateTint();
+        }
         
         // 서버에서 받은 지속시간 사용 (기본값 5000ms)
         const skillInfo = data?.skillInfo || {};
@@ -207,7 +212,10 @@ export default class AssassinJob extends BaseJob {
         this.player.scene.time.delayedCall(duration, () => {
             if (this.player.active) {
                 this.player.setAlpha(1);
-                this.player.clearTint();
+                this.player.isStealthTint = false;
+                if (this.player.updateTint) {
+                    this.player.updateTint();
+                }
             }
         });
     }

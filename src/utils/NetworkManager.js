@@ -194,10 +194,6 @@ class NetworkManager {
             this.emit('player-respawned', data);
         });
 
-        this.socket.on('player-state-sync', (data) => {
-            this.emit('player-state-sync', data);
-        });
-
         this.socket.on('ward-destroyed', (data) => {
             this.emit('ward-destroyed', data);
         });

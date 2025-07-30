@@ -74,11 +74,24 @@ export default class SkillCooldownUI {
             keyText.setScrollFactor(0);
             keyText.setDepth(1002);
             
+            // 쿨타임 카운트다운 텍스트 (처음에는 숨김)
+            const cooldownText = this.scene.add.text(config.x, config.y + 5, '', {
+                fontSize: '14px',
+                fill: '#ffffff',
+                fontStyle: 'bold',
+                stroke: '#000000',
+                strokeThickness: 2
+            }).setOrigin(0.5);
+            cooldownText.setScrollFactor(0);
+            cooldownText.setDepth(1003);
+            cooldownText.setVisible(false);
+            
             // 스킬 UI 저장
             this.skillUIs[config.key] = {
                 background: background,
                 cooldown: cooldown,
                 keyText: keyText,
+                cooldownText: cooldownText,
                 x: config.x,
                 y: config.y,
                 radius: radius,
@@ -136,12 +149,14 @@ export default class SkillCooldownUI {
             const cooldownInfo = serverSkillCooldowns[skillKey];
             if (cooldownInfo && cooldownInfo.nextAvailableTime) {
                 const now = Date.now();
-                const remaining = Math.max(0, cooldownInfo.nextAvailableTime - now);
+                const endTime = cooldownInfo.nextAvailableTime;
+                const remaining = Math.max(0, endTime - now);
                 
                 if (remaining > 0) {
-                    // 쿨타임이 남은 스킬의 UI 업데이트
-                    // total은 계산할 수 없으므로 remaining을 최대값으로 사용
-                    this.drawCooldown(skillKey, remaining, remaining);
+                    // 서버에서 저장된 총 쿨타임 정보 사용
+                    const totalCooldown = this.getServerTotalCooldown(skillKey);
+                    
+                    this.drawCooldown(skillKey, remaining, totalCooldown);
                 } else {
                     // 쿨타임이 끝난 스킬의 UI 초기화
                     ui.cooldown.clear();
@@ -149,6 +164,11 @@ export default class SkillCooldownUI {
                     ui.background.clear();
                     ui.background.fillStyle(0x0066ff, 0.8);
                     ui.background.fillCircle(ui.x, ui.y, ui.radius);
+                    
+                    // 쿨타임 텍스트 숨기기
+                    if (ui.cooldownText) {
+                        ui.cooldownText.setVisible(false);
+                    }
                 }
             } else {
                 // 쿨타임 정보가 없는 스킬의 UI 초기화
@@ -157,8 +177,36 @@ export default class SkillCooldownUI {
                 ui.background.clear();
                 ui.background.fillStyle(0x0066ff, 0.8);
                 ui.background.fillCircle(ui.x, ui.y, ui.radius);
+                
+                // 쿨타임 텍스트 숨기기
+                if (ui.cooldownText) {
+                    ui.cooldownText.setVisible(false);
+                }
             }
         });
+    }
+    
+    /**
+     * 서버에서 저장된 총 쿨타임 시간을 가져오기
+     * @param {string} skillKey - 스킬 키 (skill1, skill2, skill3, basic_attack)
+     * @returns {number} - 총 쿨타임 시간 (ms)
+     */
+    getServerTotalCooldown(skillKey) {
+        // 서버에서 저장된 쿨타임 정보 사용
+        if (this.player && this.player.serverCooldownInfo && this.player.serverCooldownInfo[skillKey]) {
+            return this.player.serverCooldownInfo[skillKey].totalCooldown;
+        }
+        
+        // fallback: job에서 최대 쿨타임 정보 가져오기 (기존 방식)
+        if (this.player && this.player.job && typeof this.player.job.getSkillMaxCooldown === 'function') {
+            const skillNumber = parseInt(skillKey.replace('skill', ''));
+            if (!isNaN(skillNumber)) {
+                return this.player.job.getSkillMaxCooldown(skillNumber);
+            }
+        }
+        
+        // 최종 fallback
+        return 3000;
     }
 
     /**
@@ -173,29 +221,51 @@ export default class SkillCooldownUI {
 
         ui.cooldown.clear();
         
-        if (remaining > 0) {
-            const progress = remaining / total;
-            const startAngle = -Math.PI / 2; // 12시 방향부터 시작
-            const endAngle = startAngle - (2 * Math.PI * progress); // 시계방향으로 변경
+        if (remaining > 0 && total > 0) {
+            // 진행률 계산: 시간이 지날수록 0에서 1로 증가 (완료된 비율)
+            const completedProgress = (total - remaining) / total; 
+            // 남은 비율: 시간이 지날수록 1에서 0으로 감소 (남은 비율)
+            const remainingProgress = remaining / total;
             
-            // 쿨타임 원형 그래프 (회색 + 파란색 혼합)
-            ui.cooldown.fillStyle(0x8888aa, 0.6);
-            ui.cooldown.slice(ui.x, ui.y, ui.radius, startAngle, endAngle);
-            ui.cooldown.fillPath();
-            
-            // 경계선 (파란색)
-            ui.cooldown.lineStyle(2, 0x0066ff, 0.8);
-            ui.cooldown.strokeCircle(ui.x, ui.y, ui.radius);
+            // 12시 방향에서 시작하여 시계방향으로 진행
+            const startAngle = -Math.PI / 2; // 12시 방향
+            const endAngle = startAngle + (2 * Math.PI * completedProgress); // 시계방향으로 진행
             
             // 배경을 회색으로 변경 (쿨타임 중)
             ui.background.clear();
             ui.background.fillStyle(0x666666, 0.8);
             ui.background.fillCircle(ui.x, ui.y, ui.radius);
+            
+            // 남은 쿨타임 부분을 파란색으로 표시 (arc 사용)
+            if (remainingProgress > 0) {
+                ui.cooldown.fillStyle(0x4488ff, 0.7);
+                ui.cooldown.beginPath();
+                ui.cooldown.arc(ui.x, ui.y, ui.radius, endAngle, startAngle + (2 * Math.PI), false);
+                ui.cooldown.lineTo(ui.x, ui.y);
+                ui.cooldown.closePath();
+                ui.cooldown.fillPath();
+            }
+            
+            // 경계선 (밝은 파란색)
+            ui.cooldown.lineStyle(2, 0x66aaff, 1.0);
+            ui.cooldown.strokeCircle(ui.x, ui.y, ui.radius);
+            
+            // 쿨타임 텍스트 표시 (초 단위)
+            const remainingSeconds = Math.ceil(remaining / 1000);
+            if (ui.cooldownText) {
+                ui.cooldownText.setText(remainingSeconds.toString());
+                ui.cooldownText.setVisible(true);
+            }
         } else {
             // 쿨타임이 끝나면 배경을 파란색으로 복원
             ui.background.clear();
             ui.background.fillStyle(0x0066ff, 0.8);
             ui.background.fillCircle(ui.x, ui.y, ui.radius);
+            
+            // 쿨타임 텍스트 숨기기
+            if (ui.cooldownText) {
+                ui.cooldownText.setVisible(false);
+            }
         }
     }
 
@@ -235,6 +305,11 @@ export default class SkillCooldownUI {
                 ui.background.clear();
                 ui.background.fillStyle(0x0066ff, 0.8);
                 ui.background.fillCircle(ui.x, ui.y, ui.radius);
+                
+                // 쿨타임 텍스트 숨기기
+                if (ui.cooldownText) {
+                    ui.cooldownText.setVisible(false);
+                }
             }
         });
     }
@@ -254,6 +329,9 @@ export default class SkillCooldownUI {
                 }
                 if (ui.keyText) {
                     ui.keyText.destroy();
+                }
+                if (ui.cooldownText) {
+                    ui.cooldownText.destroy();
                 }
             }
         });

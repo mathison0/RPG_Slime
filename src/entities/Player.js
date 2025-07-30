@@ -65,6 +65,13 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.isDead = false; // 사망 상태
         this.visionRange = 300;
         this.minimapVisionRange = 200;
+        this.isStunned = false;
+        
+        // Tint 상태 관리 (우선순위: 피격 > 기절 > 은신 > 슬로우)
+        this.isDamaged = false;        // 피격 상태 (0xff0000)
+        this.isStunnedTint = false;    // 기절 상태 (0x888888)
+        this.isStealthTint = false;    // 은신 상태 (0x888888)
+        this.isSlowedTint = false;     // 슬로우 상태 (0x87ceeb)
         
         // 디버그 모드 최적화
         this.lastEnemyDebugUpdate = 0;
@@ -333,24 +340,23 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 이동 처리 (클라이언트에서 처리)
      */
     handleMovement() {
+        this.setVelocity(0);
+
         // 죽은 상태에서는 이동 불가
         if (this.isDead) {
-            this.setVelocity(0);
             return;
         }
 
         // 후딜레이 중일 때는 이동 불가
         if (this.isInAfterDelay) {
-            this.setVelocity(0);
             return;
         }
-        
-        // 구르기 중일 때는 키보드 입력에 의한 이동만 차단 (서버 이동은 허용)
-        if (this.isRolling) {
-            // 서버에서 받은 위치로 이동하도록 하고, 키보드 입력은 무시
+
+
+        if (this.isJumping || this.isCasting || this.isStunned || this.isRolling) {
             return;
         }
-        
+
         // 슬로우 효과 적용
         let effectiveSpeed = this.speed;
         if (this.slowEffects && this.slowEffects.length > 0) {
@@ -359,12 +365,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 return current.speedReduction < strongest.speedReduction ? current : strongest;
             });
             effectiveSpeed = this.speed * strongestSlow.speedReduction;
-        }
-        
-        this.setVelocity(0);
-        
-        if (this.isJumping || this.isCasting || this.isStunned) {
-            return;
         }
         
         let movingUp = false;
@@ -453,6 +453,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
 
+        // 기절 상태에서는 기본 공격 사용 불가
+        if (this.isStunned) {
+            console.log(`[기본공격 차단] Player ${this.networkId || 'local'}: 기절 상태에서 기본 공격 시도 차단됨 (isStunned: ${this.isStunned})`);
+            return;
+        }
+
         this.lastClickTime = Date.now();
 
         // 서버로 투사체 발사 요청 전송
@@ -465,7 +471,16 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 스킬 입력 처리 (서버 권한 방식)
      */
     handleSkills() {
-        // 서버에서 모든 조건을 검증하므로 클라이언트에서는 조건 체크 없이 요청만 전송
+        // 기절 상태에서는 스킬 사용 불가
+        if (this.isStunned) {
+            if (Phaser.Input.Keyboard.JustDown(this.spaceKey) || 
+                Phaser.Input.Keyboard.JustDown(this.qKey) || 
+                Phaser.Input.Keyboard.JustDown(this.eKey) || 
+                Phaser.Input.Keyboard.JustDown(this.rKey)) {
+                console.log(`[스킬 차단] Player ${this.networkId || 'local'}: 기절 상태에서 스킬 사용 시도 차단됨 (isStunned: ${this.isStunned})`);
+            }
+            return;
+        }
 
         // 스페이스바로 점프 (모든 직업 공통)
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
@@ -575,21 +590,24 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 서버에 스킬 사용 요청
+     * 스킬 사용 요청 (서버 권한 방식)
      */
     requestSkillUse(skillType) {
         console.log(`requestSkillUse 호출: skillType=${skillType}`);
         if (this.networkManager) {
             // 클라이언트 사이드 쿨다운 체크
+
             if (this.isSkillOnCooldown(skillType)) {
                 console.log(`스킬 쿨다운 중: ${skillType}`);
+
+            if (this.isStunned || this.isCasting || this.isJumping || this.isDead || this.isSkillOnCooldown(skillType)) {
                 return; // 서버에 요청을 보내지 않음
             }
             
             // 타겟이 필요한 스킬의 경우 마우스 위치 전송
             const pointer = this.scene.input.activePointer;
             const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
-            
+
             // 구르기 스킬의 경우 현재 누르고 있는 키들로 이동 방향 결정
             let skillDirection = this.direction; // 기본값은 현재 방향
             
@@ -641,6 +659,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             }
             
             this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y, skillDirection);
+
         }
     }
     
@@ -662,6 +681,11 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 스프라이트 업데이트
      */
     updateJobSprite() {
+
+        if (this.isCasting || this.isJumping || this.isDead) {
+            return;
+        }
+
         const spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
         
         if (this.scene.textures.exists(spriteKey)) {
@@ -855,6 +879,25 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
+     * Tint 상태를 우선순위에 따라 업데이트
+     * 우선순위: 피격 > 기절 > 은신 > 슬로우
+     */
+    updateTint() {
+        // 우선순위에 따라 tint 결정
+        if (this.isDamaged) {
+            this.setTint(0xff0000); // 빨간색 (피격)
+        } else if (this.isStunnedTint) {
+            this.setTint(0x888888); // 회색 (기절)
+        } else if (this.isStealthTint) {
+            this.setTint(0x888888); // 회색 (은신)
+        } else if (this.isSlowedTint) {
+            this.setTint(0x87ceeb); // 하늘색 (슬로우)
+        } else {
+            this.clearTint(); // 모든 효과가 없으면 원래 색상
+        }
+    }
+    
+    /**
      * 자살 (치트) - 서버에 사망 요청
      */
     suicide() {
@@ -897,21 +940,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     setIsOtherPlayer(isOther) {
         this.isOtherPlayer = isOther;
-    }
-
-    updateFromNetwork(data) {
-        this.setPosition(data.x, data.y);
-        this.direction = data.direction;
-        
-        // 점프 상태 변경 시 속도를 0으로 설정
-        if (data.isJumping) {
-            // 점프가 시작될 때 즉시 속도를 0으로 설정
-            this.setVelocity(0, 0);
-        }
-        
-        this.isJumping = data.isJumping;
-        this.isStunned = data.isStunned; // 기절 상태 추가
-        this.updateJobSprite();
     }
 
     // 체력바 관련 메서드들
@@ -1320,8 +1348,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const endTime = cooldownInfo.nextAvailableTime;
         const isOnCooldown = now < endTime;
         
-        console.log('remain:', endTime - now);
-        
         return isOnCooldown;
     }
 
@@ -1348,6 +1374,67 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         return false;
     }
 
+    /**
+     * 스킬 타입을 클라이언트 스킬 키로 변환
+     * @param {string} skillType - 서버 스킬 타입 (skill1, skill2, skill3, jump 등)
+     * @returns {string} - 클라이언트 스킬 키
+     */
+    getClientSkillKey(skillType) {
+        // 직접 매핑되는 경우
+        if (skillType === 'skill1' || skillType === 'skill2' || skillType === 'skill3') {
+            return skillType;
+        }
+        
+        // 직업별 스킬 매핑
+        const skillMappings = {
+            'slime': {
+                'spread': 'skill1'
+            },
+            'warrior': {
+                'roar': 'skill1',
+                'sweep': 'skill2', 
+                'thrust': 'skill3'
+            },
+            'mage': {
+                'ward': 'skill1',
+                'ice_field': 'skill2',
+                'magic_missile': 'skill3',
+                'shield': 'skill3' // 일부 스킬은 동일 키에 매핑될 수 있음
+            },
+            'assassin': {
+                'stealth': 'skill1',
+                'backstab': 'skill2',
+                'blade_dance': 'skill3'
+            },
+            'ninja': {
+                'stealth': 'skill1',
+                'triple_throw': 'skill2',
+                'blink': 'skill3'
+            },
+            'archer': {
+                'roll': 'skill1',
+                'focus': 'skill2'
+            },
+            'supporter': {
+                'ward': 'skill1',
+                'buff_field': 'skill2',
+                'heal_field': 'skill3'
+            },
+            'mechanic': {
+                'grab': 'skill1',
+                'mine': 'skill2',
+                'flask': 'skill3'
+            }
+        };
+        
+        const jobSkills = skillMappings[this.jobClass];
+        if (jobSkills && jobSkills[skillType]) {
+            return jobSkills[skillType];
+        }
+        
+        return null;
+    }
+    
     /**
      * 정리 작업
      */
