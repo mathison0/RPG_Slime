@@ -701,6 +701,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const hpElement = document.getElementById('hp');
         const jobElement = document.getElementById('job');
         const expElement = document.getElementById('exp');
+        const pingElement = document.getElementById('ping');
         
         if (levelElement) {
             levelElement.textContent = `레벨: ${this.level}`;
@@ -719,6 +720,25 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             const currentExp = this.exp || 0;
             const expToNext = this.expToNext || 100;
             expElement.textContent = `경험치: ${currentExp}/${expToNext}`;
+        }
+        
+        if (pingElement) {
+            const ping = this.networkPing || '--';
+            const pingText = ping === '--' ? ping : `${ping}ms`;
+            pingElement.textContent = `핑: ${pingText}`;
+            
+            // 핑에 따라 색상 변경
+            if (ping !== '--') {
+                if (ping < 50) {
+                    pingElement.style.color = '#00ff00'; // 녹색 (좋음)
+                } else if (ping < 100) {
+                    pingElement.style.color = '#ffff00'; // 노란색 (보통)
+                } else {
+                    pingElement.style.color = '#ff0000'; // 빨간색 (나쁨)
+                }
+            } else {
+                pingElement.style.color = '#ffffff'; // 흰색 (기본)
+            }
         }
 
         // 스킬 쿨타임 UI 업데이트 (본인 플레이어만)
