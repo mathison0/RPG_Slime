@@ -119,6 +119,11 @@ const JobClasses = {
             attack: 6,
             speed: 8
         },
+        basicAttack: {
+            type: 'rectangle',
+            width: 20,
+            height: 40
+        },
         skills: [
             {
                 name: '울부짖기',

@@ -45,31 +45,54 @@ export default class WarriorJob extends BaseJob {
     }
 
     /**
-     * 전사 기본 공격 이펙트 (근접 부채꼴)
+     * 전사 기본 공격 이펙트 (직사각형)
      */
-    showBasicAttackEffect(targetX, targetY) {
-        // 부채꼴 공격 범위 설정
-        const attackRange = 60;
-        const angleOffset = Math.PI / 6; // 30도 (π/6)
+    showBasicAttackEffect(targetX, targetY, options = {}) {
+        // 서버에서 받은 직사각형 크기 정보 사용
+        const width = options.width || 20;
+        const height = options.height || 40;
         
         // 플레이어에서 마우스 커서까지의 각도 계산
         const centerX = this.player.x;
         const centerY = this.player.y;
         const angleToMouse = Phaser.Math.Angle.Between(centerX, centerY, targetX, targetY);
         
-        // 부채꼴의 시작과 끝 각도 계산
-        const startAngle = angleToMouse - angleOffset;
-        const endAngle = angleToMouse + angleOffset;
+        // 플레이어 몸 크기만큼 앞에서 시작하는 직사각형
+        const playerSize = this.player.size / 4 || 32; // 플레이어의 실제 크기 사용
+        const playerRadius = playerSize / 2; // 플레이어 몸 크기의 절반
+        const startX = centerX + Math.cos(angleToMouse) * playerRadius;
+        const startY = centerY + Math.sin(angleToMouse) * playerRadius;
         
-        // 부채꼴 근접 공격 이펙트 (빨간색 부채꼴)
+        // 직사각형의 네 꼭지점 계산 (시작점 기준)
+        const cos = Math.cos(angleToMouse);
+        const sin = Math.sin(angleToMouse);
+        const halfWidth = width / 2;
+        
+        // 회전 변환을 직접 계산 (시작점 기준)
+        const corners = [
+            { x: 0, y: -halfWidth },        // 좌하단
+            { x: height, y: -halfWidth },   // 우하단  
+            { x: height, y: halfWidth },    // 우상단
+            { x: 0, y: halfWidth }          // 좌상단
+        ];
+        
+        // 회전된 좌표 계산 (시작점 기준)
+        const rotatedCorners = corners.map(corner => ({
+            x: startX + (corner.x * cos - corner.y * sin),
+            y: startY + (corner.x * sin + corner.y * cos)
+        }));
+        
+        // 직사각형 근접 공격 이펙트 (빨간색 직사각형)
         const graphics = this.player.scene.add.graphics();
         graphics.fillStyle(0xff0000, 0.8);
         graphics.lineStyle(3, 0xff0000, 1);
         
-        // 부채꼴 그리기
+        // 직사각형 그리기
         graphics.beginPath();
-        graphics.moveTo(centerX, centerY);
-        graphics.arc(centerX, centerY, attackRange, startAngle, endAngle);
+        graphics.moveTo(rotatedCorners[0].x, rotatedCorners[0].y);
+        for (let i = 1; i < rotatedCorners.length; i++) {
+            graphics.lineTo(rotatedCorners[i].x, rotatedCorners[i].y);
+        }
         graphics.closePath();
         graphics.fill();
         graphics.stroke();

@@ -113,6 +113,17 @@ class SkillManager {
       ...(skillInfo.chargeTime !== undefined && { chargeTime: skillInfo.chargeTime }),
       ...(skillInfo.chargeDistance !== undefined && { chargeDistance: skillInfo.chargeDistance }),
       
+      // 기본 공격 정보 추가 (JobClasses에서 동적으로 가져옴)
+      ...(player.jobClass === 'warrior' && (() => {
+        const { getJobInfo } = require('../../shared/JobClasses.js');
+        const jobInfo = getJobInfo(player.jobClass);
+        const basicAttackInfo = jobInfo.basicAttack;
+        return {
+          basicAttackWidth: basicAttackInfo.width,
+          basicAttackHeight: basicAttackInfo.height
+        };
+      })()),
+      
       // 원본 스킬 정보도 포함 (추가 확장을 위해)
       originalSkillInfo: skillInfo
     };
@@ -392,8 +403,8 @@ class SkillManager {
       case 'ninja':
       case 'archer':
       case 'mage':
-        // 원거리 투사체 공격
-        return this.applyRangedBasicAttack(player, baseDamage, x, y, targetX, targetY);
+        // 원거리 투사체 공격 (기존 방식 유지)
+        return damageResult; // 기존 투사체 시스템 사용
         
       case 'assassin':
         // 어쌔신 근접 공격 (연속 공격)
@@ -407,6 +418,9 @@ class SkillManager {
         return result;
         
       case 'warrior':
+        // 전사 직사각형 공격
+        return this.applyWarriorBasicAttack(player, baseDamage, x, y, targetX, targetY);
+        
       case 'supporter':
       case 'mechanic':
         // 근접 부채꼴 공격
@@ -416,6 +430,8 @@ class SkillManager {
         return damageResult;
     }
   }
+
+
 
   /**
    * 어쌔신 기본 공격 데미지 적용 (연속 공격)
@@ -445,6 +461,21 @@ class SkillManager {
     damageResult.totalDamage += secondAttackResult.totalDamage;
 
     return damageResult;
+  }
+
+  /**
+   * 전사 기본 공격 데미지 적용 (직사각형)
+   */
+  applyWarriorBasicAttack(player, baseDamage, x, y, targetX, targetY) {
+    // JobClasses에서 전사 기본 공격 정보 가져오기
+    const { getJobInfo } = require('../../shared/JobClasses.js');
+    const jobInfo = getJobInfo(player.jobClass);
+    const basicAttackInfo = jobInfo.basicAttack;
+    
+    const width = basicAttackInfo.width || 60;
+    const height = basicAttackInfo.height || 40;
+
+    return this.applyRectangleDamage(player, baseDamage, x, y, targetX, targetY, width, height);
   }
 
   /**
@@ -536,6 +567,112 @@ class SkillManager {
 
     return damageResult;
   }
+
+  /**
+   * 직사각형 데미지 적용
+   */
+  applyRectangleDamage(player, baseDamage, x, y, targetX, targetY, width, height) {
+    const damageResult = {
+      affectedEnemies: [],
+      affectedPlayers: [],
+      totalDamage: 0
+    };
+
+    const enemies = this.gameStateManager.enemies;
+    const players = this.gameStateManager.players;
+    const centerX = x;
+    const centerY = y;
+    const mouseX = targetX;
+    const mouseY = targetY;
+    const playerSize = player.size / 4 || 32; // 플레이어의 실제 크기 사용
+
+    // 적에게 데미지 적용 (Map 객체인 경우 values() 사용)
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    enemyArray.forEach(enemy => {
+      if (enemy.isDead) return;
+
+      const enemyX = enemy.x;
+      const enemyY = enemy.y;
+      
+      // 직사각형 범위 내에 있는지 확인
+      if (this.isInRectangleRange(centerX, centerY, enemyX, enemyY, mouseX, mouseY, width, height, playerSize)) {
+        const damage = Math.floor(baseDamage);
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y,
+            type: enemy.type
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    // 다른 플레이어에게 데미지 적용 (PvP) (Map 객체인 경우 values() 사용)
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+    playerArray.forEach(targetPlayer => {
+      if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) return;
+
+      const playerX = targetPlayer.x;
+      const playerY = targetPlayer.y;
+      
+      // 직사각형 범위 내에 있는지 확인
+      if (this.isInRectangleRange(centerX, centerY, playerX, playerY, mouseX, mouseY, width, height, playerSize)) {
+        const damage = Math.floor(baseDamage * 0.5); // PvP 데미지는 50%
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+        
+        if (result.success) {
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y,
+            team: targetPlayer.team
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    return damageResult;
+  }
+
+  /**
+   * 직사각형 범위 내에 있는지 확인
+   */
+  isInRectangleRange(centerX, centerY, targetX, targetY, mouseX, mouseY, width, height, playerSize = 32) {
+    // 플레이어에서 마우스까지의 각도 계산
+    const angleToMouse = Math.atan2(mouseY - centerY, mouseX - centerX);
+    
+    // 플레이어 몸 크기만큼 앞에서 시작하는 직사각형
+    const playerRadius = playerSize / 2; // 플레이어 몸 크기의 절반
+    const startX = centerX + Math.cos(angleToMouse) * playerRadius;
+    const startY = centerY + Math.sin(angleToMouse) * playerRadius;
+    
+    // 타겟을 시작점 기준으로 상대 좌표로 변환
+    const relativeX = targetX - startX;
+    const relativeY = targetY - startY;
+    
+    // 회전 변환 (마우스 방향을 기준으로)
+    const cos = Math.cos(-angleToMouse);
+    const sin = Math.sin(-angleToMouse);
+    const rotatedX = relativeX * cos - relativeY * sin;
+    const rotatedY = relativeX * sin + relativeY * cos;
+    
+    // 직사각형 범위 내에 있는지 확인 (시작점에서 앞으로)
+    const halfWidth = width / 2;
+    
+    return rotatedX >= -halfWidth && rotatedX <= halfWidth && 
+           rotatedY >= 0 && rotatedY <= height;
+  }
+
+
 
   /**
    * 근접 부채꼴 범위 내에 있는지 확인

@@ -1733,9 +1733,14 @@ export default class NetworkEventManager {
             targetY = data.targetY;
         }
         
+        // 서버에서 받은 직사각형 크기 정보 사용
+        const skillInfo = data?.skillInfo || {};
+        const basicAttackWidth = skillInfo.basicAttackWidth;
+        const basicAttackHeight = skillInfo.basicAttackHeight;
+        
         // 각 직업의 기본 공격 애니메이션 메서드 호출
         if (player.job.showBasicAttackEffect) {
-            player.job.showBasicAttackEffect(targetX, targetY);
+            player.job.showBasicAttackEffect(targetX, targetY, { width: basicAttackWidth, height: basicAttackHeight });
         }
     }
 
