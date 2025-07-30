@@ -36,7 +36,8 @@ class SkillManager {
   /**
    * 스킬 사용 시도
    */
-  useSkill(player, skillType, targetX = null, targetY = null) {
+  useSkill(player, skillType, targetX = null, targetY = null, options = {}) {
+    console.log(`SkillManager useSkill 호출: player=${player.id}, skillType=${skillType}, targetX=${targetX}, targetY=${targetY}, options=`, options);
     // 죽은 플레이어는 스킬 사용 불가
     if (player.isDead) {
       return { success: false, error: 'Cannot use skills while dead' };
@@ -215,30 +216,17 @@ class SkillManager {
       
     }
     
-    // 직업별 스킬 로직 처리
-    if (player.job && typeof player.job.useSkill === 'function') {
-      const jobSkillResult = player.job.useSkill(skillType, {
-        targetX,
-        targetY,
-        gameStateManager: this.gameStateManager
-      });
-      
-      console.log(`직업별 스킬 로직 실행: ${player.jobClass}.${skillType}, 결과:`, jobSkillResult);
-      
-      // 직업별 스킬 결과를 메인 결과에 병합
-      if (jobSkillResult && jobSkillResult.success) {
-        // 직업별 스킬에서 반환한 추가 정보들을 병합
-        if (jobSkillResult.x !== undefined) result.x = jobSkillResult.x;
-        if (jobSkillResult.y !== undefined) result.y = jobSkillResult.y;
-        if (jobSkillResult.affectedTargets) result.affectedTargets = jobSkillResult.affectedTargets;
-        
-        console.log(`직업별 스킬 결과 병합 완료: ${skillType}`);
-      } else if (jobSkillResult && !jobSkillResult.success) {
-        console.log(`직업별 스킬 실행 실패: ${skillType}, 이유: ${jobSkillResult.reason}`);
-        return jobSkillResult; // 실패 시 직업별 스킬 결과 반환
+    // 직업별 스킬 사용 로직 호출 (구르기, 집중 등)
+    console.log(`플레이어 job 확인: job=${player.job}, jobClass=${player.jobClass}`);
+    if (player.job && player.job.useSkill) {
+      console.log(`직업별 스킬 사용 로직 호출: ${skillType}`);
+      const jobResult = player.job.useSkill(skillType, options);
+      if (jobResult && jobResult.success) {
+        // 직업별 결과와 기본 결과 병합
+        Object.assign(result, jobResult);
       }
     } else {
-      console.log(`직업별 스킬 로직 없음: ${player.jobClass}, job존재=${!!player.job}`);
+      console.log(`직업별 스킬 사용 로직 호출 실패: job=${player.job}, useSkill=${player.job ? player.job.useSkill : 'undefined'}`);
     }
     
     return result;
