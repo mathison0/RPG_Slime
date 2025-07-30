@@ -127,8 +127,6 @@ export default class SkillCooldownUI {
      */
     updateFromServer(serverSkillCooldowns) {
         if (!serverSkillCooldowns) return;
-        
-        console.log('UI 쿨타임 업데이트:', serverSkillCooldowns);
 
         // 각 스킬의 쿨타임 정보를 개별적으로 처리
         Object.keys(this.skillUIs).forEach(skillKey => {

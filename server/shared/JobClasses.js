@@ -192,8 +192,9 @@ const JobClasses = {
                 name: '마법 투사체',
                 description: '마우스 방향으로 마법 투사체를 발사합니다.',
                 cooldown: 3000,
-                damage: 'attack * 2',
+                damage: 'attack * 2.0',
                 range: 400,
+                explosionRadius: 60, // 폭발 범위
                 afterDelay: 200,
                 key: '2',
                 type: 'magic_missile'

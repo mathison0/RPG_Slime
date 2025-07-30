@@ -223,16 +223,25 @@ class SocketEventManager {
         return;
       }
 
-      // 서버에서 데미지 계산 및 적용
-      const damageResult = this.skillManager.applySkillDamage(
-        player, 
-        skillResult.skillType, 
-        skillResult.skillInfo, 
-        skillResult.x, 
-        skillResult.y, 
-        skillResult.targetX, 
-        skillResult.targetY
-      );
+      // 서버에서 데미지 계산 및 적용 (투사체 스킬은 폭발 시에만 데미지 적용)
+      let damageResult = { affectedEnemies: [], affectedPlayers: [], totalDamage: 0 };
+      
+      console.log(`스킬 처리 중: ${skillResult.skillType}, magic_missile과 다른가? ${skillResult.skillType !== 'magic_missile'}`);
+      
+      // 투사체 스킬이 아닌 경우에만 즉시 데미지 적용
+      if (skillResult.skillType !== 'magic_missile') {
+        console.log(`즉시 데미지 적용 시작: ${skillResult.skillType}`);
+        damageResult = this.skillManager.applySkillDamage(
+          player, 
+          skillResult.skillType, 
+          skillResult.skillInfo, 
+          skillResult.x, 
+          skillResult.y, 
+          skillResult.targetX, 
+          skillResult.targetY
+        );
+        console.log(`데미지 적용 완료: ${skillResult.skillType}, 결과:`, damageResult);
+      }
 
       // 스킬 사용 성공 시 모든 클라이언트에게 브로드캐스트
       const broadcastData = {
@@ -467,7 +476,11 @@ class SocketEventManager {
 
       // 마법사의 경우 벽 충돌 시 범위 공격 실행
       if (data.jobClass === 'mage') {
-        const explosionRadius = 60;
+        // JobClasses에서 마법 투사체 스킬 정보 가져오기
+        const { getSkillInfo } = require('../../shared/JobClasses.js');
+        const skillInfo = getSkillInfo('mage', 'magic_missile');
+        
+        const explosionRadius = skillInfo.explosionRadius || 60;
         const explosionX = data.x;
         const explosionY = data.y;
         
@@ -480,7 +493,8 @@ class SocketEventManager {
           
           const distance = Math.sqrt((enemy.x - explosionX) ** 2 + (enemy.y - explosionY) ** 2);
           if (distance <= explosionRadius) {
-            const damage = player.attack;
+            // JobClasses에서 정의된 데미지 공식 사용
+            const damage = this.skillManager.calculateSkillDamage(player, 'magic_missile', skillInfo.damage);
             const result = this.gameStateManager.takeDamage(player, enemy, damage);
             
             if (result.success) {
@@ -500,14 +514,15 @@ class SocketEventManager {
           
           const distance = Math.sqrt((targetPlayer.x - explosionX) ** 2 + (targetPlayer.y - explosionY) ** 2);
           if (distance <= explosionRadius) {
-            const damage = player.attack;
+            // JobClasses에서 정의된 데미지 공식 사용 (몬스터와 동일)
+            const damage = this.skillManager.calculateSkillDamage(player, 'magic_missile', skillInfo.damage);
             const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
             
             // 데미지 이벤트는 통합 함수에서 이미 처리됨
           }
         });
         
-        console.log(`마법사 ${player.id} 투사체 벽 충돌 범위 공격 실행 at (${explosionX}, ${explosionY})`);
+        console.log(`마법사 ${player.id} 투사체 벽 충돌 범위 공격 실행 at (${explosionX}, ${explosionY}), 범위: ${explosionRadius}`);
       }
     });
   }
@@ -845,6 +860,11 @@ class SocketEventManager {
       }
     });
   }
+
+  /**
+   * 마법 투사체 충돌 핸들러 설정
+   */
+
 
   /**
    * 핑 테스트 핸들러 설정
