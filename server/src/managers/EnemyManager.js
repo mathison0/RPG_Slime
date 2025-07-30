@@ -67,7 +67,6 @@ class EnemyManager {
     this.levelMonsterCounts[level]++;
     
     // 클라이언트에게 몬스터 스폰 알림
-    console.log(`레벨 ${level} 몬스터 스폰 완료: ${monster.type} ${monster.id}`);
     this.io.emit('monster-spawned', monster.getState());
     return monster;
   }

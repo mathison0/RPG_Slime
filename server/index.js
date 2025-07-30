@@ -53,6 +53,9 @@ class GameServer {
     // 게임 루프 타이머
     this.gameLoopInterval = null;
     
+    // 종료 플래그
+    this.isShuttingDown = false;
+    
     this.initialize();
   }
 
@@ -377,7 +380,7 @@ class GameServer {
    * 서버 시작
    */
   start() {
-    this.server.listen(this.port, () => {
+    this.server.listen(this.port, '0.0.0.0', () => {
       console.log(`\n🚀 서버가 포트 ${this.port}에서 실행 중입니다.`);
       console.log(`📊 현재 설정:`);
       console.log(`   - 맵 크기: ${gameConfig.MAP_WIDTH_TILES}x${gameConfig.MAP_HEIGHT_TILES} 타일 (${gameConfig.MAP_WIDTH}x${gameConfig.MAP_HEIGHT} 픽셀)`);
@@ -387,9 +390,9 @@ class GameServer {
       
       if (process.env.NODE_ENV !== 'production') {
         console.log(`\n🌐 개발 모드 접속:`);
-        console.log(`   - 클라이언트: http://localhost:5173`);
-        console.log(`   - 서버 상태: http://localhost:${this.port}/api/status`);
-        console.log(`   - 서버 통계: http://localhost:${this.port}/api/stats`);
+        console.log(`   - 클라이언트: http://192.168.0.225:5173`);
+        console.log(`   - 서버 상태: http://192.168.0.225:${this.port}/api/status`);
+        console.log(`   - 서버 통계: http://192.168.0.225:${this.port}/api/stats`);
       }
       
       console.log(`\n⚡ 서버 준비 완료! 플레이어 접속 대기 중...\n`);
@@ -402,29 +405,75 @@ class GameServer {
   shutdown() {
     console.log('\n🛑 서버 종료 중...');
     
-    // 게임 루프 중지
-    this.stopGameLoop();
-    
-    // 모든 플레이어에게 서버 종료 알림
-    this.io.emit('server-shutdown', { 
-      message: '서버가 종료됩니다.',
-      timestamp: Date.now()
-    });
-    
-    // 매니저들 정리
-    if (this.enemyManager) {
-      this.enemyManager.destroy();
+    // 이미 종료 중인 경우 무시
+    if (this.isShuttingDown) {
+      console.log('⚠️  이미 종료 진행 중입니다.');
+      return;
     }
     
-    if (this.gameStateManager) {
-      this.gameStateManager.reset();
-    }
+    this.isShuttingDown = true;
     
-    // 서버 종료
-    this.server.close(() => {
-      console.log('✅ 서버 종료 완료');
-      process.exit(0);
-    });
+    // 강제 종료 타이머 (10초 후 강제 종료)
+    const forceExitTimer = setTimeout(() => {
+      console.log('🚨 강제 종료 실행 (10초 타임아웃)');
+      process.exit(1);
+    }, 10000);
+    
+    try {
+      // 게임 루프 중지
+      this.stopGameLoop();
+      
+      // readline 인터페이스 정리 (개발 모드)
+      if (process.env.NODE_ENV !== 'production' && global.adminReadline) {
+        global.adminReadline.close();
+      }
+      
+      // 모든 플레이어에게 서버 종료 알림
+      this.io.emit('server-shutdown', { 
+        message: '서버가 종료됩니다.',
+        timestamp: Date.now()
+      });
+      
+      // Socket.IO 서버 정리
+      this.io.close((err) => {
+        if (err) {
+          console.error('Socket.IO 종료 오류:', err);
+        } else {
+          console.log('Socket.IO 서버 정리 완료');
+        }
+      });
+      
+      // 매니저들 정리
+      if (this.enemyManager) {
+        this.enemyManager.destroy();
+      }
+      
+      if (this.gameStateManager) {
+        this.gameStateManager.reset();
+      }
+      
+      // 서버 종료
+      this.server.close((err) => {
+        if (err) {
+          console.error('서버 종료 오류:', err);
+        } else {
+          console.log('✅ 서버 종료 완료');
+        }
+        
+        // 강제 종료 타이머 취소
+        clearTimeout(forceExitTimer);
+        
+        // 프로세스 종료
+        setTimeout(() => {
+          process.exit(0);
+        }, 500); // 500ms 대기 후 종료
+      });
+      
+    } catch (error) {
+      console.error('종료 처리 중 오류:', error);
+      clearTimeout(forceExitTimer);
+      process.exit(1);
+    }
   }
 
   /**
@@ -466,14 +515,35 @@ class GameServer {
 const gameServer = new GameServer();
 
 // 우아한 종료 처리
+let shutdownInProgress = false;
+let sigintCount = 0;
+
 process.on('SIGINT', () => {
-  console.log('\n⚠️  SIGINT 신호 받음...');
-  gameServer.shutdown();
+  sigintCount++;
+  console.log(`\n⚠️  SIGINT 신호 받음... (${sigintCount}번째)`);
+  
+  if (sigintCount === 1) {
+    // 첫 번째 SIGINT: 우아한 종료 시도
+    if (!shutdownInProgress) {
+      shutdownInProgress = true;
+      gameServer.shutdown();
+    }
+  } else if (sigintCount === 2) {
+    // 두 번째 SIGINT: 경고
+    console.log('⚠️  다시 Ctrl+C를 누르면 강제 종료됩니다.');
+  } else {
+    // 세 번째 이상 SIGINT: 강제 종료
+    console.log('🚨 강제 종료 실행!');
+    process.exit(1);
+  }
 });
 
 process.on('SIGTERM', () => {
   console.log('\n⚠️  SIGTERM 신호 받음...');
-  gameServer.shutdown();
+  if (!shutdownInProgress) {
+    shutdownInProgress = true;
+    gameServer.shutdown();
+  }
 });
 
 // 예외 처리
@@ -496,6 +566,9 @@ if (process.env.NODE_ENV !== 'production') {
     input: process.stdin,
     output: process.stdout
   });
+
+  // 전역 변수로 저장하여 종료 시 정리할 수 있도록 함
+  global.adminReadline = rl;
 
   console.log('💡 관리자 명령어를 입력하세요 (help 입력 시 도움말):');
   
