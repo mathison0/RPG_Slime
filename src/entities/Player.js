@@ -524,12 +524,19 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 네트워크 위치 동기화 (주기적으로 서버에 위치 전송)
      */
     syncNetworkPosition() {
+        // 동기화 빈도 제한 (150ms마다)
+        const now = Date.now();
+        if (!this.lastSyncTime) this.lastSyncTime = 0;
+        
         if (this.networkManager && !this.isJumping && 
+            (now - this.lastSyncTime > 150) && // 동기화 간격 제한
             (this.lastNetworkX !== this.x || this.lastNetworkY !== this.y || this.lastNetworkDirection !== this.direction)) {
+            
             this.networkManager.updatePlayerPosition(this.x, this.y, this.direction, false);
             this.lastNetworkX = this.x;
             this.lastNetworkY = this.y;
             this.lastNetworkDirection = this.direction;
+            this.lastSyncTime = now;
         }
     }
     

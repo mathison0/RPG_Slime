@@ -129,8 +129,9 @@ export default class NetworkEventManager {
             this.handleEnemyDamaged(data);
         });
 
-        this.networkManager.on('enemies-update', (enemiesData) => {
-            this.handleEnemiesUpdate(enemiesData);
+        // 적 업데이트
+        this.networkManager.on('enemies-update', (data) => {
+            this.handleEnemiesUpdate(data);
         });
 
         this.networkManager.on('monster-attack', (data) => {
@@ -142,9 +143,22 @@ export default class NetworkEventManager {
             this.handleEnemyStunned(data);
         });
         
-        // 플레이어 상태 업데이트
+        // 플레이어 상태 업데이트 (기존)
         this.networkManager.on('players-state-update', (data) => {
             this.handlePlayersStateUpdate(data);
+        });
+
+        // 새로운 경량화된 이벤트들
+        this.networkManager.on('players-position-update', (data) => {
+            this.handlePlayersPositionUpdate(data);
+        });
+
+        this.networkManager.on('player-state-update', (data) => {
+            this.handlePlayerStateUpdate(data);
+        });
+
+        this.networkManager.on('other-players-update', (data) => {
+            this.handleOtherPlayersUpdate(data);
         });
 
         // 플레이어 기절 상태
@@ -1253,8 +1267,11 @@ export default class NetworkEventManager {
     /**
      * 적 상태 업데이트 처리 (중복 적 정리 포함)
      */
-    handleEnemiesUpdate(enemiesData) {
+    handleEnemiesUpdate(data) {
         if (!this.scene.enemies) return;
+
+        // 새로운 데이터 형식 처리 (서버 최적화로 인한 변경)
+        const enemiesData = data.enemies || data; // 기존 형식과 호환성 유지
 
         // 먼저 중복된 적들 정리
         this.cleanupDuplicateEnemies();
@@ -1287,9 +1304,10 @@ export default class NetworkEventManager {
 
         // 서버에 없는 적들 제거 (클라이언트에서만 존재하는 적들)
         const serverEnemyIds = new Set(enemiesData.map(e => e.id));
-        this.scene.enemies.getChildren().forEach(enemy => {
-            if (enemy.networkId && !serverEnemyIds.has(enemy.networkId)) {
-                console.log(`서버에 존재하지 않는 적 제거: ${enemy.networkId}`);
+        const clientEnemies = this.scene.enemies.getChildren();
+        clientEnemies.forEach(enemy => {
+            if (!serverEnemyIds.has(enemy.networkId)) {
+                console.log(`서버에 없는 적 제거: ${enemy.networkId}`);
                 enemy.destroy();
             }
         });
@@ -2015,6 +2033,120 @@ export default class NetworkEventManager {
                     enemy.sprite.clearTint();
                 }
             }
+        }
+    }
+
+    /**
+     * 플레이어 위치 업데이트 처리 (경량화)
+     */
+    handlePlayersPositionUpdate(positionUpdates) {
+        if (this.scene.otherPlayers?.children) {
+            positionUpdates.forEach(posUpdate => {
+                if (posUpdate.id === this.networkManager.playerId) return; // 본인 제외
+                
+                const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === posUpdate.id);
+                if (otherPlayer) {
+                    // 부드러운 위치 보간을 위한 이동
+                    if (Math.abs(otherPlayer.x - posUpdate.x) > 5 || Math.abs(otherPlayer.y - posUpdate.y) > 5) {
+                        this.scene.tweens.add({
+                            targets: otherPlayer,
+                            x: posUpdate.x,
+                            y: posUpdate.y,
+                            duration: 80, // 부드러운 이동
+                            ease: 'Linear'
+                        });
+                    }
+                    
+                    otherPlayer.direction = posUpdate.direction;
+                    otherPlayer.isJumping = posUpdate.isJumping;
+                    otherPlayer.isDead = posUpdate.isDead;
+                    
+                    // 방향에 따른 스프라이트 업데이트
+                    if (otherPlayer.updateDirection) {
+                        otherPlayer.updateDirection();
+                    }
+                }
+            });
+        }
+    }
+
+    /**
+     * 본인 플레이어 상태 업데이트 처리
+     */
+    handlePlayerStateUpdate(playerState) {
+        if (playerState.id === this.networkManager.playerId && this.scene.player) {
+            // 네트워크 핑 계산
+            if (playerState.timestamp) {
+                const currentTime = Date.now();
+                const ping = currentTime - playerState.timestamp;
+                this.scene.player.networkPing = Math.max(0, ping);
+            }
+            
+            // 상태 정보 업데이트
+            this.scene.player.hp = playerState.hp;
+            this.scene.player.maxHp = playerState.maxHp;
+            this.scene.player.level = playerState.level;
+            this.scene.player.exp = playerState.exp;
+            this.scene.player.expToNext = playerState.expToNext;
+            this.scene.player.jobClass = playerState.jobClass;
+            this.scene.player.size = playerState.size;
+            
+            // 스탯 정보 업데이트
+            if (playerState.stats) {
+                this.scene.player.attack = playerState.stats.attack;
+                this.scene.player.speed = playerState.stats.speed;
+                this.scene.player.visionRange = playerState.stats.visionRange;
+            }
+            
+            // 스킬 쿨타임 정보
+            this.scene.player.serverSkillCooldowns = playerState.skillCooldowns;
+            
+            // 활성 효과 정보
+            this.scene.player.activeEffects = new Set(playerState.activeEffects || []);
+            this.scene.player.isStealth = playerState.isStealth;
+            this.scene.player.isCasting = playerState.isCasting;
+            
+            // 크기 업데이트
+            if (playerState.size !== undefined && playerState.size !== this.scene.player.size) {
+                this.scene.player.size = playerState.size;
+                this.scene.player.updateSize();
+            }
+            
+            // UI 업데이트
+            this.scene.player.updateUI();
+        }
+    }
+
+    /**
+     * 다른 플레이어들 상태 업데이트 처리
+     */
+    handleOtherPlayersUpdate(otherPlayersData) {
+        if (this.scene.otherPlayers?.children) {
+            otherPlayersData.forEach(playerState => {
+                const otherPlayer = this.scene.otherPlayers.getChildren().find(p => p.networkId === playerState.id);
+                if (otherPlayer) {
+                    otherPlayer.hp = playerState.hp;
+                    otherPlayer.maxHp = playerState.maxHp;
+                    otherPlayer.level = playerState.level;
+                    
+                    // 직업 변경 시 job 인스턴스 업데이트
+                    if (otherPlayer.jobClass !== playerState.jobClass) {
+                        otherPlayer.jobClass = playerState.jobClass;
+                        otherPlayer.updateJobClass();
+                    }
+                    
+                    // 상태 업데이트
+                    otherPlayer.isCasting = playerState.isCasting;
+                    otherPlayer.activeEffects = new Set(playerState.activeEffects || []);
+                    otherPlayer.isStealth = playerState.isStealth;
+                    
+                    // 크기 업데이트
+                    if (playerState.size !== undefined && playerState.size !== otherPlayer.size) {
+                        otherPlayer.size = playerState.size;
+                        otherPlayer.updateSize();
+                    }
+                }
+            });
         }
     }
 }
