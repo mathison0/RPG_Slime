@@ -63,8 +63,6 @@ export default class MageJob extends BaseJob {
      * 얼음 장판 이펙트 (서버에서 스킬 승인 시 호출)
      */
     showIceFieldEffect(data = null) {
-        console.log('얼음 장판 이펙트 시작 - 받은 데이터:', JSON.stringify(data, null, 2));
-        
         // 서버에서 받은 스킬 정보 사용
         const skillInfo = data?.skillInfo || {};
         const range = skillInfo.range || 100; // 서버에서 받은 범위
@@ -98,7 +96,6 @@ export default class MageJob extends BaseJob {
             if (skillText.active) {
                 skillText.destroy();
             }
-            console.log('얼음 장판 이펙트 종료 [time: ' + Date.now() + '] [target: ' + endTime + ']');
         });
         
         // 호환성을 위한 타이머 객체

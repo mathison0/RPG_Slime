@@ -834,8 +834,6 @@ export default class GameScene extends Phaser.Scene {
      * 플레이어 리스폰
      */
     respawnPlayer() {
-        console.log('플레이어 리스폰 요청 시작');
-        
         if (!this.player) {
             console.warn('플레이어가 존재하지 않아 리스폰을 건너뜁니다');
             return;

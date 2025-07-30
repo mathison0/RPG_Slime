@@ -9,7 +9,43 @@ export default class SkillCooldownUI {
         this.lastJobClass = null; // 직업 변경 감지용
         this.isUpdating = false; // 중복 업데이트 방지
         
+        // 직업별 최대 쿨타임 저장 (ms 단위)
+        this.maxCooldowns = {
+            skill1: 1000,
+            skill2: 1000,
+            skill3: 1000
+        };
+        
+        // 초기 직업에 대한 최대 쿨타임 설정
+        const initialJobClass = player?.jobClass || 'slime';
+        this.updateMaxCooldowns(initialJobClass);
+        
         this.createUI();
+    }
+
+    /**
+     * 직업 변경 시 최대 쿨타임 업데이트
+     * @param {string} jobClass - 변경된 직업 클래스
+     */
+    updateMaxCooldowns(jobClass) {
+        // 서버에서 받은 직업별 쿨타임 정보를 사용
+        if (this.scene.jobCooldowns && this.scene.jobCooldowns[jobClass]) {
+            const jobCooldownData = this.scene.jobCooldowns[jobClass];
+            
+            // 각 스킬의 최대 쿨타임 업데이트
+            this.maxCooldowns.skill1 = jobCooldownData.skill1?.cooldown || 3000;
+            this.maxCooldowns.skill2 = jobCooldownData.skill2?.cooldown || 3000;
+            this.maxCooldowns.skill3 = jobCooldownData.skill3?.cooldown || 3000;
+        } else {
+            // fallback: 기본 쿨타임 사용
+            console.warn(`[SkillCooldownUI] ${jobClass} 직업의 쿨타임 정보를 찾을 수 없습니다. 기본값 사용.`);
+            console.warn('[SkillCooldownUI] 사용 가능한 직업 목록:', this.scene.jobCooldowns ? Object.keys(this.scene.jobCooldowns) : 'jobCooldowns가 null/undefined');
+            this.maxCooldowns = {
+                skill1: 3000,
+                skill2: 3000,
+                skill3: 3000
+            };
+        }
     }
 
     /**
@@ -99,6 +135,9 @@ export default class SkillCooldownUI {
             };
         }
         
+        // 직업 변경 시 최대 쿨타임 업데이트
+        this.updateMaxCooldowns(jobClass);
+        
         this.lastJobClass = jobClass;
         this.isUpdating = false;
     }
@@ -187,26 +226,18 @@ export default class SkillCooldownUI {
     }
     
     /**
-     * 서버에서 저장된 총 쿨타임 시간을 가져오기
-     * @param {string} skillKey - 스킬 키 (skill1, skill2, skill3, basic_attack)
+     * 저장된 최대 쿨타임 시간을 가져오기
+     * @param {string} skillKey - 스킬 키 (skill1, skill2, skill3)
      * @returns {number} - 총 쿨타임 시간 (ms)
      */
     getServerTotalCooldown(skillKey) {
-        // 서버에서 저장된 쿨타임 정보 사용
-        if (this.player && this.player.serverCooldownInfo && this.player.serverCooldownInfo[skillKey]) {
-            return this.player.serverCooldownInfo[skillKey].totalCooldown;
-        }
-        
-        // fallback: job에서 최대 쿨타임 정보 가져오기 (기존 방식)
-        if (this.player && this.player.job && typeof this.player.job.getSkillMaxCooldown === 'function') {
-            const skillNumber = parseInt(skillKey.replace('skill', ''));
-            if (!isNaN(skillNumber)) {
-                return this.player.job.getSkillMaxCooldown(skillNumber);
-            }
+        // 직업 변경 시 저장된 최대 쿨타임 사용 (우선순위 1)
+        if (this.maxCooldowns && this.maxCooldowns[skillKey]) {
+            return this.maxCooldowns[skillKey];
         }
         
         // 최종 fallback
-        return 3000;
+        return 1000;
     }
 
     /**
@@ -270,7 +301,7 @@ export default class SkillCooldownUI {
     }
 
     /**
-     * 업데이트 (기존 방식과 호환성 유지)
+     * 업데이트 (서버 endTime 기반)
      */
     update() {
         // 직업이 변경되었는지 확인하고 필요시 UI 재생성
@@ -278,28 +309,15 @@ export default class SkillCooldownUI {
         
         if (!this.player) return;
         
-        // 서버에서 받은 쿨타임 정보가 있으면 그것을 우선 사용
+        // 서버에서 받은 쿨타임 endTime 정보로만 업데이트
         if (this.player.serverSkillCooldowns) {
             this.updateFromServer(this.player.serverSkillCooldowns);
-            return;
-        }
-
-        // 기존 방식 (fallback) - 각 스킬에 대해 개별 처리
-        if (!this.player.job) return;
-        
-        const cooldowns = this.player.job.getSkillCooldowns ? this.player.job.getSkillCooldowns() : {};
-        
-        // 각 스킬의 쿨타임 정보를 개별적으로 처리
-        Object.keys(this.skillUIs).forEach(skillKey => {
-            const ui = this.skillUIs[skillKey];
-            if (!ui) return;
-            
-            const skillNumber = parseInt(skillKey.replace('skill', ''));
-            const cooldownInfo = cooldowns[skillNumber];
-            
-            if (cooldownInfo && cooldownInfo.remaining > 0) {
-                this.drawCooldown(skillKey, cooldownInfo.remaining, cooldownInfo.max);
-            } else {
+        } else {
+            // 서버 쿨타임 정보가 없으면 모든 스킬을 사용 가능 상태로 표시
+            Object.keys(this.skillUIs).forEach(skillKey => {
+                const ui = this.skillUIs[skillKey];
+                if (!ui) return;
+                
                 ui.cooldown.clear();
                 // 쿨타임이 끝나면 배경을 파란색으로 복원
                 ui.background.clear();
@@ -310,8 +328,8 @@ export default class SkillCooldownUI {
                 if (ui.cooldownText) {
                     ui.cooldownText.setVisible(false);
                 }
-            }
-        });
+            });
+        }
     }
 
     /**

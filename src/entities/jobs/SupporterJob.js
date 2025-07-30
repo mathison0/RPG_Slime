@@ -190,30 +190,30 @@ export default class SupporterJob extends BaseJob {
     }
 
     /**
-     * 지원자 스킬 사용
+     * 서포터 스킬 사용
+     * @param {number} skillNumber - 스킬 번호 (1, 2, 3)
+     * @param {Object} options - 스킬 사용 옵션
      */
     useSkill(skillNumber, options = {}) {
         if (this.player.isOtherPlayer || !this.player.networkManager) {
             return;
         }
+        
         switch (skillNumber) {
             case 1: // Q키 - 와드 설치
-                // 마우스 커서의 월드 좌표 가져오기
-                const pointer = this.player.scene.input.activePointer;
-                const worldPoint = this.player.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
+                const pointer = this.scene.input.activePointer;
+                const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
                 this.player.networkManager.useSkill('ward', worldPoint.x, worldPoint.y);
                 break;
-            case 2: // E키
-                this.player.networkManager.useSkill('shield', {
-                    targetX: this.scene.input.mousePointer.worldX,
-                    targetY: this.scene.input.mousePointer.worldY
-                });
+            case 2: // E키 - 버프 장판
+                const pointer2 = this.scene.input.activePointer;
+                const worldPoint2 = this.scene.cameras.main.getWorldPoint(pointer2.x, pointer2.y);
+                this.player.networkManager.useSkill('buff_field', worldPoint2.x, worldPoint2.y);
                 break;
-            case 3: // R키
-                this.player.networkManager.useSkill('blessing', {
-                    targetX: this.scene.input.mousePointer.worldX,
-                    targetY: this.scene.input.mousePointer.worldY
-                });
+            case 3: // R키 - 힐 장판
+                const pointer3 = this.scene.input.activePointer;
+                const worldPoint3 = this.scene.cameras.main.getWorldPoint(pointer3.x, pointer3.y);
+                this.player.networkManager.useSkill('heal_field', worldPoint3.x, worldPoint3.y);
                 break;
             default:
                 console.log('SupporterJob: 알 수 없는 스킬 번호:', skillNumber);

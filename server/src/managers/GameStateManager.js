@@ -72,6 +72,38 @@ class GameStateManager {
   }
 
   /**
+   * 모든 플레이어의 와드 정보 수집
+   */
+  getAllWards() {
+    const allWards = [];
+    const now = Date.now();
+    
+    for (const player of this.players.values()) {
+      if (player.wardList && player.wardList.length > 0) {
+        // 만료되지 않은 와드만 필터링
+        const activeWards = player.wardList.filter(ward => {
+          const isExpired = ward.duration > 0 && (now - ward.createdAt) > ward.duration;
+          return !isExpired;
+        });
+        
+        // 만료된 와드들은 플레이어 리스트에서 제거
+        if (activeWards.length !== player.wardList.length) {
+          player.wardList = activeWards;
+        }
+        
+        // 활성 와드들을 전체 리스트에 추가
+        allWards.push(...activeWards.map(ward => ({
+          ...ward,
+          playerId: player.id,
+          team: player.team
+        })));
+      }
+    }
+    
+    return allWards;
+  }
+
+  /**
    * 몬스터 추가
    */
   addEnemy(id, x, y, type, mapLevel) {

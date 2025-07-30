@@ -11,6 +11,7 @@ const MechanicJob = require('./jobs/MechanicJob');
 const ArcherJob = require('./jobs/ArcherJob');
 const SupporterJob = require('./jobs/SupporterJob');
 
+
 /**
  * 서버측 플레이어 클래스
  */
@@ -359,7 +360,6 @@ class ServerPlayer {
    * 플레이어 리스폰 (사망 상태 해제)
    */
   respawn() {
-    console.log('플레이어 리스폰');
     this.isDead = false;
     this.hp = this.maxHp;
     // 데미지 소스 추적 정보 리셋

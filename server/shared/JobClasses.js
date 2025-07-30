@@ -19,14 +19,14 @@ const JobClasses = {
         description: '기본 직업. 균형잡힌 스탯과 범위 공격 스킬을 가지고 있습니다.',
         baseStats: {
             hp: 100,
-            attack: 20,
+            attack: 5,
             speed: 200,
             visionRange: 300
         },
         levelGrowth: {
             hp: 20,
-            attack: 5,
-            speed: 10
+            attack: 1,
+            speed: 0
         },
         skills: [
             {
@@ -57,7 +57,7 @@ const JobClasses = {
         levelGrowth: {
             hp: 15,
             attack: 7,
-            speed: 15
+            speed: 0
         },
         skills: [
             {
@@ -87,7 +87,7 @@ const JobClasses = {
         levelGrowth: {
             hp: 12,
             attack: 8,
-            speed: 18
+            speed: 0
         },
         skills: [
             {
@@ -117,7 +117,7 @@ const JobClasses = {
         levelGrowth: {
             hp: 30,
             attack: 6,
-            speed: 8
+            speed: 0
         },
         skills: [
             {
@@ -174,7 +174,7 @@ const JobClasses = {
         levelGrowth: {
             hp: 10,
             attack: 8,
-            speed: 5
+            speed: 0
         },
         skills: [
             {
@@ -229,7 +229,7 @@ const JobClasses = {
         levelGrowth: {
             hp: 18,
             attack: 6,
-            speed: 12
+            speed: 0
         },
         skills: [
             {
@@ -260,7 +260,7 @@ const JobClasses = {
         levelGrowth: {
             hp: 15,
             attack: 8,
-            speed: 10
+            speed: 0
         },
         skills: [
             {
@@ -301,7 +301,7 @@ const JobClasses = {
         levelGrowth: {
             hp: 20,
             attack: 3,
-            speed: 8
+            speed: 0
         },
         skills: [
             {
@@ -310,7 +310,8 @@ const JobClasses = {
                 cooldown: 10000,
                 damage: 0,
                 range: 150,
-                duration: 20000,
+                castRange: 300, // 와드 설치 사정거리
+                duration: 200000,
                 afterDelay: 0,
                 key: '1',
                 type: 'ward'
