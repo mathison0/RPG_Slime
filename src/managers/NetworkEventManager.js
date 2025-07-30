@@ -887,6 +887,13 @@ export default class NetworkEventManager {
         // 본인 플레이어 상태 업데이트
         const myPlayerState = playerStates.find(p => p.id === this.networkManager.playerId);
         if (myPlayerState && this.scene.player) {
+            // 네트워크 핑 계산
+            if (myPlayerState.timestamp) {
+                const currentTime = Date.now();
+                const ping = currentTime - myPlayerState.timestamp;
+                this.scene.player.networkPing = Math.max(0, ping); // 음수 방지
+            }
+            
             // 기본 상태 정보
             this.scene.player.hp = myPlayerState.hp;
             this.scene.player.maxHp = myPlayerState.maxHp;

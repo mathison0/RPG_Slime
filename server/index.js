@@ -323,7 +323,9 @@ class GameServer {
           // 은신 상태
           isStealth: player.isStealth || false,
           // 스킬 시전 중 여부 (시전시간이 있는 스킬들만)
-          isCasting: isCasting
+          isCasting: isCasting,
+          // 네트워크 핑 계산을 위한 타임스탬프 추가
+          timestamp: Date.now()
         };
         
         return state;
