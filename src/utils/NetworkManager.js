@@ -165,6 +165,10 @@ class NetworkManager {
             this.emit('player-damaged', data);
         });
 
+        this.socket.on('player-healed', (data) => {
+            this.emit('player-healed', data);
+        });
+
         // 플레이어 상태 업데이트 이벤트
         this.socket.on('players-state-update', (data) => {
             this.emit('players-state-update', data);

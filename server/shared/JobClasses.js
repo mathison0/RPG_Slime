@@ -45,7 +45,7 @@ const JobClasses = {
                 type: 'spread'
             },
         ],
-        basicAttackCooldown: 500,
+        basicAttackCooldown: 800,
         color: 0x00ff00,
         maxLevel: 50
     },
@@ -147,9 +147,9 @@ const JobClasses = {
                 description: '부채꼴 범위 공격으로 적을 기절시킵니다.',
                 cooldown: 7000,
                 damage: 'attack * 2.0',
-                range: 100,
+                range: 150,
                 angleOffset: Math.PI / 4, 
-                delay: 1000,
+                delay: 500,
                 afterDelay: 300,
                 stunDuration: 2500,
                 key: 'E',
@@ -349,9 +349,12 @@ const JobClasses = {
                 description: '이동속도와 공격속도를 증가시키는 장판을 설치합니다.',
                 cooldown: 4000,
                 damage: 0,
-                range: 80,
+                range: 150,
+                castRange: 200, // 최대 시전 사거리
                 duration: 2000,
                 effect: 'speed_attack_boost',
+                speedMultiplier: 1.5, // 50% 속도 증가
+                attackSpeedMultiplier: 1.5, // 50% 공격속도 증가
                 key: '2',
                 type: 'buff_field'
             },
@@ -360,9 +363,10 @@ const JobClasses = {
                 description: '범위 내 아군의 체력을 지속적으로 회복시킵니다.',
                 cooldown: 10000,
                 damage: 0,
-                range: 100,
+                range: 150,
+                castRange: 250, // 최대 시전 사거리
                 duration: 2500,
-                heal: 20,
+                heal: 'attack * 0.4',
                 key: '3',
                 type: 'heal_field'
             }

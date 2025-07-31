@@ -339,7 +339,8 @@ class GameServer {
           stats: {
             attack: player.attack,
             speed: player.speed,
-            visionRange: player.visionRange
+            visionRange: player.visionRange,
+            basicAttackCooldown: player.basicAttackCooldown
           },
           // 직업 정보 추가
           jobInfo: {

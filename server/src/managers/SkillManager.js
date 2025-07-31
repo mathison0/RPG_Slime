@@ -751,7 +751,16 @@ class SkillManager {
         const originalCooldown = cooldown;
         cooldown = Math.floor(cooldown / buff.effect.attackSpeedMultiplier);
       }
-    }    
+    }
+    
+    // 서포터 버프 장판 효과 적용
+    if (player.hasBuff('speed_attack_boost')) {
+      const buff = player.buffs.get('speed_attack_boost');
+      if (buff && buff.effect && buff.effect.attackSpeedMultiplier) {
+        const originalCooldown = cooldown;
+        cooldown = Math.floor(cooldown / buff.effect.attackSpeedMultiplier);
+      }
+    }
     if (now < basicAttackEndTime) {
       const remainingTime = basicAttackEndTime - now;
       return { success: false, error: 'Basic attack on cooldown' };
@@ -901,20 +910,82 @@ class SkillManager {
       totalDamage: 0
     };
 
+    // JobClasses에서 서포터 정보 가져오기
+    const { getJobInfo } = require('../../shared/JobClasses.js');
+    const supporterInfo = getJobInfo('supporter');
+
     switch (skillType) {
       case 'ward':
         // 와드는 데미지 없음, 시야 효과만
         break;
       case 'buff_field':
-        console.log(`버프 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${x}, ${y}), 범위: ${skillInfo.range}`);
-        // 장판 시스템에 등록
-        this.addField('buff_field', player.id, x, y, skillInfo.range, skillInfo.duration);
+        // 버프 장판 사거리 클램핑 (JobClasses에서 castRange 사용)
+        const buffFieldSkill = supporterInfo.skills.find(skill => skill.type === 'buff_field');
+        const buffMaxCastRange = buffFieldSkill?.castRange || 200;
+        
+        let clampedBuffX = targetX;
+        let clampedBuffY = targetY;
+        
+        if (targetX !== null && targetY !== null) {
+          const deltaX = targetX - x;
+          const deltaY = targetY - y;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+          
+          if (distance > buffMaxCastRange) {
+            // 사거리 초과 시 방향은 유지하되 최대 거리로 클램핑
+            const ratio = buffMaxCastRange / distance;
+            clampedBuffX = x + deltaX * ratio;
+            clampedBuffY = y + deltaY * ratio;
+            console.log(`서버 버프 장판 사거리 클램핑: 요청 거리=${Math.round(distance)}, 최대 거리=${buffMaxCastRange}, 클램핑된 위치=(${Math.round(clampedBuffX)}, ${Math.round(clampedBuffY)})`);
+          }
+        } else {
+          // targetX, targetY가 null인 경우 플레이어 위치 사용
+          clampedBuffX = x;
+          clampedBuffY = y;
+        }
+        
+        console.log(`버프 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${clampedBuffX}, ${clampedBuffY}), 범위: ${skillInfo.range}`);
+        // 장판 시스템에 등록 (클램핑된 좌표 사용)
+        this.addField('buff_field', player.id, clampedBuffX, clampedBuffY, skillInfo.range, skillInfo.duration);
+        
+        // 위치 정보를 결과에 포함
+        damageResult.x = clampedBuffX;
+        damageResult.y = clampedBuffY;
         break;
       case 'heal_field':
-        console.log(`힐 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${x}, ${y}), 범위: ${skillInfo.range}`);
-        // 장판 시스템에 등록
+        // 힐 장판 사거리 클램핑 (JobClasses에서 castRange 사용)
+        const healFieldSkill = supporterInfo.skills.find(skill => skill.type === 'heal_field');
+        const healMaxCastRange = healFieldSkill?.castRange || 250;
+        
+        let clampedHealX = targetX;
+        let clampedHealY = targetY;
+        
+        if (targetX !== null && targetY !== null) {
+          const deltaX = targetX - x;
+          const deltaY = targetY - y;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+          
+          if (distance > healMaxCastRange) {
+            // 사거리 초과 시 방향은 유지하되 최대 거리로 클램핑
+            const ratio = healMaxCastRange / distance;
+            clampedHealX = x + deltaX * ratio;
+            clampedHealY = y + deltaY * ratio;
+            console.log(`서버 힐 장판 사거리 클램핑: 요청 거리=${Math.round(distance)}, 최대 거리=${healMaxCastRange}, 클램핑된 위치=(${Math.round(clampedHealX)}, ${Math.round(clampedHealY)})`);
+          }
+        } else {
+          // targetX, targetY가 null인 경우 플레이어 위치 사용
+          clampedHealX = x;
+          clampedHealY = y;
+        }
+        
+        console.log(`힐 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${clampedHealX}, ${clampedHealY}), 범위: ${skillInfo.range}`);
+        // 장판 시스템에 등록 (클램핑된 좌표 사용)
         const healAmount = skillInfo.heal || 20;
-        this.addField('heal_field', player.id, x, y, skillInfo.range, skillInfo.duration, 0, healAmount);
+        this.addField('heal_field', player.id, clampedHealX, clampedHealY, skillInfo.range, skillInfo.duration, 0, healAmount);
+        
+        // 위치 정보를 결과에 포함
+        damageResult.x = clampedHealX;
+        damageResult.y = clampedHealY;
         break;
     }
 
@@ -1066,15 +1137,38 @@ class SkillManager {
         break;
       case 'focus':
         // 집중 스킬 - 공격속도 증가 버프 적용
+        // JobClasses에서 버프 효과 가져오기
+        const { getJobInfo } = require('../../shared/JobClasses.js');
+        const archerInfo = getJobInfo('archer');
+        const focusSkill = archerInfo.skills.find(skill => skill.type === 'focus');
+        
         const focusEffect = {
-          attackSpeedMultiplier: 2.0 // 공격속도 2배 증가
+          attackSpeedMultiplier: focusSkill?.attackSpeedMultiplier || 2.0 // 공격속도 증가
         };
         player.applyBuff('attack_speed_boost', skillInfo.duration, focusEffect);
+        
+        // 클라이언트에게 버프 이벤트 전송 (버프 효과 정보 포함)
+        if (this.gameStateManager.io) {
+          this.gameStateManager.io.emit('player-buffed', {
+            playerId: player.id,
+            buffType: 'attack_speed_boost',
+            duration: skillInfo.duration,
+            effect: focusEffect // 버프 효과 정보 추가
+          });
+        }
         
         // 버프 만료 시 자동 제거를 위한 타이머 설정
         setTimeout(() => {
           if (player.hasBuff('attack_speed_boost')) {
             player.removeBuff('attack_speed_boost');
+            
+            // 클라이언트에게 버프 해제 이벤트 전송
+            if (this.gameStateManager.io) {
+              this.gameStateManager.io.emit('player-buff-removed', {
+                playerId: player.id,
+                buffType: 'attack_speed_boost'
+              });
+            }
           }
         }, skillInfo.duration);
         
@@ -1487,10 +1581,17 @@ class SkillManager {
    */
   processHealField(field) {
     const players = this.gameStateManager.players;
+    const caster = players.get(field.playerId);
+    
+    // 시전자가 없으면 처리하지 않음
+    if (!caster) return;
     
     const playerArray = Array.from(players.values());
     playerArray.forEach(player => {
       if (player.isDead) return;
+      
+      // 같은 팀만 치유
+      if (player.team !== caster.team) return;
 
       const distance = Math.sqrt(
         Math.pow(player.x - field.x, 2) + Math.pow(player.y - field.y, 2)
@@ -1500,35 +1601,51 @@ class SkillManager {
       const effectiveRange = field.range + (player.size || 32) / 2;
       
       if (distance <= effectiveRange && player.hp < player.maxHp) {
-        // 힐 적용 (0.5초마다)
-        const healAmount = field.heal || 20;
-        player.hp = Math.min(player.hp + healAmount, player.maxHp);
+        // 정상적인 힐 시스템 사용 (JobClasses에서 힐량 가져오기)
+        const { getJobInfo } = require('../../shared/JobClasses.js');
+        const supporterInfo = getJobInfo('supporter');
+        const healSkill = supporterInfo.skills.find(skill => skill.type === 'heal_field');
         
-        console.log(`힐 장판 효과: ${player.id}에게 ${healAmount} 힐, 현재 HP: ${player.hp}/${player.maxHp}`);
+        // parseFormula를 사용하여 힐량 계산
+        let healAmount = 20; // 기본값
+        if (healSkill?.heal) {
+          healAmount = this.parseFormula(healSkill.heal, caster.attack);
+        } else if (field.heal) {
+          healAmount = field.heal;
+        }
         
-        // 클라이언트에게 힐 이벤트 전송
-        if (this.gameStateManager.io) {
-          this.gameStateManager.io.emit('player-healed', {
-            playerId: player.id,
-            healAmount: healAmount,
-            currentHp: player.hp,
-            maxHp: player.maxHp,
-            position: { x: player.x, y: player.y }
-          });
+        const healResult = this.gameStateManager.heal(caster, player, healAmount);
+        
+        if (healResult.success) {
+          console.log(`힐 장판 효과: ${player.id}에게 ${healResult.actualHeal} 힐, 현재 HP: ${player.hp}/${player.maxHp} (힐 공식: ${healSkill?.heal}, caster attack: ${caster.attack})`);
         }
       }
     });
   }
 
   /**
-   * 버프 장판 처리 (지속적인 버프 효과)
+   * 버프 장판 처리 (지속적인 버프 효과) - 얼음 장판과 동일한 로직
    */
   processBuffField(field) {
+    console.log(`[processBuffField] 호출됨 - 위치: (${field.x}, ${field.y}), 범위: ${field.range}`);
+    
     const players = this.gameStateManager.players;
+    const caster = players.get(field.playerId);
+    
+    // 시전자가 없으면 처리하지 않음
+    if (!caster) {
+      console.log(`[processBuffField] 시전자 없음: ${field.playerId}`);
+      return;
+    }
     
     const playerArray = Array.from(players.values());
+    console.log(`[processBuffField] 처리할 플레이어 수: ${playerArray.length}`);
+    
     playerArray.forEach(player => {
       if (player.isDead) return;
+      
+      // 같은 팀만 버프
+      if (player.team !== caster.team) return;
 
       const distance = Math.sqrt(
         Math.pow(player.x - field.x, 2) + Math.pow(player.y - field.y, 2)
@@ -1536,13 +1653,85 @@ class SkillManager {
       
       // 캐릭터 크기를 고려한 충돌 검사
       const effectiveRange = field.range + (player.size || 32) / 2;
+      
+      console.log(`[processBuffField] 플레이어 ${player.id}: 거리=${Math.round(distance)}, 유효범위=${effectiveRange}, 범위내=${distance <= effectiveRange}`);
         
       if (distance <= effectiveRange) {
-        // 버프 효과 유지
+        // 버프 효과 유지/적용 (얼음 장판의 슬로우와 동일한 방식)
+        const wasBuffed = player.isBuffed;
         player.isBuffed = true;
         player.buffedUntil = Date.now() + 600; // 0.6초 후 해제 (다음 틱 전까지 유지)
-        player.speedBoost = 1.5; // 50% 속도 증가
-        player.attackSpeedBoost = 1.5; // 50% 공격속도 증가
+        
+        console.log(`[processBuffField] 플레이어 ${player.id} 버프 적용: wasBuffed=${wasBuffed}`);
+        
+        // 실제 버프 효과 적용 (스탯 변경)
+        if (!wasBuffed) {
+          // JobClasses에서 버프 효과 가져오기
+          const { getJobInfo } = require('../../shared/JobClasses.js');
+          const supporterInfo = getJobInfo('supporter');
+          const buffSkill = supporterInfo.skills.find(skill => skill.type === 'buff_field');
+          
+          // 버프 효과를 플레이어 속성에 직접 적용
+          player.buffSpeedMultiplier = buffSkill?.speedMultiplier || 1.5;
+          player.buffAttackSpeedMultiplier = buffSkill?.attackSpeedMultiplier || 1.5;
+          
+          // 실제 스탯 적용
+          const originalSpeed = player.originalSpeed || player.speed;
+          const originalAttackCooldown = player.originalBasicAttackCooldown || player.basicAttackCooldown;
+          
+          player.originalSpeed = originalSpeed;
+          player.originalBasicAttackCooldown = originalAttackCooldown;
+          
+          player.speed = Math.floor(originalSpeed * player.buffSpeedMultiplier);
+          player.basicAttackCooldown = Math.floor(originalAttackCooldown / player.buffAttackSpeedMultiplier);
+          
+          console.log(`[processBuffField] 플레이어 ${player.id} 스탯 변경: 속도 ${originalSpeed}→${player.speed}, 공격속도 ${originalAttackCooldown}→${player.basicAttackCooldown}`);
+        }
+        
+        // 새로 버프가 걸린 경우에만 이벤트 전송 (얼음 장판과 동일한 방식)
+        if (!wasBuffed && this.gameStateManager.io) {
+          console.log(`[processBuffField] 플레이어 ${player.id}에게 버프 이벤트 전송`);
+          this.gameStateManager.io.emit('player-buffed', {
+            playerId: player.id,
+            effectId: `buff_field_${field.playerId}_${Date.now()}`,
+            speedMultiplier: player.buffSpeedMultiplier,
+            attackSpeedMultiplier: player.buffAttackSpeedMultiplier,
+            duration: 600
+          });
+        }
+      } else {
+        // 범위를 벗어난 경우 버프 해제 체크 (얼음 장판과 동일한 방식)
+        if (player.isBuffed && (!player.buffedUntil || Date.now() > player.buffedUntil)) {
+          console.log(`[processBuffField] 플레이어 ${player.id} 버프 해제 (범위 벗어남 또는 시간 만료)`);
+          
+          player.isBuffed = false;
+          
+          // 실제 버프 효과 해제 (스탯 복원)
+          if (player.originalSpeed !== undefined) {
+            player.speed = player.originalSpeed;
+            player.originalSpeed = undefined;
+          }
+          if (player.originalBasicAttackCooldown !== undefined) {
+            player.basicAttackCooldown = player.originalBasicAttackCooldown;
+            player.originalBasicAttackCooldown = undefined;
+          }
+          
+          // 버프 배율 정리
+          player.buffSpeedMultiplier = undefined;
+          player.buffAttackSpeedMultiplier = undefined;
+        
+          // 버프 해제 이벤트 전송 (얼음 장판과 동일한 방식)
+          if (this.gameStateManager.io) {
+            console.log(`[processBuffField] 플레이어 ${player.id}에게 버프 해제 이벤트 전송`);
+            this.gameStateManager.io.emit('player-buffed', {
+              playerId: player.id,
+              effectId: '',
+              speedMultiplier: 1,
+              attackSpeedMultiplier: 1,
+              duration: 0
+            });
+          }
+        }
       }
     });
   }

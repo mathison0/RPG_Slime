@@ -73,6 +73,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.isStunnedTint = false;    // 기절 상태 (0x888888)
         this.isStealthTint = false;    // 은신 상태 (0x888888)
         this.isSlowedTint = false;     // 슬로우 상태 (0x87ceeb)
+        this.isHealedTint = false;     // 힐 상태 (0x90EE90)
+        this.isBuffedTint = false;     // 버프 상태 (0x9370DB)
         
         // 디버그 모드 최적화
         this.lastEnemyDebugUpdate = 0;
@@ -902,7 +904,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     
     /**
      * Tint 상태를 우선순위에 따라 업데이트
-     * 우선순위: 피격 > 기절 > 은신 > 슬로우
+     * 우선순위: 피격 > 기절 > 은신 > 힐 > 슬로우 > 버프
      */
     updateTint() {
         // 우선순위에 따라 tint 결정
@@ -912,13 +914,17 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.setTint(0x888888); // 회색 (기절)
         } else if (this.isStealthTint) {
             this.setTint(0x888888); // 회색 (은신)
+        } else if (this.isHealedTint) {
+            this.setTint(0xFFFF00); // 노란색 (힐)
         } else if (this.isSlowedTint) {
             this.setTint(0x87ceeb); // 하늘색 (슬로우)
+        } else if (this.isBuffedTint) {
+            this.setTint(0x9370DB); // 보라색 (버프)
         } else {
             this.clearTint(); // 모든 효과가 없으면 원래 색상
         }
     }
-    
+
     /**
      * 자살 (치트) - 서버에 사망 요청
      */
@@ -1551,6 +1557,17 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // 버프 UI 업데이트
         this.updateBuffUI();
+        this.updateTint();
+        
+        // 버프 만료 체크 및 UI 업데이트를 위한 타이머 설정
+        if (!this.buffUpdateTimer) {
+            this.buffUpdateTimer = this.scene.time.addEvent({
+                delay: 100, // 0.1초마다 체크
+                callback: this.updateBuffStates,
+                callbackScope: this,
+                loop: true
+            });
+        }
     }
 
     /**
@@ -1582,6 +1599,35 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         expiredBuffs.forEach(buffType => {
             this.removeBuff(buffType);
         });
+    }
+
+    /**
+     * 버프 상태 업데이트 (만료된 버프 제거 및 UI 갱신)
+     */
+    updateBuffStates() {
+        const now = Date.now();
+        let hasExpiredBuff = false;
+        
+        // 만료된 버프 제거
+        for (const [buffType, buff] of this.buffs) {
+            if (now >= buff.endTime) {
+                this.buffs.delete(buffType);
+                hasExpiredBuff = true;
+                console.log(`버프 만료: ${buffType}`);
+            }
+        }
+        
+        // 만료된 버프가 있으면 UI 업데이트
+        if (hasExpiredBuff) {
+            this.updateBuffUI();
+            this.updateTint();
+        }
+        
+        // 모든 버프가 없으면 타이머 제거
+        if (this.buffs.size === 0 && this.buffUpdateTimer) {
+            this.buffUpdateTimer.remove();
+            this.buffUpdateTimer = null;
+        }
     }
 
     /**
@@ -1723,6 +1769,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         if (this.buffUI) {
             this.buffUI.destroy();
+        }
+        
+        // 버프 업데이트 타이머 정리
+        if (this.buffUpdateTimer) {
+            this.buffUpdateTimer.remove();
+            this.buffUpdateTimer = null;
         }
         
         if (this.job) {

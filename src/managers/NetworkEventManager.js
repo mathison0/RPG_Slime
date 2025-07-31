@@ -96,6 +96,14 @@ export default class NetworkEventManager {
             this.handlePlayerDamaged(data);
         });
         
+        this.networkManager.on('player-healed', (data) => {
+            this.handlePlayerHealed(data);
+        });
+        
+        this.networkManager.on('player-buffed', (data) => {
+            this.handlePlayerBuffed(data);
+        });
+        
         this.networkManager.on('ward-destroyed', (data) => {
             this.handleWardDestroyed(data);
         });
@@ -1174,6 +1182,166 @@ export default class NetworkEventManager {
     }
 
     /**
+     * 플레이어 힐 처리
+     */
+    handlePlayerHealed(data) {
+        const targetPlayer = data.playerId === this.networkManager.playerId 
+            ? this.scene.player 
+            : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
+        
+        if (!targetPlayer) return;
+        
+        // 본인 플레이어인 경우 체력 정보 업데이트
+        if (targetPlayer === this.scene.player) {
+            targetPlayer.setHealthFromServer(data.newHp, data.maxHp);
+            targetPlayer.updateUI();
+        }
+        
+        // 힐 텍스트 표시 (녹색)
+        if (data.healAmount > 0) {
+            this.scene.effectManager.showHealText(targetPlayer.x, targetPlayer.y, data.healAmount);
+        }
+        
+        // 힐 상태 설정 및 노란색 tint 업데이트
+        targetPlayer.isHealed = true;
+        if (targetPlayer.updateTint) {
+            targetPlayer.updateTint();
+        }
+        
+        // 300ms 후 힐 상태 해제
+        this.scene.time.delayedCall(300, () => {
+            if (targetPlayer && targetPlayer.active && !targetPlayer.isDead) {
+                targetPlayer.isHealed = false;
+                if (targetPlayer.updateTint) {
+                    targetPlayer.updateTint();
+                }
+            }
+        });
+    }
+
+    /**
+     * 플레이어 버프 처리 - 얼음 장판의 슬로우와 동일한 로직
+     */
+    handlePlayerBuffed(data) {
+        console.log('[handlePlayerBuffed] 플레이어 버프 효과 받음:', data);
+        console.log('[handlePlayerBuffed] 플레이어 버프 효과 처리 시작');
+        const { playerId, effectId, speedMultiplier, attackSpeedMultiplier, duration } = data;
+        
+        const targetPlayer = playerId === this.networkManager.playerId 
+            ? this.scene.player 
+            : this.scene.otherPlayers?.getChildren().find(p => p.networkId === playerId);
+        
+        if (targetPlayer) {
+            console.log(`[handlePlayerBuffed] 대상 플레이어 발견: ${playerId}, isMainPlayer: ${targetPlayer === this.scene.player}`);
+            
+            // 버프 해제인지 확인 (speedMultiplier가 1이고 duration이 0이면 해제)
+            if (speedMultiplier === 1 && attackSpeedMultiplier === 1 && duration === 0) {
+                console.log(`[handlePlayerBuffed] 버프 해제 처리: ${playerId}`);
+                
+                // 버프 효과 해제 (슬로우 해제와 동일한 방식)
+                if (targetPlayer.buffEffects) {
+                    targetPlayer.buffEffects = targetPlayer.buffEffects.filter(effect => effect.id !== effectId);
+                }
+                
+                // 다른 버프 효과가 없으면 버프 tint 상태 해제
+                if (!targetPlayer.buffEffects || targetPlayer.buffEffects.length === 0) {
+                    console.log(`[handlePlayerBuffed] 버프 틴트 해제: ${playerId}`);
+                    targetPlayer.isBuffedTint = false;
+                    if (targetPlayer.updateTint) {
+                        targetPlayer.updateTint();
+                    }
+                    
+                    // 실제 버프 시스템에서도 제거 (메인 플레이어인 경우)
+                    if (targetPlayer === this.scene.player && targetPlayer.buffs) {
+                        targetPlayer.buffs.clear();
+                    }
+                }
+                
+                console.log(`[handlePlayerBuffed] 버프 해제 완료: ${playerId}`);
+            } else {
+                console.log(`[handlePlayerBuffed] 버프 적용 처리: ${playerId}, 속도=${speedMultiplier}, 공격속도=${attackSpeedMultiplier}`);
+                
+                // 버프 효과 적용 (슬로우 적용과 동일한 방식)
+                if (!targetPlayer.buffEffects) {
+                    targetPlayer.buffEffects = [];
+                }
+                
+                const buffEffect = {
+                    id: effectId,
+                    speedMultiplier: speedMultiplier,
+                    attackSpeedMultiplier: attackSpeedMultiplier,
+                    duration: duration,
+                    startTime: Date.now()
+                };
+                
+                targetPlayer.buffEffects.push(buffEffect);
+                
+                // 버프 tint 상태 설정 (슬로우와 동일한 방식)
+                console.log(`[handlePlayerBuffed] 버프 틴트 적용: ${playerId}`);
+                targetPlayer.isBuffedTint = true;
+                if (targetPlayer.updateTint) {
+                    targetPlayer.updateTint();
+                }
+                
+                // 실제 버프 시스템에도 적용 (메인 플레이어인 경우)
+                if (targetPlayer === this.scene.player && targetPlayer.applyBuff) {
+                    const effect = {
+                        speedMultiplier: speedMultiplier,
+                        attackSpeedMultiplier: attackSpeedMultiplier
+                    };
+                    targetPlayer.applyBuff('speed_attack_boost', duration, effect);
+                    console.log(`[handlePlayerBuffed] 실제 버프 시스템 적용: ${playerId}`);
+                }
+                
+                // 버프 효과 메시지 표시
+                if (this.scene.effectManager) {
+                    this.scene.effectManager.showSkillMessage(targetPlayer.x, targetPlayer.y, '버프!');
+                }
+                
+                // 절대 시간 기준 타이머 매니저 사용 (슬로우와 동일한 방식)
+                const timerManager = getGlobalTimerManager();
+                const targetEndTime = Date.now() + duration;
+                const eventId = timerManager.addEvent(targetEndTime, () => {
+                    if (targetPlayer.active) {
+                        console.log(`[handlePlayerBuffed] 타이머로 버프 해제: ${playerId}`);
+                        
+                        // 버프 효과 제거
+                        targetPlayer.buffEffects = targetPlayer.buffEffects.filter(effect => effect.id !== effectId);
+                        
+                        // 다른 버프 효과가 없으면 버프 tint 상태 해제
+                        if (targetPlayer.buffEffects.length === 0) {
+                            targetPlayer.isBuffedTint = false;
+                            if (targetPlayer.updateTint) {
+                                targetPlayer.updateTint();
+                            }
+                            
+                            // 실제 버프 시스템에서도 제거
+                            if (targetPlayer === this.scene.player && targetPlayer.buffs) {
+                                targetPlayer.buffs.clear();
+                            }
+                        }
+                    }
+                });
+                
+                // 호환성을 위한 타이머 객체
+                const buffEffectTimer = {
+                    remove: () => timerManager.removeEvent(eventId)
+                };
+                
+                if (targetPlayer.delayedSkillTimers) {
+                    targetPlayer.delayedSkillTimers.add(buffEffectTimer);
+                }
+                
+                console.log(`[handlePlayerBuffed] 버프 적용 완료: ${playerId}, 타이머 설정됨`);
+            }
+        } else {
+            console.warn(`[handlePlayerBuffed] 대상 플레이어를 찾을 수 없음: ${playerId}`);
+        }
+    }
+
+
+
+    /**
      * 와드 파괴 처리
      */
     handleWardDestroyed(data) {
@@ -1973,6 +2141,16 @@ export default class NetworkEventManager {
                         attackSpeedMultiplier: 2.0 // 공격속도 2배 증가
                     };
                     player.applyBuff('attack_speed_boost', data.skillInfo.duration, focusEffect);
+                }
+                break;
+            case 'heal_field':
+                if (player.job.showHealFieldEffect) {
+                    player.job.showHealFieldEffect(data);
+                }
+                break;
+            case 'buff_field':
+                if (player.job.showBuffFieldEffect) {
+                    player.job.showBuffFieldEffect(data);
                 }
                 break;
         }

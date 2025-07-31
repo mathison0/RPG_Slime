@@ -73,27 +73,23 @@ export default class BaseJob {
         const now = this.scene.time.now;
         const lastUsed = this.lastBasicAttackTime || 0;
         
-        // 서버에서 받은 쿨타임 정보 사용
+        // 서버에서 받은 쿨타임 정보 사용 (버프가 적용된 실제 값)
         const jobClass = this.player.jobClass;
         let cooldown = 600; // 기본값
         
-        console.log(`[클라이언트] 쿨다운 계산 시작: jobClass=${jobClass}, scene.jobCooldowns=`, this.scene.jobCooldowns);
+        console.log(`[클라이언트] 쿨다운 계산 시작: jobClass=${jobClass}, player.stats=`, this.player.stats);
         
-        if (this.scene.jobCooldowns && this.scene.jobCooldowns[jobClass]) {
+        // 1순위: 서버에서 받은 현재 플레이어 상태의 basicAttackCooldown (버프 적용된 값)
+        if (this.player.stats && this.player.stats.basicAttackCooldown) {
+            cooldown = this.player.stats.basicAttackCooldown;
+            console.log(`[클라이언트] 서버 상태의 쿨다운 사용: ${cooldown}ms`);
+        }
+        // 2순위: JobCooldowns에서 기본값
+        else if (this.scene.jobCooldowns && this.scene.jobCooldowns[jobClass]) {
             cooldown = this.scene.jobCooldowns[jobClass].basicAttackCooldown;
             console.log(`[클라이언트] 직업별 쿨다운 사용: ${cooldown}ms`);
         } else {
-            console.log(`[클라이언트] 직업별 쿨다운 정보 없음, 기본값 사용: ${cooldown}ms`);
-        }
-        
-        // 버프 효과 적용
-        if (this.player.hasBuff && this.player.hasBuff('attack_speed_boost')) {
-            const buff = this.player.buffs.get('attack_speed_boost');
-            if (buff && buff.effect && buff.effect.attackSpeedMultiplier) {
-                const originalCooldown = cooldown;
-                cooldown = Math.floor(cooldown / buff.effect.attackSpeedMultiplier);
-                console.log(`[클라이언트] 공격속도 버프 적용: ${originalCooldown}ms → ${cooldown}ms (배율: ${buff.effect.attackSpeedMultiplier})`);
-            }
+            console.log(`[클라이언트] 기본값 사용: ${cooldown}ms`);
         }
         
         const timeSinceLastAttack = now - lastUsed;

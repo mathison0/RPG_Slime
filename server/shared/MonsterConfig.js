@@ -22,7 +22,7 @@ const MAP_LEVELS = {
 const BASE_MONSTER_STATS = {
   [MONSTER_TYPES.BASIC]: {
     hp: 150,
-    attack: 50,
+    attack: 40,
     speed: 110,
     size: 32,
     exp: 10,
@@ -32,7 +32,7 @@ const BASE_MONSTER_STATS = {
   },
   [MONSTER_TYPES.CHARGE]: {
     hp: 70,
-    attack: 100,
+    attack: 70,
     speed: 160,
     size: 36,
     exp: 15,
@@ -41,8 +41,8 @@ const BASE_MONSTER_STATS = {
     wanderSpeed: 80       // 빠른 배회 속도
   },
   [MONSTER_TYPES.ELITE]: {
-    hp: 800,
-    attack: 150,
+    hp: 600,
+    attack: 100,
     speed: 120,
     size: 44,
     exp: 100,

@@ -358,8 +358,6 @@ class GameStateManager {
    * @returns {Object} - 처리 결과 { success: boolean, actualDamage: number, reason?: string }
    */
   takeDamage(attacker, target, damage) {
-    console.log(`takeDamage 호출: ${attacker.id} → ${target.id}, 데미지: ${damage}`);
-    
     // 기본 유효성 검사
     if (!attacker || !target || damage <= 0) {
       console.log(`takeDamage 실패: 유효하지 않은 파라미터`);
@@ -374,7 +372,6 @@ class GameStateManager {
     // 무적 상태 체크 (플레이어만)
     if (target.isInvincible === true) {
       // 무적 상태일 때 attack-invalid 이벤트 브로드캐스트
-      console.log(`무적 상태로 공격 무효: ${attacker.id} → ${target.id}`);
       if (this.io) {
         // 공격자가 플레이어인 경우: 공격자에게 메시지 전송
         // 공격자가 몬스터인 경우: 피격자(플레이어)에게 메시지 전송
@@ -385,8 +382,6 @@ class GameStateManager {
           y: target.y,
           message: '무적!'
         });
-        
-        console.log(`무적 메시지 전송: ${recipientId}에게 (공격자: ${attacker.id}, 피격자: ${target.id})`);
       }
       return { success: false, actualDamage: 0, reason: 'invincible' };
     }
@@ -405,7 +400,6 @@ class GameStateManager {
             message: '공격 무효!'
           });
         }
-        console.log(`레벨 다름으로 공격 무효: 공격자 레벨 ${attackerLevel}, 타겟 레벨 ${targetLevel}`);
         return { success: false, actualDamage: 0, reason: 'different level' };
       }
     }
@@ -413,13 +407,8 @@ class GameStateManager {
     // 실제 데미지 적용
     let actualDamage = damage;
     
-    console.log(`takeDamage 디버그: target.id=${target.id}, activeEffects존재=${!!target.activeEffects}, shield보유=${target.activeEffects ? target.activeEffects.has('shield') : 'N/A'}`);
-    
     // 보호막 효과 체크 (마법사의 보호막)
     if (target.activeEffects && target.activeEffects.has('shield')) {
-      console.log(`보호막으로 데미지 무효: ${attacker.id} → ${target.id}, 데미지: ${damage}`);
-      
-      // 데미지 무효화 (보호막은 지속시간 동안 모든 데미지를 차단, 1회 제거 로직 삭제)
       actualDamage = 0;
       
       // 보호막 무효화 메시지 브로드캐스트
@@ -443,7 +432,6 @@ class GameStateManager {
     // 몬스터가 피격당한 경우 공격자를 타겟으로 설정
     if (target.mapLevel !== undefined && attacker.team !== undefined) {
       target.target = attacker;
-      console.log(`몬스터 ${target.id}가 ${attacker.id}에게 피격당해 타겟으로 설정`);
     }
 
     // 플레이어가 피격당한 경우 데미지 소스 추적
@@ -520,8 +508,6 @@ class GameStateManager {
         });
       }
     }
-
-    console.log(`데미지 처리: ${attacker.id} → ${target.id}, 데미지: ${actualDamage}, 남은 HP: ${target.hp}`);
     
     return { 
       success: true, 

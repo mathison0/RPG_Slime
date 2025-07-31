@@ -190,6 +190,142 @@ export default class SupporterJob extends BaseJob {
     }
 
     /**
+     * 힐 장판 이펙트 (서버에서 스킬 승인 시 호출)
+     */
+    showHealFieldEffect(data = null) {
+        // EffectManager 초기화
+        if (!this.effectManager) {
+            this.effectManager = this.player.scene.effectManager;
+        }
+        const { getGlobalTimerManager } = this.player.scene.effectManager || {};
+        
+        // 서버에서 받은 스킬 정보 사용
+        const skillInfo = data?.skillInfo || {};
+        const range = skillInfo.range || 100; // 서버에서 받은 범위
+        const duration = skillInfo.duration || 2500; // 서버에서 받은 지속시간
+        const endTime = data?.endTime || (Date.now() + duration);
+        
+        // 서버에서 받은 실제 시전 위치 사용
+        const healX = data?.x || this.player.x;
+        const healY = data?.y || this.player.y;
+        
+        console.log(`힐 장판 클라이언트 이펙트: 위치=(${healX}, ${healY}), range=${range}, duration=${duration}ms`);
+        
+        // 힐 장판 생성 (노란색)
+        const healField = this.player.scene.add.circle(healX, healY, range, 0xFFFF00, 0.4);
+        healField.setDepth(650);
+        
+        // EffectManager를 사용한 스킬 메시지
+        const skillText = this.effectManager.showSkillMessage(
+            healX, 
+            healY, 
+            '힐 장판!'
+        );
+        
+        // 절대 시간 기준 타이머 매니저 사용
+        if (getGlobalTimerManager) {
+            const timerManager = getGlobalTimerManager();
+            const eventId = timerManager.addEvent(endTime, () => {
+                if (healField.active) {
+                    healField.destroy();
+                }
+                if (skillText.active) {
+                    skillText.destroy();
+                }
+            });
+            
+            // 호환성을 위한 타이머 객체
+            const healFieldTimer = {
+                remove: () => timerManager.removeEvent(eventId)
+            };
+            
+            if (this.player.delayedSkillTimers) {
+                this.player.delayedSkillTimers.add(healFieldTimer);
+            }
+        } else {
+            // Fallback: scene timer 사용
+            this.player.scene.time.delayedCall(duration, () => {
+                if (healField.active) {
+                    healField.destroy();
+                }
+                if (skillText.active) {
+                    skillText.destroy();
+                }
+            });
+        }
+
+        console.log('힐 장판 생성 완료!');
+    }
+
+    /**
+     * 버프 장판 이펙트 (서버에서 스킬 승인 시 호출)
+     */
+    showBuffFieldEffect(data = null) {
+        // EffectManager 초기화
+        if (!this.effectManager) {
+            this.effectManager = this.player.scene.effectManager;
+        }
+        const { getGlobalTimerManager } = this.player.scene.effectManager || {};
+        
+        // 서버에서 받은 스킬 정보 사용
+        const skillInfo = data?.skillInfo || {};
+        const range = skillInfo.range || 80; // 서버에서 받은 범위
+        const duration = skillInfo.duration || 2000; // 서버에서 받은 지속시간
+        const endTime = data?.endTime || (Date.now() + duration);
+        
+        // 서버에서 받은 실제 시전 위치 사용
+        const buffX = data?.x || this.player.x;
+        const buffY = data?.y || this.player.y;
+        
+        console.log(`버프 장판 클라이언트 이펙트: 위치=(${buffX}, ${buffY}), range=${range}, duration=${duration}ms`);
+        
+        // 버프 장판 생성 (보라색)
+        const buffField = this.player.scene.add.circle(buffX, buffY, range, 0x9370DB, 0.4);
+        buffField.setDepth(650);
+        
+        // EffectManager를 사용한 스킬 메시지
+        const skillText = this.effectManager.showSkillMessage(
+            buffX, 
+            buffY, 
+            '버프 장판!'
+        );
+        
+        // 절대 시간 기준 타이머 매니저 사용
+        if (getGlobalTimerManager) {
+            const timerManager = getGlobalTimerManager();
+            const eventId = timerManager.addEvent(endTime, () => {
+                if (buffField.active) {
+                    buffField.destroy();
+                }
+                if (skillText.active) {
+                    skillText.destroy();
+                }
+            });
+            
+            // 호환성을 위한 타이머 객체
+            const buffFieldTimer = {
+                remove: () => timerManager.removeEvent(eventId)
+            };
+            
+            if (this.player.delayedSkillTimers) {
+                this.player.delayedSkillTimers.add(buffFieldTimer);
+            }
+        } else {
+            // Fallback: scene timer 사용
+            this.player.scene.time.delayedCall(duration, () => {
+                if (buffField.active) {
+                    buffField.destroy();
+                }
+                if (skillText.active) {
+                    skillText.destroy();
+                }
+            });
+        }
+
+        console.log('버프 장판 생성 완료!');
+    }
+
+    /**
      * 서포터 스킬 사용
      * @param {number} skillNumber - 스킬 번호 (1, 2, 3)
      * @param {Object} options - 스킬 사용 옵션
@@ -208,12 +344,18 @@ export default class SupporterJob extends BaseJob {
             case 2: // E키 - 버프 장판
                 const pointer2 = this.scene.input.activePointer;
                 const worldPoint2 = this.scene.cameras.main.getWorldPoint(pointer2.x, pointer2.y);
-                this.player.networkManager.useSkill('buff_field', worldPoint2.x, worldPoint2.y);
+                this.player.networkManager.useSkill('buff_field', {
+                    targetX: worldPoint2.x,
+                    targetY: worldPoint2.y
+                });
                 break;
             case 3: // R키 - 힐 장판
                 const pointer3 = this.scene.input.activePointer;
                 const worldPoint3 = this.scene.cameras.main.getWorldPoint(pointer3.x, pointer3.y);
-                this.player.networkManager.useSkill('heal_field', worldPoint3.x, worldPoint3.y);
+                this.player.networkManager.useSkill('heal_field', {
+                    targetX: worldPoint3.x,
+                    targetY: worldPoint3.y
+                });
                 break;
             default:
                 console.log('SupporterJob: 알 수 없는 스킬 번호:', skillNumber);
