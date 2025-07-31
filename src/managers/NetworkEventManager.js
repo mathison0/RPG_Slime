@@ -571,8 +571,8 @@ export default class NetworkEventManager {
         // 후딜레이 완료 시간 계산
         const effectEndTime = endTime - afterDelay; // 실제 스킬 효과 종료 시간
         
-        // 스킬이 이미 완료된 경우 스킵
-        if (timeUntilEnd < 0) {
+        // 스킬이 이미 완료된 경우 스킵 (목긋기는 제외)
+        if (timeUntilEnd < 0 && data.skillType !== 'backstab') {
             console.log(`스킬 이펙트 스킵: 이미 완료됨 (${timeUntilEnd}ms, ${data.skillType})`);
             return;
         }
@@ -582,6 +582,13 @@ export default class NetworkEventManager {
             this.handleDelayedSkill(player, data, delay, duration, afterDelay, endTime, effectEndTime);
         } else if (duration > 0 && data.skillType === 'blade_dance') {
             // 칼춤 스킬은 showSkillEffect에서만 처리 (입력 차단 없음)
+            this.showSkillEffect(player, data.skillType, {
+                ...data,
+                endTime: endTime,
+                effectEndTime: effectEndTime
+            });
+        } else if (data.skillType === 'backstab') {
+            // 목긋기 스킬은 즉시 처리 (순간이동)
             this.showSkillEffect(player, data.skillType, {
                 ...data,
                 endTime: endTime,
@@ -2155,6 +2162,7 @@ export default class NetworkEventManager {
      * 스킬 이펙트 표시 - 각 직업 클래스에 위임
      */
     showSkillEffect(player, skillType, data = null) {
+        console.log(`showSkillEffect 호출: skillType=${skillType}, player=${player?.id}, job=${player?.job?.constructor?.name}`);
         if (!player || !player.job) return;
         
         switch (skillType) {
@@ -2220,6 +2228,16 @@ export default class NetworkEventManager {
                         attackPowerMultiplier: data.attackPowerMultiplier || 2.5
                     };
                     player.applyBuff('attack_power_boost', data.skillInfo.duration, bladeDanceEffect);
+                }
+                break;
+            case 'backstab':
+                console.log('목긋기 케이스 처리:', data);
+                console.log('목긋기 backstabData:', data.backstabData);
+                if (player.job.showBackstabEffect) {
+                    console.log('showBackstabEffect 호출');
+                    player.job.showBackstabEffect(data.backstabData || data);
+                } else {
+                    console.log('showBackstabEffect 메서드가 없습니다');
                 }
                 break;
             case 'heal_field':

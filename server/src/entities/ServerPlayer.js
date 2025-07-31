@@ -157,7 +157,48 @@ class ServerPlayer {
     this.y = data.y;
     this.direction = data.direction;
     this.isJumping = data.isJumping;
+    
+    // 은신 상태 체크 및 자동 해제
+    this.updateStealthStatus();
+    
     this.lastUpdate = Date.now();
+  }
+
+  /**
+   * 은신 상태 업데이트 및 자동 해제
+   */
+  updateStealthStatus() {
+    if (this.isStealth && this.stealthEndTime) {
+      const now = Date.now();
+      if (now >= this.stealthEndTime) {
+        this.endStealth();
+      }
+    }
+  }
+
+  /**
+   * 은신 상태 종료
+   */
+  endStealth() {
+    console.log(`어쌔신 은신 자동 해제: ${this.id}`);
+    
+    this.isStealth = false;
+    this.stealthStartTime = 0;
+    this.stealthDuration = 0;
+    this.stealthEndTime = 0;
+    
+    // 이동속도 복원
+    if (this.originalSpeed !== undefined) {
+      this.speed = this.originalSpeed;
+    }
+    
+    // 시야 범위 복원
+    if (this.originalVisionRange !== undefined) {
+      this.visionRange = this.originalVisionRange;
+    }
+    
+    // 다시 모든 팀에게 보이도록 설정
+    this.visibleToEnemies = true;
   }
 
   /**
@@ -170,7 +211,8 @@ class ServerPlayer {
       },
       assassin: {
         stealth: 'skill1',
-        blade_dance: 'skill2'
+        blade_dance: 'skill2',
+        backstab: 'skill3'
       },
       ninja: {
         stealth: 'skill1'

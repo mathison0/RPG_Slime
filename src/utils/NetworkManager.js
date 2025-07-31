@@ -329,7 +329,20 @@ class NetworkManager {
                 direction: actualDirection,
                 rotationDirection: actualRotationDirection
             };
+            
+            // 목긋기 스킬의 경우 마우스 위치 정보 추가
+            if (skillType === 'backstab' && typeof targetXOrOptions === 'object' && targetXOrOptions !== null) {
+                skillData.mouseX = targetXOrOptions.mouseX;
+                skillData.mouseY = targetXOrOptions.mouseY;
+            }
             console.log(`NetworkManager useSkill 전송:`, skillData);
+            console.log(`목긋기 스킬 데이터 확인:`, {
+              skillType: skillData.skillType,
+              mouseX: skillData.mouseX,
+              mouseY: skillData.mouseY,
+              targetXOrOptions: targetXOrOptions,
+              fullSkillData: skillData
+            });
             this.socket.emit('player-skill', skillData);
         }
     }

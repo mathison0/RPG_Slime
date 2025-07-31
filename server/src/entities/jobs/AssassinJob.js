@@ -24,6 +24,8 @@ class AssassinJob extends BaseJob {
                 return this.useStealth(options);
             case 'blade_dance':
                 return this.useBladeDance(options);
+            case 'backstab':
+                return this.useBackstab(options);
             default:
                 console.log('AssassinJob: 알 수 없는 스킬 타입:', skillType);
                 return { success: false, reason: 'Unknown skill type' };
@@ -152,6 +154,114 @@ class AssassinJob extends BaseJob {
             effect: skillInfo.effect,
             skillInfo: skillInfo,
             attackPowerMultiplier: attackPowerMultiplier,
+            caster: {
+                id: this.player.id,
+                x: this.player.x,
+                y: this.player.y
+            }
+        };
+    }
+
+    /**
+     * 목긋기 스킬 (서버에서 처리)
+     * @param {Object} options - 스킬 옵션 (targetId, targetX, targetY 포함)
+     * @returns {Object} - 스킬 사용 결과
+     */
+    useBackstab(options = {}) {
+        // 쿨타임 체크
+        if (!this.isSkillAvailable('backstab')) {
+            return { 
+                success: false, 
+                reason: 'cooldown'
+            };
+        }
+
+        // 죽은 상태면 스킬 사용 불가
+        if (this.player.isDead) {
+            return { success: false, reason: 'dead' };
+        }
+
+        const skillInfo = this.getSkillInfo('backstab');
+        if (!skillInfo) {
+            return { success: false, reason: 'skill not found' };
+        }
+
+        // 대상 정보 확인
+        const { targetId, targetX, targetY } = options;
+        if (!targetId || targetX === undefined || targetY === undefined) {
+            return { success: false, reason: 'invalid target' };
+        }
+
+                     // 대상 찾기 (플레이어 또는 몬스터)
+             let target = this.player.gameState?.players?.get(targetId);
+             let isMonster = false;
+             
+             if (!target) {
+                 // 플레이어에서 찾지 못했으면 몬스터에서 찾기
+                 target = this.player.gameState?.monsters?.get(targetId);
+                 if (target) {
+                     isMonster = true;
+                 }
+             }
+             
+             if (!target) {
+                 return { success: false, reason: 'target not found' };
+             }
+             
+             // 플레이어인 경우 같은 팀인지 확인 (목긋기는 상대팀에게만 사용 가능)
+             if (!isMonster && target.team === this.player.team) {
+                 return { success: false, reason: 'same team' };
+             }
+
+        // 거리 확인
+        const distance = Math.sqrt(
+            Math.pow(this.player.x - targetX, 2) + 
+            Math.pow(this.player.y - targetY, 2)
+        );
+        
+        if (distance > skillInfo.range) {
+            return { success: false, reason: 'out of range' };
+        }
+
+        // 쿨타임 설정
+        this.setSkillCooldown('backstab');
+
+        // 대상의 뒤쪽 위치 계산
+        const angleToTarget = Math.atan2(targetY - this.player.y, targetX - this.player.x);
+        const teleportDistance = skillInfo.teleportDistance || 50;
+        const newX = targetX - Math.cos(angleToTarget) * teleportDistance;
+        const newY = targetY - Math.sin(angleToTarget) * teleportDistance;
+
+        // 플레이어 위치 이동
+        this.player.x = newX;
+        this.player.y = newY;
+
+        // 데미지 계산
+        let damage = this.player.attack * 3.0; // 기본 3배 데미지
+        
+        // 은신 중이면 보너스 데미지 추가 (은신 상태 유지)
+        if (this.player.isStealth) {
+            const stealthSkillInfo = this.getSkillInfo('stealth');
+            if (stealthSkillInfo) {
+                damage += this.player.attack * 5.0; // 은신 보너스 데미지 추가
+            }
+        }
+
+                     // 대상에게 데미지 적용
+             target.takeDamage(damage, this.player.id);
+       
+             console.log(`어쌔신 목긋기 발동! 대상: ${targetId} (${isMonster ? '몬스터' : '플레이어'}), 데미지: ${damage}, 새 위치: (${newX}, ${newY})`);
+
+        return {
+            success: true,
+            skillType: 'backstab',
+            damage: damage,
+            targetId: targetId,
+            targetX: targetX,
+            targetY: targetY,
+            newX: newX,
+            newY: newY,
+            wasStealthAttack: this.player.isStealth,
             caster: {
                 id: this.player.id,
                 x: this.player.x,

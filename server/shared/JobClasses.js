@@ -87,6 +87,16 @@ const JobClasses = {
                 key: '2',
                 type: 'blade_dance',
                 attackPowerMultiplier: 2.0 // 공격력 2.0배 증가
+            },
+            {
+                name: '목긋기',
+                description: '특정 거리 내의 상대팀 플레이어에게 순간이동하며 뒤에서 공격합니다.',
+                cooldown: 15000,
+                damage: 'attack * 3.0',
+                range: 350,
+                key: '3',
+                type: 'backstab',
+                teleportDistance: 50 // 대상 뒤로 이동할 거리
             }
         ],
         basicAttackCooldown: 250,

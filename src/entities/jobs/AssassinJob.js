@@ -99,12 +99,21 @@ export default class AssassinJob extends BaseJob {
     }
 
     /**
-     * 스킬 3 (미구현)
+     * 목긋기 스킬 (스킬 3)
+     * @param {Object} options - 스킬 옵션
      */
     useSkill3(options = {}) {
-        console.log('AssassinJob: 스킬 3 사용 (미구현)');
+        // 쿨타임 체크
+        if (!this.isSkillAvailable('skill3')) {
+            console.log('AssassinJob: 목긋기 스킬 쿨다운 중');
+            return;
+        }
+
+        console.log('AssassinJob: 목긋기 스킬 사용 요청');
+        
+        // 서버에 스킬 사용 요청
         if (this.player.networkManager) {
-            this.player.networkManager.useSkill('skill3');
+            this.player.networkManager.useSkill('backstab', options);
         }
     }
 
@@ -382,6 +391,9 @@ export default class AssassinJob extends BaseJob {
             case 'blade_dance':
                 this.showBladeDanceEffect(data);
                 break;
+            case 'backstab':
+                this.showBackstabEffect(data);
+                break;
             default:
                 console.log('AssassinJob: 알 수 없는 스킬 이펙트:', skillType);
         }
@@ -500,6 +512,80 @@ export default class AssassinJob extends BaseJob {
         this.player.bladeDanceTimer = {
             remove: () => timerManager.removeEvent(eventId)
         };
+    }
+
+    /**
+     * 목긋기 이펙트 표시
+     */
+    showBackstabEffect(data = null) {
+        if (!this.player || !this.scene) return;
+        
+        console.log('어쌔신 목긋기 이펙트 시작', data);
+        
+        // 서버에서 받은 정보
+        console.log('목긋기 받은 데이터:', data);
+        const { targetId, targetX, targetY, newX, newY, damage, wasStealthAttack, endTime } = data;
+        
+        // 목긋기 스킬 메시지 표시
+        this.effectManager.showSkillMessage(
+            this.player.x, 
+            this.player.y, 
+            '목긋기!', 
+            {
+                fontSize: '16px',
+                fill: '#FF0000'
+            }
+        );
+        
+        // 순간이동 이펙트 (검은색 연기)
+        const teleportEffect = this.scene.add.circle(this.player.x, this.player.y, 30, 0x000000, 0.6);
+        teleportEffect.setDepth(2);
+        
+        // 순간이동 애니메이션
+        this.scene.tweens.add({
+            targets: teleportEffect,
+            scaleX: 0.1,
+            scaleY: 0.1,
+            alpha: 0,
+            duration: 300,
+            onComplete: () => {
+                teleportEffect.destroy();
+            }
+        });
+        
+        // 즉시 이동 처리
+        if (newX !== undefined && newY !== undefined) {
+            console.log(`목긋기 즉시 이동: (${this.player.x}, ${this.player.y}) -> (${newX}, ${newY})`);
+            this.player.setPosition(newX, newY);
+            console.log(`목긋기 이동 완료: (${newX}, ${newY})`);
+        } else {
+            console.log('목긋기: newX/newY 정보가 없습니다:', { newX, newY });
+        }
+        
+        // 대상에게 데미지 표시
+        if (targetId && damage) {
+            // 플레이어에서 찾기
+            let target = this.player.scene.players?.get(targetId);
+            
+            // 플레이어에서 찾지 못했으면 몬스터에서 찾기
+            if (!target) {
+                target = this.player.scene.enemies?.get(targetId);
+            }
+            
+            if (target) {
+                this.effectManager.showDamageText(
+                    target.x,
+                    target.y - 30,
+                    damage,
+                    wasStealthAttack ? '#FF0000' : '#FFFFFF'
+                );
+            }
+        }
+        
+        // 은신 상태에서 사용했다면 은신 상태 유지 (서버에서 이미 처리됨)
+        if (wasStealthAttack) {
+            console.log('어쌔신: 은신 상태에서 목긋기 사용 - 은신 상태 유지');
+        }
     }
 
     /**
