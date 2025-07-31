@@ -78,6 +78,9 @@ class SocketEventManager {
       // 플레이어 생성
       const player = this.gameStateManager.addPlayer(playerId, spawnPoint.x, spawnPoint.y, team, nickname);
       
+      // 플레이어에게 소켓 참조 설정
+      player.socket = socket;
+      
               // JobClasses를 사용한 올바른 초기 스탯 설정
         player.initializeStatsFromJobClass();
         
@@ -465,6 +468,16 @@ class SocketEventManager {
       broadcastData.targetX = skillResult.targetX;
       broadcastData.targetY = skillResult.targetY;
     }
+
+    // 은신 스킬 정보
+    if (skillType === 'stealth') {
+      broadcastData.stealthData = skillResult.stealthData;
+      broadcastData.startTime = skillResult.startTime;
+      broadcastData.endTime = skillResult.endTime;
+      broadcastData.duration = skillResult.duration;
+      broadcastData.speedMultiplier = skillResult.speedMultiplier;
+      broadcastData.visionMultiplier = skillResult.visionMultiplier;
+    }
   }
 
   /**
@@ -499,7 +512,8 @@ class SocketEventManager {
         skill1: 'spread'
       },
       assassin: {
-        skill1: 'stealth'
+        skill1: 'stealth',
+        skill2: 'blade_dance'
       },
       ninja: {
         skill1: 'stealth'

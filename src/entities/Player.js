@@ -1431,8 +1431,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             },
             'assassin': {
                 'stealth': 'skill1',
-                'backstab': 'skill2',
-                'blade_dance': 'skill3'
+                'blade_dance': 'skill2'
             },
             'ninja': {
                 'stealth': 'skill1',

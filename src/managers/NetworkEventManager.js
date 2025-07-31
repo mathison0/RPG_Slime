@@ -39,6 +39,8 @@ export default class NetworkEventManager {
             return;
         }
         
+        console.log('NetworkEventManager: networkManager 확인됨, 이벤트 리스너 등록 시작');
+        
         // 먼저 기존 리스너들 제거 (중복 방지)
         this.networkManager.off('game-joined');
         this.networkManager.off('player-joined');
@@ -59,10 +61,9 @@ export default class NetworkEventManager {
         this.networkManager.off('attack-invalid');
         this.networkManager.off('enemy-stunned');
         this.networkManager.off('magic-missile-explosion');
-
         this.networkManager.off('shield-removed');
-
-        
+        this.networkManager.off('stealth-ended');
+      
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
             this.handleGameJoined(data);
@@ -178,6 +179,13 @@ export default class NetworkEventManager {
             this.handlePlayerStunned(data);
         });
 
+        // 은신 종료 이벤트
+        console.log('NetworkEventManager: stealth-ended 이벤트 리스너 등록');
+        this.networkManager.on('stealth-ended', (data) => {
+            console.log('NetworkEventManager: stealth-ended 이벤트 수신됨:', data);
+            this.handleStealthEnded(data);
+        });
+
         // 투사체 업데이트 (스킬로 통합된 이후에도 필요)
         this.networkManager.on('projectiles-update', (data) => {
             this.handleProjectilesUpdate(data);
@@ -210,6 +218,8 @@ export default class NetworkEventManager {
         this.networkManager.on('player-update-error', (data) => {
             this.handlePlayerUpdateError(data);
         });
+        
+        console.log('NetworkEventManager: 모든 이벤트 리스너 등록 완료');
     }
 
     /**
@@ -1030,7 +1040,17 @@ export default class NetworkEventManager {
             if (myPlayerState.stats) {
                 this.scene.player.attack = myPlayerState.stats.attack;
                 this.scene.player.speed = myPlayerState.stats.speed;
-                this.scene.player.visionRange = myPlayerState.stats.visionRange;
+                
+                // 은신 해제 후 일정 시간 동안 시야 범위 업데이트 무시
+                const currentTime = Date.now();
+                const visionRestoreTime = this.scene.player.job?.visionRestoreTime || 0;
+                const shouldIgnoreVisionUpdate = currentTime - visionRestoreTime < 1000; // 1초 동안 무시
+                
+                if (!shouldIgnoreVisionUpdate) {
+                    this.scene.player.visionRange = myPlayerState.stats.visionRange;
+                } else {
+                    console.log('NetworkEventManager: 은신 해제 후 시야 범위 업데이트 무시됨 (경과시간:', currentTime - visionRestoreTime, 'ms)');
+                }
             }
             
             // 직업 정보 저장 (UI에서 사용)
@@ -1135,6 +1155,44 @@ export default class NetworkEventManager {
                     
                     // 스킬 시전 중 상태
                     otherPlayer.isCasting = playerState.isCasting;
+                    
+                    // 은신 상태 처리
+                    if (playerState.isStealth !== undefined) {
+                        otherPlayer.isStealth = playerState.isStealth;
+                    }
+                    
+                    // 다른 팀에게 보이는지 여부 처리
+                    if (playerState.visibleToEnemies !== undefined) {
+                        otherPlayer.visibleToEnemies = playerState.visibleToEnemies;
+                        
+                        // 다른 팀 플레이어가 은신 중이면 숨김 처리
+                        if (this.scene.player && this.scene.player.team !== otherPlayer.team) {
+                            if (!otherPlayer.visibleToEnemies && otherPlayer.isStealth) {
+                                otherPlayer.setVisible(false);
+                                // 닉네임과 체력바도 숨김
+                                if (otherPlayer.nameText) {
+                                    otherPlayer.nameText.setVisible(false);
+                                }
+                                if (otherPlayer.healthBar) {
+                                    otherPlayer.healthBar.setVisible(false);
+                                }
+                            } else {
+                                otherPlayer.setVisible(true);
+                                // 닉네임과 체력바도 다시 표시
+                                if (otherPlayer.nameText) {
+                                    otherPlayer.nameText.setVisible(true);
+                                }
+                                if (otherPlayer.healthBar) {
+                                    otherPlayer.healthBar.setVisible(true);
+                                }
+                            }
+                        }
+                        
+                        // 체력바 강제 업데이트 (은신 상태 반영)
+                        if (otherPlayer.healthBar) {
+                            otherPlayer.healthBar.updateHealth(otherPlayer.hp, otherPlayer.maxHp);
+                        }
+                    }
                     
                     // size 정보 업데이트 추가
                     if (playerState.size !== undefined && playerState.size !== otherPlayer.size) {
@@ -2095,8 +2153,8 @@ export default class NetworkEventManager {
                 this.showBasicAttackEffect(player, data);
                 break;
             case 'stealth':
-                if (player.job.showStealthEffect) {
-                    player.job.showStealthEffect(data);
+                if (player.job && player.job.startStealth) {
+                    player.job.startStealth(data);
                 }
                 break;
             case 'jump':
@@ -2135,10 +2193,10 @@ export default class NetworkEventManager {
                 if (player.job.showFocusEffect) {
                     player.job.showFocusEffect(data);
                 }
-                // 클라이언트에서도 버프 적용
+                // 서버에서 받은 배율 사용
                 if (data.skillInfo && data.skillInfo.duration) {
                     const focusEffect = {
-                        attackSpeedMultiplier: 2.0 // 공격속도 2배 증가
+                        attackSpeedMultiplier: data.attackSpeedMultiplier || 2.0
                     };
                     player.applyBuff('attack_speed_boost', data.skillInfo.duration, focusEffect);
                 }
@@ -2239,6 +2297,17 @@ export default class NetworkEventManager {
             }
         });
     }
+
+    /**
+     * 은신 종료 이벤트 처리
+     */
+         handleStealthEnded(data) {
+         const player = this.findPlayerById(data.playerId);
+         
+         if (player && player.job && player.job.endStealth) {
+             player.job.endStealth(data);
+         }
+     }
 
     /**
      * 정리 작업
