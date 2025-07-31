@@ -29,6 +29,7 @@ class SocketEventManager {
       this.setupJoinGameHandler(socket);
       this.setupPlayerUpdateHandler(socket);
       this.setupPlayerJobChangeHandler(socket);
+      this.setupJobOrbCollisionHandler(socket); // 직업 오브 충돌 핸들러 추가
       this.setupPlayerSkillHandler(socket);
       this.setupWardDetectionHandler(socket); // 와드 감지 핸들러 추가
       this.setupPlayerLevelUpHandler(socket); // 레벨업 요청 핸들러 추가
@@ -178,6 +179,30 @@ class SocketEventManager {
         this.io.emit('player-job-changed', {
           id: socket.id,
           jobClass: data.jobClass
+        });
+      }
+    });
+  }
+
+  /**
+   * 직업 변경 오브 충돌 이벤트 핸들러
+   */
+  setupJobOrbCollisionHandler(socket) {
+    socket.on('job-orb-collision', (data) => {
+      const result = this.gameStateManager.handleJobOrbCollision(socket.id, data.orbId);
+      
+      if (result.success) {
+        // 오브 수집 성공 시 클라이언트에 응답
+        socket.emit('job-orb-collision-result', {
+          success: true,
+          jobClass: result.jobClass,
+          message: result.message
+        });
+      } else {
+        // 오브 수집 실패 시 에러 응답
+        socket.emit('job-orb-collision-result', {
+          success: false,
+          message: result.message
         });
       }
     });

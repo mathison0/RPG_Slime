@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import Player from '../entities/Player.js';
 import Enemy from '../entities/Enemy.js';
+import JobOrb from '../entities/JobOrb.js';
+import { AssetConfig } from '../shared/AssetConfig.js';
 import AssetLoader from '../utils/AssetLoader.js';
 import PingManager from './PingManager.js';
 import MinimapManager from './MinimapManager.js';
@@ -61,7 +63,12 @@ export default class NetworkEventManager {
         this.networkManager.off('player-buffed');
         this.networkManager.off('enemy-slowed');
         this.networkManager.off('player-slowed');
-
+        
+        // 직업 변경 오브 관련 이벤트 제거
+        this.networkManager.off('job-orb-spawned');
+        this.networkManager.off('job-orb-removed');
+        this.networkManager.off('job-orb-collected');
+        this.networkManager.off('job-orb-collision-result');
         
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
@@ -220,6 +227,8 @@ export default class NetworkEventManager {
      * 기타 이벤트 설정
      */
     setupMiscEvents() {
+        console.log('🔧 NetworkEventManager setupMiscEvents 시작');
+        
         this.networkManager.on('player-job-changed', (data) => {
             this.handlePlayerJobChanged(data);
         });
@@ -244,33 +253,30 @@ export default class NetworkEventManager {
             this.handlePlayerRespawned(data);
         });
         
-        this.networkManager.on('suicide-error', (data) => {
-            console.log('자살 치트 실패:', data.error);
-            if (this.scene.effectManager) {
-                this.scene.effectManager.showMessage(
-                    this.scene.scale.width / 2, 
-                    this.scene.scale.height / 2, 
-                    `자살 치트 실패: ${data.error}`, 
-                    { fill: '#ff0000', fontSize: '16px' }
-                );
-            }
+        // 직업 변경 오브 관련 이벤트
+        console.log('🔧 직업 변경 오브 이벤트 리스너 등록 중...');
+        
+        this.networkManager.on('job-orb-spawned', (data) => {
+            console.log('🎯 job-orb-spawned 이벤트 리스너 호출됨');
+            this.handleJobOrbSpawned(data);
         });
         
-        this.networkManager.on('player-invincible-changed', (data) => {
-            this.handlePlayerInvincibleChanged(data);
+        this.networkManager.on('job-orb-removed', (data) => {
+            console.log('🎯 job-orb-removed 이벤트 리스너 호출됨');
+            this.handleJobOrbRemoved(data);
         });
         
-        this.networkManager.on('invincible-error', (data) => {
-            console.log('무적 상태 토글 실패:', data.error);
-            if (this.scene.effectManager) {
-                this.scene.effectManager.showMessage(
-                    this.scene.scale.width / 2, 
-                    this.scene.scale.height / 2, 
-                    `무적 상태 토글 실패: ${data.error}`, 
-                    { fill: '#ff0000', fontSize: '16px' }
-                );
-            }
+        this.networkManager.on('job-orb-collected', (data) => {
+            console.log('🎯 job-orb-collected 이벤트 리스너 호출됨');
+            this.handleJobOrbCollected(data);
         });
+        
+        this.networkManager.on('job-orb-collision-result', (data) => {
+            console.log('🎯 job-orb-collision-result 이벤트 리스너 호출됨');
+            this.handleJobOrbCollisionResult(data);
+        });
+        
+        console.log('✅ 직업 변경 오브 이벤트 리스너 등록 완료');
     }
 
     /**
@@ -348,6 +354,9 @@ export default class NetworkEventManager {
         
         // 물리 충돌 설정
         this.scene.mapManager.setupCollisions();
+        
+        // 직업 변경 오브 충돌 감지 설정
+        this.scene.setupJobOrbCollision();
         
         // 카메라 설정
         this.scene.cameras.main.startFollow(this.scene.player);
@@ -1162,8 +1171,6 @@ export default class NetworkEventManager {
                     targetPlayer.buffEffects = targetPlayer.buffEffects.filter(effect => effect.id !== effectId);
                 }
                 
-                console.log(targetPlayer.buffEffects);
-                
                 // 다른 버프 효과가 없으면 버프 tint 상태 해제
                 if (!targetPlayer.buffEffects || targetPlayer.buffEffects.length === 0) {
                     targetPlayer.isBuffedTint = false;
@@ -1190,8 +1197,6 @@ export default class NetworkEventManager {
                 };
                 
                 targetPlayer.buffEffects.push(buffEffect);
-
-                console.log(targetPlayer.buffEffects);
                 
                 // 버프 tint 상태 설정
                 targetPlayer.isBuffedTint = true;
@@ -2260,8 +2265,6 @@ export default class NetworkEventManager {
      * 공격 무효 처리
      */
     handleAttackInvalid(data) {
-        console.log('attack-invalid 이벤트 수신:', data);
-        
         // effectManager가 있는지 확인
         if (!this.scene.effectManager) {
             console.error('effectManager가 없습니다!');
@@ -2282,8 +2285,6 @@ export default class NetworkEventManager {
             },
             500 // 0.5초 동안 표시
         );
-        
-        console.log(`메시지 표시: "${data.message}" at (${data.x}, ${data.y})`);
     }
 
     /**
@@ -2540,42 +2541,316 @@ export default class NetworkEventManager {
      * 플레이어 경험치 획득 처리
      */
     handlePlayerExpGained(data) {
-        console.log('플레이어 경험치 획득 이벤트 받음:', data);
+        const { playerId, expGained, newExp, newLevel } = data;
         
-        // 본인의 경험치 획득인지 확인
-        if (data.playerId === this.networkManager.playerId && this.scene.player) {
-            const player = this.scene.player;
+        const targetPlayer = this.findPlayerById(playerId);
+        if (targetPlayer) {
+            // 경험치 업데이트
+            targetPlayer.exp = newExp;
             
-            // 경험치 텍스트 표시 (+25exp 형태)
-            const expText = `+${data.expGained}exp`;
-            
-            // 경험치 소스에 따른 색상 결정
-            let textColor = '#00ff00'; // 기본 녹색
-            let fontSize = '12px';
-            if (data.source === 'monster') {
-                textColor = '#ffff00'; // 몬스터 처치: 노란색
-                fontSize = '16px';
-            } else if (data.source === 'pvp') {
-                textColor = '#ff8800'; // PvP: 주황색
-                fontSize = '20px';
+            // 레벨업이 발생한 경우
+            if (newLevel && newLevel !== targetPlayer.level) {
+                targetPlayer.level = newLevel;
+                console.log(`플레이어 ${playerId} 레벨업: ${newLevel}`);
             }
             
-            // 플레이어 위에 경험치 텍스트 표시
-            this.scene.effectManager.showMessage(
-                player.x,
-                player.y - 50, // 플레이어 위쪽에 표시
-                expText,
-                {
-                    fontSize: fontSize,
-                    fill: textColor,
-                    fontStyle: 'bold',
-                    stroke: '#000000',
-                    strokeThickness: 2
-                },
-                500 // 0.5초 동안 표시
-            );
-            
-            console.log(`경험치 획득 텍스트 표시: ${expText} (색상: ${textColor})`);
+            // UI 업데이트
+            if (targetPlayer.updateUI) {
+                targetPlayer.updateUI();
+            }
         }
+    }
+
+    /**
+     * 직업 변경 오브 스폰 처리
+     */
+    handleJobOrbSpawned(data) {
+        console.log('🎯 클라이언트에서 job-orb-spawned 이벤트 받음:', data);
+        
+        const { orbId, jobClass, x, y } = data;
+        
+        // 이미 존재하는 오브인지 확인
+        if (this.scene.jobOrbs && this.scene.jobOrbs.has(orbId)) {
+            console.warn(`❌ 이미 존재하는 오브 ID: ${orbId}`);
+            return;
+        }
+        
+        console.log(`✅ 새로운 직업 변경 오브 생성 시도: ${jobClass} at (${x}, ${y})`);
+        
+        // 새로운 직업 변경 오브 생성
+        const jobOrb = new JobOrb(this.scene, x, y, orbId, jobClass);
+        
+        // 오브 저장
+        if (!this.scene.jobOrbs) {
+            this.scene.jobOrbs = new Map();
+            console.log('🗂️ jobOrbs Map 새로 생성됨');
+        }
+        this.scene.jobOrbs.set(orbId, jobOrb);
+        
+        // 오브 그룹에 추가 (충돌 감지용)
+        if (!this.scene.jobOrbGroup) {
+            this.scene.jobOrbGroup = this.scene.physics.add.group();
+            console.log('🗂️ jobOrbGroup 새로 생성됨');
+        }
+        this.scene.jobOrbGroup.add(jobOrb);
+        
+        console.log(`✅ 직업 변경 오브 스폰 완료: ${jobClass} (${x}, ${y}), 총 오브 수: ${this.scene.jobOrbs.size}`);
+    }
+    
+    /**
+     * 직업 변경 오브 제거 처리
+     */
+    handleJobOrbRemoved(data) {
+        const { orbId } = data;
+        
+        if (!this.scene.jobOrbs || !this.scene.jobOrbs.has(orbId)) {
+            return;
+        }
+        
+        const jobOrb = this.scene.jobOrbs.get(orbId);
+        
+        // 오브 제거 애니메이션
+        this.scene.tweens.add({
+            targets: jobOrb,
+            alpha: 0,
+            scaleX: 0.5,
+            scaleY: 0.5,
+            duration: 200,
+            onComplete: () => {
+                jobOrb.destroy();
+            }
+        });
+        
+        this.scene.jobOrbs.delete(orbId);
+        
+        console.log(`직업 변경 오브 제거: ${orbId}`);
+    }
+    
+    /**
+     * 직업 변경 오브 수집 처리 (다른 플레이어가 수집한 경우)
+     */
+    handleJobOrbCollected(data) {
+        const { playerId, orbId, jobClass } = data;
+        
+        if (!this.scene.jobOrbs || !this.scene.jobOrbs.has(orbId)) {
+            return;
+        }
+        
+        const jobOrb = this.scene.jobOrbs.get(orbId);
+        const collector = this.findPlayerById(playerId);
+        
+        // 수집 애니메이션
+        jobOrb.collect();
+        
+        // 오브 제거
+        this.scene.jobOrbs.delete(orbId);
+        
+        // 수집자 표시 (옵션)
+        if (collector) {
+            console.log(`플레이어 ${playerId}가 ${jobClass} 오브를 수집했습니다.`);
+        }
+    }
+    
+    /**
+     * 직업 변경 오브 충돌 결과 처리 (자신이 수집한 경우)
+     */
+    handleJobOrbCollisionResult(data) {
+        console.log('🎯 job-orb-collision-result 이벤트 리스너 호출됨');
+        console.log('받은 데이터:', data);
+        const { success, jobClass, message, orbId } = data;
+        
+        if (success) {
+            console.log(`✅ 오브 수집 성공: ${jobClass}, orbId: ${orbId}`);
+            
+            // 성공 시 클라이언트에서도 오브 제거
+            if (orbId && this.scene.jobOrbs && this.scene.jobOrbs.has(orbId)) {
+                const orb = this.scene.jobOrbs.get(orbId);
+                if (orb) {
+                    // 오브 그룹에서 제거
+                    if (this.scene.jobOrbGroup) {
+                        this.scene.jobOrbGroup.remove(orb);
+                    }
+                    // 오브 스프라이트 제거
+                    orb.destroy();
+                    // 맵에서 제거
+                    this.scene.jobOrbs.delete(orbId);
+                    console.log(`🗑️ 클라이언트에서 오브 제거 완료: ${orbId}`);
+                }
+            } else if (!orbId) {
+                // orbId가 없는 경우, 해당 직업의 모든 오브를 찾아서 제거
+                console.log('⚠️ orbId가 없음, 직업 기반으로 오브 찾기 시도:', jobClass);
+                const orbsToRemove = [];
+                if (this.scene.jobOrbs) {
+                    for (const [id, orb] of this.scene.jobOrbs.entries()) {
+                        if (orb && orb.jobClass === jobClass && orb.isCollected) {
+                            orbsToRemove.push({id, orb});
+                        }
+                    }
+                }
+                
+                // 찾은 오브들 제거
+                orbsToRemove.forEach(({id, orb}) => {
+                    if (this.scene.jobOrbGroup) {
+                        this.scene.jobOrbGroup.remove(orb);
+                    }
+                    orb.destroy();
+                    this.scene.jobOrbs.delete(id);
+                    console.log(`🗑️ 직업 기반으로 오브 제거 완료: ${id}`);
+                });
+            }
+            
+            // 전직 선택 UI 표시
+            console.log(`🎮 전직 UI 표시 시작: ${jobClass}`);
+            this.showJobChangeUI(jobClass);
+        } else {
+            console.log(`오브 수집 실패: ${message}`);
+        }
+    }
+    
+    /**
+     * 전직 선택 UI 표시
+     */
+    showJobChangeUI(jobClass) {
+        console.log(`🎮 showJobChangeUI 호출됨: ${jobClass}`);
+        
+        // 이미 전직 UI가 표시되어 있으면 무시
+        if (this.scene.jobChangeUI && this.scene.jobChangeUI.isVisible) {
+            console.log('⚠️ 이미 전직 UI가 표시되어 있음');
+            return;
+        }
+        
+        // 상단 알림 메시지 표시
+        const topMessage = this.scene.add.text(this.scene.cameras.main.centerX, 50, 
+            `${this.getJobDisplayName(jobClass)} 직업 변경 오브를 획득했습니다!`, {
+            fontSize: '18px',
+            fill: '#ffff00',
+            stroke: '#000000',
+            strokeThickness: 2,
+            align: 'center'
+        });
+        topMessage.setOrigin(0.5);
+        topMessage.setScrollFactor(0);
+        topMessage.setDepth(1000);
+        
+        // 3초 후 알림 메시지 제거
+        this.scene.time.delayedCall(3000, () => {
+            if (topMessage) {
+                topMessage.destroy();
+            }
+        });
+        
+        this.scene.jobChangeUI = {
+            isVisible: true,
+            targetJobClass: jobClass,
+            container: null,
+            topMessage: topMessage
+        };
+        
+        // UI 컨테이너 생성
+        const centerX = this.scene.cameras.main.centerX;
+        const centerY = this.scene.cameras.main.centerY;
+        
+        const container = this.scene.add.container(centerX, centerY);
+        container.setScrollFactor(0); // 카메라에 고정
+        container.setDepth(999); // 다른 UI보다 앞에 표시
+        
+        // 배경
+        const background = this.scene.add.rectangle(0, 0, 450, 250, 0x000000, 0.9);
+        background.setStrokeStyle(3, 0xffffff); // setStroke 대신 setStrokeStyle 사용
+        container.add(background);
+        
+        // 제목 텍스트
+        const jobDisplayName = this.getJobDisplayName(jobClass);
+        const titleText = this.scene.add.text(0, -80, `${jobDisplayName}으로 전직하시겠습니까?`, {
+            fontSize: '22px',
+            fill: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 1,
+            align: 'center'
+        });
+        titleText.setOrigin(0.5);
+        container.add(titleText);
+        
+        // 안내 텍스트
+        const guideText = this.scene.add.text(0, -30, 'ENTER: 전직 확인    ESC: 취소', {
+            fontSize: '18px',
+            fill: '#00ff00',
+            stroke: '#000000',
+            strokeThickness: 1,
+            align: 'center'
+        });
+        guideText.setOrigin(0.5);
+        container.add(guideText);
+        
+        // 직업 설명 (간단히)
+        const descText = this.scene.add.text(0, 30, this.getJobDescription(jobClass), {
+            fontSize: '16px',
+            fill: '#cccccc',
+            stroke: '#000000',
+            strokeThickness: 1,
+            align: 'center',
+            wordWrap: { width: 400 }
+        });
+        descText.setOrigin(0.5);
+        container.add(descText);
+        
+        // 컨테이너를 jobChangeUI에 저장
+        this.scene.jobChangeUI.container = container;
+        
+        console.log(`✅ 전직 UI 생성 완료: ${jobClass}`);
+        console.log('UI 상태:', this.scene.jobChangeUI);
+    }
+    
+    /**
+     * 전직 선택 UI 숨기기
+     */
+    hideJobChangeUI() {
+        console.log('🚫 전직 UI 숨김');
+        
+        if (this.scene.jobChangeUI) {
+            // 컨테이너 제거
+            if (this.scene.jobChangeUI.container) {
+                this.scene.jobChangeUI.container.destroy();
+            }
+            
+            // 상단 메시지 제거
+            if (this.scene.jobChangeUI.topMessage) {
+                this.scene.jobChangeUI.topMessage.destroy();
+            }
+            
+            // jobChangeUI 객체 제거
+            this.scene.jobChangeUI = null;
+        }
+    }
+    
+    /**
+     * 직업 표시 이름 반환
+     */
+    getJobDisplayName(jobClass) {
+        const jobNames = {
+            slime: '슬라임',
+            assassin: '어쌔신',
+            warrior: '전사',
+            mage: '마법사',
+            archer: '궁수',
+            supporter: '서포터'
+        };
+        
+        return jobNames[jobClass] || jobClass;
+    }
+    
+    /**
+     * 직업 설명 반환
+     */
+    getJobDescription(jobClass) {
+        const descriptions = {
+            assassin: '은신과 기습 공격에 특화된 직업입니다.',
+            warrior: '높은 체력과 방어력을 가진 근접 전투 전문가입니다.',
+            mage: '다양한 마법 스킬과 원거리 공격에 특화된 직업입니다.',
+            archer: '원거리 공격에 특화된 직업입니다.',
+            supporter: '팀원을 지원하고 치유하는 서포터 직업입니다.'
+        };
+        
+        return descriptions[jobClass] || '특별한 능력을 가진 직업입니다.';
     }
 }

@@ -860,7 +860,7 @@ class SkillManager {
           }
         }
         
-        console.log(`얼음 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${clampedTargetX}, ${clampedTargetY}), 범위: ${skillInfo.range}`);
+        console.log(`얼음 장판  플레이어: ${player.id}, 위치: (${clampedTargetX}, ${clampedTargetY}), 범위: ${skillInfo.range}`);
         // 장판 시스템에 등록 (클램핑된 좌표 사용)
         this.addField('ice_field', player.id, clampedTargetX, clampedTargetY, skillInfo.range, skillInfo.duration, skillInfo.damage);
         // 초기 데미지는 없음 (0.5초 후부터 적용)
@@ -941,8 +941,6 @@ class SkillManager {
           clampedBuffY = y;
         }
         
-        console.log(`버프 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${clampedBuffX}, ${clampedBuffY}), 범위: ${skillInfo.range}`);
-        // 장판 시스템에 등록 (클램핑된 좌표 사용)
         this.addField('buff_field', player.id, clampedBuffX, clampedBuffY, skillInfo.range, skillInfo.duration);
         
         // 위치 정보를 결과에 포함
@@ -975,8 +973,6 @@ class SkillManager {
           clampedHealY = y;
         }
         
-        console.log(`힐 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${clampedHealX}, ${clampedHealY}), 범위: ${skillInfo.range}`);
-        // 장판 시스템에 등록 (클램핑된 좌표 사용)
         const healAmount = skillInfo.heal || 20;
         this.addField('heal_field', player.id, clampedHealX, clampedHealY, skillInfo.range, skillInfo.duration, 0, healAmount);
         
@@ -1572,9 +1568,6 @@ class SkillManager {
         // 데미지 적용 (0.5초마다)
         if (field.damage > 0) {
           const result = this.gameStateManager.takeDamage(attacker, enemy, field.damage);
-          if (result.success) {
-            console.log(`얼음 장판 지속 데미지: ${enemy.id}에게 ${result.actualDamage} 데미지`);
-          }
         }
         
         // 슬로우 효과 유지/적용
@@ -1585,7 +1578,6 @@ class SkillManager {
         
         // 새로 슬로우가 걸린 경우에만 이벤트 전송
         if (!wasSlowed && this.gameStateManager.io) {
-          console.log(`[processIceField] 적 ${enemy.id}에게 슬로우 이벤트 전송 (신규 적용)`);
           this.gameStateManager.io.emit('enemy-slowed', {
             enemyId: enemy.id,
             isSlowed: true,
@@ -1629,9 +1621,6 @@ class SkillManager {
         // 데미지 적용
         if (field.damage > 0) {
           const result = this.gameStateManager.takeDamage(attacker, targetPlayer, field.damage);
-          if (result.success) {
-            console.log(`얼음 장판 지속 데미지: 플레이어 ${targetPlayer.id}에게 ${result.actualDamage} 데미지`);
-          }
         }
         
         // 슬로우 효과 유지/적용
@@ -1647,7 +1636,6 @@ class SkillManager {
           // 플레이어의 현재 슬로우 effectId 저장
           targetPlayer.currentSlowEffectId = effectId;
           
-          console.log(`[processIceField] 플레이어 ${targetPlayer.id}에게 슬로우 이벤트 전송 (신규 적용)`);
           this.gameStateManager.io.emit('player-slowed', {
             playerId: targetPlayer.id,
             effectId: effectId,
@@ -1850,7 +1838,6 @@ class SkillManager {
     };
     
     this.activeFields.push(field);
-    console.log(`장판 추가: ${type}, 위치: (${x}, ${y}), 지속시간: ${duration}ms`);
     
     // 장판 추가 직후 즉시 첫 번째 효과 적용
     switch (field.type) {
@@ -1864,8 +1851,6 @@ class SkillManager {
         this.processBuffField(field);
         break;
     }
-    
-    console.log(`장판 즉시 효과 적용: ${type}`);
   }
 
   /**

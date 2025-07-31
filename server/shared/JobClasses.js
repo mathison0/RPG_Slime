@@ -81,41 +81,6 @@ const JobClasses = {
         maxLevel: 50
     },
 
-    ninja: {
-        name: '닌자',
-        description: '빠른 은신과 치명적인 기습에 특화된 직업입니다.',
-        baseStats: {
-            hp: 75,
-            attack: 10,
-            speed: 230,
-            visionRange: 400
-        },
-        levelGrowth: {
-            hp: 7.5,
-            attack: 1,
-            speed: 0
-        },
-        projectile: {
-            speed: 300,
-            size: 18,
-            maxDistance: 200
-        },
-        skills: [
-            {
-                name: '그림자 은신',
-                description: '3초간 투명해져서 다음 공격에 더 큰 추가 데미지를 입힙니다.',
-                cooldown: 20000,
-                damage: 'attack * 5.0',
-                duration: 3000,
-                key: '1',
-                type: 'stealth'
-            }
-        ],
-        basicAttackCooldown: 400,
-        color: 0x000000,
-        maxLevel: 50
-    },
-
     warrior: {
         name: '전사',
         description: '높은 체력과 방어력을 가진 근접 전투 전문가입니다.',
@@ -235,38 +200,6 @@ const JobClasses = {
         ],
         basicAttackCooldown: 700,
         color: 0x0000ff,
-        maxLevel: 50
-    },
-
-    mechanic: {
-        name: '메카닉',
-        description: '기계와 기술을 활용하는 다재다능한 직업입니다.',
-        baseStats: {
-            hp: 90,
-            attack: 22,
-            speed: 190,
-            visionRange: 280
-        },
-        levelGrowth: {
-            hp: 18,
-            attack: 6,
-            speed: 0
-        },
-        projectile: null, // 근접 직업
-        skills: [
-            {
-                name: '기계 수리',
-                description: '자신의 체력을 회복합니다.',
-                cooldown: 5000,
-                damage: 0,
-                heal: 50,
-                afterDelay: 600, // 수리 후 짧은 후딜레이
-                key: '1',
-                type: 'repair'
-            }
-        ],
-        basicAttackCooldown: 600,
-        color: 0x556B2F,
         maxLevel: 50
     },
 

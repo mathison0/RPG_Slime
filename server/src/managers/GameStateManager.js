@@ -14,6 +14,7 @@ class GameStateManager {
     this.mapData = null;
     this.io = io;
     this.skillManager = skillManager;
+    this.jobOrbs = new Map(); // 직업 변경 오브 관리
   }
 
   /**
@@ -347,6 +348,7 @@ class GameStateManager {
     this.players.clear();
     this.enemies.clear();
     this.rooms.clear();
+    this.jobOrbs.clear(); // 게임 리셋 시 오브 정보도 초기화
     console.log('게임 상태 리셋 완료');
   }
 
@@ -459,9 +461,14 @@ class GameStateManager {
       if (attacker.team !== undefined) { // 공격자가 플레이어인 경우
         if (target.mapLevel !== undefined) {
           // 플레이어가 몬스터를 죽임
+          console.log(`🔥 몬스터 사망: ID=${target.id}, 타입=${target.type}, 레벨=${target.mapLevel}, 위치=(${target.x}, ${target.y})`);
+          
           const expAmount = this.calculateMonsterKillExp(target);
           this.giveExperience(attacker, expAmount, 'monster');
           console.log(`플레이어 ${attacker.id}가 몬스터 ${target.id}를 죽여 ${expAmount} 경험치 획득`);
+          
+          // 직업 변경 오브 드롭 처리 (슬라임 제외)
+          this.handleJobOrbDrop(target);
           
           // 몬스터 사망 이벤트 브로드캐스트
           if (this.io) {
@@ -664,6 +671,166 @@ class GameStateManager {
         enemy.processHealthRegeneration();
       }
     }
+  }
+
+  /**
+   * 몬스터 사망 시 직업 변경 오브 드롭 처리
+   * @param {Object} monster - 사망한 몬스터
+   */
+  handleJobOrbDrop(monster) {
+    console.log('🎯 handleJobOrbDrop 호출됨:', {
+      monsterId: monster?.id,
+      monsterType: monster?.type,
+      monsterMapLevel: monster?.mapLevel,
+      monsterX: monster?.x,
+      monsterY: monster?.y
+    });
+
+    if (!monster || !monster.type) {
+      console.log('❌ 오브 드롭 실패: 몬스터 정보가 유효하지 않음');
+      return;
+    }
+
+    // 엘리트 몬스터는 100%, 일반 몬스터는 5% 확률로 드롭
+    const dropChance = monster.type === 'elite' ? 100 : 5;
+    const random = Math.random() * 100;
+
+    console.log(`🎲 드롭 확률 체크: 몬스터 타입=${monster.type}, 드롭 확률=${dropChance}%, 랜덤값=${random.toFixed(2)}%`);
+
+    if (random < dropChance) {
+      // 슬라임, 닌자, 메카닉을 제외한 랜덤 직업 선택
+      const availableJobs = ['assassin', 'warrior', 'mage', 'archer', 'supporter'];
+      const randomJob = availableJobs[Math.floor(Math.random() * availableJobs.length)];
+
+      const jobOrb = {
+        id: `job_orb_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // 고유 ID 생성
+        type: 'job_orb',
+        jobClass: randomJob, // 변경할 직업
+        x: monster.x,
+        y: monster.y,
+        createdAt: Date.now(),
+        duration: 30000, // 오브 지속 시간 (30초)
+        isActive: true,
+        isCollected: false
+      };
+
+      // 오브를 서버 상태에 저장
+      if (!this.jobOrbs) {
+        this.jobOrbs = new Map();
+      }
+      this.jobOrbs.set(jobOrb.id, jobOrb);
+
+      // 직업 변경 오브 스폰 이벤트 브로드캐스트
+      if (this.io) {
+        console.log('📡 job-orb-spawned 이벤트 브로드캐스트:', jobOrb);
+        this.io.emit('job-orb-spawned', {
+          orbId: jobOrb.id,
+          jobClass: jobOrb.jobClass,
+          x: jobOrb.x,
+          y: jobOrb.y
+        });
+      } else {
+        console.log('❌ io 객체가 없어서 오브 스폰 이벤트를 브로드캐스트할 수 없음');
+      }
+
+      console.log(`✅ 직업 변경 오브 드롭 성공: ${randomJob} (${monster.x}, ${monster.y})`);
+
+      // 30초 후 오브 자동 제거
+      setTimeout(() => {
+        this.removeJobOrb(jobOrb.id);
+      }, jobOrb.duration);
+    } else {
+      console.log(`❌ 드롭 실패: 확률 ${dropChance}%에서 ${random.toFixed(2)}% 뽑음`);
+    }
+  }
+
+  /**
+   * 직업 변경 오브 제거
+   * @param {string} orbId - 오브 ID
+   */
+  removeJobOrb(orbId) {
+    if (this.jobOrbs && this.jobOrbs.has(orbId)) {
+      this.jobOrbs.delete(orbId);
+      
+      if (this.io) {
+        this.io.emit('job-orb-removed', { orbId });
+      }
+    }
+  }
+
+  /**
+   * 플레이어와 직업 변경 오브 충돌 처리
+   * @param {string} playerId - 플레이어 ID
+   * @param {string} orbId - 오브 ID
+   */
+  handleJobOrbCollision(playerId, orbId) {
+    if (!this.jobOrbs || !this.jobOrbs.has(orbId)) {
+      return { 
+        success: false, 
+        orbId: orbId,
+        message: '오브를 찾을 수 없습니다.' 
+      };
+    }
+
+    const player = this.getPlayer(playerId);
+    if (!player) {
+      return { 
+        success: false, 
+        orbId: orbId,
+        message: '플레이어를 찾을 수 없습니다.' 
+      };
+    }
+
+    const jobOrb = this.jobOrbs.get(orbId);
+    if (!jobOrb) {
+      return { 
+        success: false, 
+        orbId: orbId,
+        message: '오브를 찾을 수 없습니다.' 
+      };
+    }
+
+    if (!jobOrb.isActive || jobOrb.isCollected) {
+      return { 
+        success: false, 
+        orbId: orbId,
+        message: '이미 수집된 오브입니다.' 
+      };
+    }
+
+    // 오브를 수집 상태로 변경
+    jobOrb.isCollected = true;
+    jobOrb.isActive = false;
+
+    if (this.io) {
+      this.io.emit('job-orb-collected', {
+        playerId,
+        orbId,
+        jobClass: jobOrb.jobClass
+      });
+    }
+
+    console.log(`✅ 플레이어 ${playerId}가 ${jobOrb.jobClass} 오브를 수집했습니다.`);
+    
+    // 성공 응답
+    const response = {
+      success: true,
+      jobClass: jobOrb.jobClass,
+      orbId: orbId,
+      message: `${jobOrb.jobClass} 직업 변경 오브를 획득했습니다!`
+    };
+    
+    console.log('📤 성공 응답 전송:', response);
+    return response;
+  }
+
+  /**
+   * 모든 직업 오브 상태 가져오기
+   */
+  getAllJobOrbs() {
+    if (!this.jobOrbs) return [];
+    
+    return Array.from(this.jobOrbs.values()).filter(orb => orb.isActive && !orb.isCollected);
   }
 
 

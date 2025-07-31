@@ -223,13 +223,7 @@ class ServerEnemy {
     // 새로 찾은 가장 가까운 플레이어로 타겟 업데이트
     // (현재 타겟이 없거나, 더 가까운 플레이어가 있을 때)
     if (closestPlayer && (!this.target || closestDistance < currentTargetDistance)) {
-      const previousTarget = this.target ? this.target.id : 'none';
       this.target = closestPlayer;
-      
-      // 타겟이 변경되었을 때만 로그 출력
-      if (previousTarget !== this.target.id) {
-        console.log(`몬스터 ${this.id} 타겟 변경: ${previousTarget} -> ${this.target.id} (거리: ${Math.round(closestDistance)}, 레벨: ${this.mapLevel})`);
-      }
     }
   }
 

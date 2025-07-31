@@ -5,9 +5,7 @@ const { getSkillInfo, calculateStats } = require('../../shared/JobClasses');
 const SlimeJob = require('./jobs/SlimeJob');
 const MageJob = require('./jobs/MageJob');
 const AssassinJob = require('./jobs/AssassinJob');
-const NinjaJob = require('./jobs/NinjaJob');
 const WarriorJob = require('./jobs/WarriorJob');
-const MechanicJob = require('./jobs/MechanicJob');
 const ArcherJob = require('./jobs/ArcherJob');
 const SupporterJob = require('./jobs/SupporterJob');
 
@@ -92,14 +90,8 @@ class ServerPlayer {
         case 'assassin':
           this.job = new AssassinJob(this);
           break;
-        case 'ninja':
-          this.job = new NinjaJob(this);
-          break;
         case 'warrior':
           this.job = new WarriorJob(this);
-          break;
-        case 'mechanic':
-          this.job = new MechanicJob(this);
           break;
         case 'archer':
           this.job = new ArcherJob(this);
@@ -477,6 +469,9 @@ class ServerPlayer {
    * 직업 변경
    */
   changeJob(newJobClass) {
+    // 현재 체력 저장 (전직 시 체력 유지)
+    const currentHp = this.hp;
+    
     this.jobClass = newJobClass;
     
     // 직업 변경 시 새로운 job 인스턴스 생성
@@ -484,6 +479,17 @@ class ServerPlayer {
     
     // 직업 변경 시 즉시 스탯 업데이트
     this.initializeStatsFromJobClass();
+    
+    // 체력 유지 및 클램핑 처리
+    if (currentHp > this.maxHp) {
+      // 현재 체력이 새로운 최대 체력보다 높으면 최대 체력으로 클램핑
+      this.hp = this.maxHp;
+      console.log(`플레이어 ${this.id} 전직 시 체력 클램핑: ${currentHp} -> ${this.hp} (최대: ${this.maxHp})`);
+    } else {
+      // 현재 체력이 새로운 최대 체력 이하면 그대로 유지
+      this.hp = currentHp;
+      console.log(`플레이어 ${this.id} 전직 시 체력 유지: ${this.hp} (최대: ${this.maxHp})`);
+    }
 
     console.log(`플레이어 ${this.id} 직업 변경: ${newJobClass}, 새로운 스탯 적용 완료, 기본공격 쿨다운: ${this.basicAttackCooldown}ms`);
   }

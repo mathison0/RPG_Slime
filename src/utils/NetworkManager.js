@@ -281,6 +281,27 @@ class NetworkManager {
         this.socket.on('suicide-error', (data) => {
             this.emit('suicide-error', data);
         });
+        
+        // 직업 변경 오브 관련 이벤트들
+        this.socket.on('job-orb-spawned', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-spawned 이벤트 받음:', data);
+            this.emit('job-orb-spawned', data);
+        });
+        
+        this.socket.on('job-orb-removed', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-removed 이벤트 받음:', data);
+            this.emit('job-orb-removed', data);
+        });
+        
+        this.socket.on('job-orb-collected', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-collected 이벤트 받음:', data);
+            this.emit('job-orb-collected', data);
+        });
+        
+        this.socket.on('job-orb-collision-result', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-collision-result 이벤트 받음:', data);
+            this.emit('job-orb-collision-result', data);
+        });
     }
 
     // 게임 입장

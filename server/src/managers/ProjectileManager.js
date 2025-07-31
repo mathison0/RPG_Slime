@@ -394,17 +394,6 @@ class ProjectileManager {
         const result = this.gameStateManager.takeDamage(attacker, player, damage);
 
         if (result.success) {
-            // 클라이언트에게 충돌 이벤트 전송 (사용되지 않으므로 주석 처리)
-            // this.gameStateManager.io.emit('projectile-hit-player', {
-            //     projectileId: projectile.id,
-            //     projectileJobClass: projectile.jobClass,
-            //     playerId: player.id,
-            //     damage: result.actualDamage,
-            //     newHp: result.newHp,
-            //     hitPosition: { x: projectile.x, y: projectile.y }
-            // });
-
-            console.log(`플레이어 피격: ${player.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${result.actualDamage} 데미지`);
         } else {
             console.log(`플레이어 피격 실패: ${result.reason}`);
         }
@@ -424,22 +413,6 @@ class ProjectileManager {
         
         // gameStateManager를 통한 데미지 처리
         const result = this.gameStateManager.takeDamage(attacker, enemy, damage);
-
-        if (result.success) {
-            // 클라이언트에게 충돌 이벤트 전송 (사용되지 않으므로 주석 처리)
-            // this.gameStateManager.io.emit('projectile-hit-enemy', {
-            //     projectileId: projectile.id,
-            //     projectileJobClass: projectile.jobClass,
-            //     enemyId: enemy.id,
-            //     damage: result.actualDamage,
-            //     newHp: result.newHp,
-            //     hitPosition: { x: projectile.x, y: projectile.y }
-            // });
-
-            console.log(`적 피격: ${enemy.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${result.actualDamage} 데미지`);
-        } else {
-            console.log(`적 피격 실패: ${result.reason}`);
-        }
     }
 
     /**
