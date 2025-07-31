@@ -160,9 +160,6 @@ class MageJob extends BaseJob {
             }
         }
 
-        console.log(`마법사 얼음 장판 발동! 위치: (${finalX}, ${finalY}), 범위: ${range}, 지속시간: ${skillInfo.duration}ms, 플레이어 적중: ${affectedTargets.length}명, 몬스터 적중: ${affectedEnemies.length}마리`);
-
-        // 슬로우 효과가 적용된 몬스터들을 클라이언트에게 알림
         if (affectedEnemies.length > 0 && options.gameStateManager && options.gameStateManager.io) {
             affectedEnemies.forEach(enemyData => {
                 options.gameStateManager.io.emit('enemy-slowed', {

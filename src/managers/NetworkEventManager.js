@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import Player from '../entities/Player.js';
 import Enemy from '../entities/Enemy.js';
+import JobOrb from '../entities/JobOrb.js';
+import { AssetConfig } from '../shared/AssetConfig.js';
 import AssetLoader from '../utils/AssetLoader.js';
 import PingManager from './PingManager.js';
 import MinimapManager from './MinimapManager.js';
-import EffectManager from '../effects/EffectManager.js';
 import { getGlobalTimerManager } from './AbsoluteTimerManager.js';
 
 /**
@@ -14,17 +15,15 @@ export default class NetworkEventManager {
     constructor(scene) {
         this.scene = scene;
         this.networkManager = scene.networkManager;
-        this.player = null;
-        this.otherPlayers = null;
-        this.enemies = null;
-        this.cheatManager = null;
-        this.effectManager = new EffectManager(scene);
         
         // 게임 상태
         this.gameJoined = false;
         this.playerId = null;
         this.isFirstJoin = true;
         this.playerTeam = null;
+        
+        // 참고: this.effectManager는 제거됨 - scene.effectManager 사용
+        // 참고: player, otherPlayers, enemies, cheatManager는 scene에서 직접 접근
     }
 
     /**
@@ -49,7 +48,7 @@ export default class NetworkEventManager {
         this.networkManager.off('player-skill-used');
         this.networkManager.off('skill-error');
         this.networkManager.off('player-update-error');
-        this.networkManager.off('player-death');
+        // this.networkManager.off('player-death'); // 사용되지 않는 이벤트 제거
         this.networkManager.off('suicide-error');
         this.networkManager.off('player-invincible-changed');
         this.networkManager.off('invincible-error');
@@ -59,9 +58,20 @@ export default class NetworkEventManager {
         this.networkManager.off('projectiles-update');
         this.networkManager.off('projectile-removed');
         this.networkManager.off('attack-invalid');
+        this.networkManager.off('player-exp-gained');
         this.networkManager.off('enemy-stunned');
         this.networkManager.off('magic-missile-explosion');
         this.networkManager.off('shield-removed');
+        this.networkManager.off('player-buffed');
+        this.networkManager.off('enemy-slowed');
+        this.networkManager.off('player-slowed');
+        
+        // 직업 변경 오브 관련 이벤트 제거
+        this.networkManager.off('job-orb-spawned');
+        this.networkManager.off('job-orb-removed');
+        this.networkManager.off('job-orb-collected');
+        this.networkManager.off('job-orb-collision-result');
+        
         this.networkManager.off('stealth-ended');
       
         // 게임 입장 완료
@@ -115,6 +125,10 @@ export default class NetworkEventManager {
 
         this.networkManager.on('level-up-error', (data) => {
             this.handleLevelUpError(data);
+        });
+
+        this.networkManager.on('player-exp-gained', (data) => {
+            this.handlePlayerExpGained(data);
         });
 
         this.networkManager.on('attack-invalid', (data) => {
@@ -226,6 +240,8 @@ export default class NetworkEventManager {
      * 기타 이벤트 설정
      */
     setupMiscEvents() {
+        console.log('🔧 NetworkEventManager setupMiscEvents 시작');
+        
         this.networkManager.on('player-job-changed', (data) => {
             this.handlePlayerJobChanged(data);
         });
@@ -250,33 +266,30 @@ export default class NetworkEventManager {
             this.handlePlayerRespawned(data);
         });
         
-        this.networkManager.on('suicide-error', (data) => {
-            console.log('자살 치트 실패:', data.error);
-            if (this.scene.effectManager) {
-                this.scene.effectManager.showMessage(
-                    this.scene.scale.width / 2, 
-                    this.scene.scale.height / 2, 
-                    `자살 치트 실패: ${data.error}`, 
-                    { fill: '#ff0000', fontSize: '16px' }
-                );
-            }
+        // 직업 변경 오브 관련 이벤트
+        console.log('🔧 직업 변경 오브 이벤트 리스너 등록 중...');
+        
+        this.networkManager.on('job-orb-spawned', (data) => {
+            console.log('🎯 job-orb-spawned 이벤트 리스너 호출됨');
+            this.handleJobOrbSpawned(data);
         });
         
-        this.networkManager.on('player-invincible-changed', (data) => {
-            this.handlePlayerInvincibleChanged(data);
+        this.networkManager.on('job-orb-removed', (data) => {
+            console.log('🎯 job-orb-removed 이벤트 리스너 호출됨');
+            this.handleJobOrbRemoved(data);
         });
         
-        this.networkManager.on('invincible-error', (data) => {
-            console.log('무적 상태 토글 실패:', data.error);
-            if (this.scene.effectManager) {
-                this.scene.effectManager.showMessage(
-                    this.scene.scale.width / 2, 
-                    this.scene.scale.height / 2, 
-                    `무적 상태 토글 실패: ${data.error}`, 
-                    { fill: '#ff0000', fontSize: '16px' }
-                );
-            }
+        this.networkManager.on('job-orb-collected', (data) => {
+            console.log('🎯 job-orb-collected 이벤트 리스너 호출됨');
+            this.handleJobOrbCollected(data);
         });
+        
+        this.networkManager.on('job-orb-collision-result', (data) => {
+            console.log('🎯 job-orb-collision-result 이벤트 리스너 호출됨');
+            this.handleJobOrbCollisionResult(data);
+        });
+        
+        console.log('✅ 직업 변경 오브 이벤트 리스너 등록 완료');
     }
 
     /**
@@ -354,6 +367,9 @@ export default class NetworkEventManager {
         
         // 물리 충돌 설정
         this.scene.mapManager.setupCollisions();
+        
+        // 직업 변경 오브 충돌 감지 설정
+        this.scene.setupJobOrbCollision();
         
         // 카메라 설정
         this.scene.cameras.main.startFollow(this.scene.player);
@@ -508,7 +524,6 @@ export default class NetworkEventManager {
 
         // 플레이어가 사망한 경우 스킬 이펙트 무시
         if (player.isDead) {
-            console.log(`스킬 이펙트 취소: 플레이어가 사망함 (${data.skillType})`);
             return;
         }
 
@@ -573,7 +588,6 @@ export default class NetworkEventManager {
         
         // 스킬이 이미 완료된 경우 스킵 (목긋기는 제외)
         if (timeUntilEnd < 0 && data.skillType !== 'backstab') {
-            console.log(`스킬 이펙트 스킵: 이미 완료됨 (${timeUntilEnd}ms, ${data.skillType})`);
             return;
         }
 
@@ -711,7 +725,6 @@ export default class NetworkEventManager {
      * 즉시 실행되는 스킬 처리 (기본 공격 등)
      */
     handleInstantSkill(player, data, afterDelay, endTime, effectEndTime) {
-        console.log(`즉시 스킬 실행: ${data.skillType}`);
         this.showSkillEffect(player, data.skillType, {
             ...data,
             endTime: endTime,
@@ -777,23 +790,8 @@ export default class NetworkEventManager {
         }
     }
 
-    /**
-     * 스킬 쿨타임 설정
-     */
-    setSkillCooldown(player, skillType) {
-        if (!player.job) return;
-        
-        // 직업별 스킬 정보 가져오기
-        const jobInfo = player.job.jobInfo;
-        if (!jobInfo || !jobInfo.skills) return;
-        
-        // 스킬 정보 찾기
-        const skillInfo = jobInfo.skills.find(skill => skill.type === skillType);
-        if (!skillInfo) return;
-        
-        // 쿨타임 설정
-        player.job.setSkillCooldown(skillType, skillInfo.cooldown);
-    }
+    // setSkillCooldown 메서드는 사용되지 않아서 제거함
+    // 쿨타임은 서버에서 계산하여 handlePlayerSkillUsed에서 직접 처리됨
 
     /**
      * 플레이어 ID로 플레이어 찾기
@@ -812,78 +810,13 @@ export default class NetworkEventManager {
         return null;
     }
 
-    /**
-     * 서버에서 받은 스킬 데미지 결과 처리
-     */
-    handleSkillDamageResult(damageResult) {
-        let totalAffected = 0;
-        
-        // 적들에게 데미지 적용된 경우
-        if (damageResult.affectedEnemies && damageResult.affectedEnemies.length > 0) {
-            totalAffected += damageResult.affectedEnemies.length;
-            
-            // 각 피해받은 적에 대해 데미지 효과 표시
-            damageResult.affectedEnemies.forEach(enemyData => {
-                const enemy = this.scene.enemies?.getChildren().find(e => e.networkId === enemyData.id);
-                if (enemy) {
-                    // 실제 적용된 데미지 텍스트 표시 (서버에서 계산된 정확한 값)
-                    const damageToShow = enemyData.actualDamage || enemyData.damage;
-                    this.scene.effectManager.showDamageText(enemy.x, enemy.y, damageToShow);
-                    
-                    // 피격 상태 설정 및 tint 업데이트
-                    enemy.isDamaged = true;
-                    if (enemy.updateTint) {
-                        enemy.updateTint();
-                    }
-                    
-                    // 200ms 후 피격 상태 해제
-                    this.scene.time.delayedCall(200, () => {
-                        if (enemy && enemy.active && !enemy.isDead) {
-                            enemy.isDamaged = false;
-                            if (enemy.updateTint) {
-                                enemy.updateTint();
-                            }
-                        }
-                    });
-                    
-                    // 적 체력 업데이트 (서버에서 이미 처리됨)
-                    // 실제 HP는 서버에서 관리되므로 클라이언트에서는 시각적 효과만
-                    if (enemy.updateHealthFromServer) {
-                        enemy.updateHealthFromServer();
-                    }
-                }
-            });
-        }
-
-        // 다른 팀 플레이어들에게 데미지 적용된 경우
-        if (damageResult.affectedPlayers && damageResult.affectedPlayers.length > 0) {
-            totalAffected += damageResult.affectedPlayers.length;
-            
-            // 각 피해받은 플레이어에 대해 데미지 효과 표시
-            damageResult.affectedPlayers.forEach(playerData => {
-                const targetPlayer = this.scene.otherPlayers?.getChildren().find(p => p.networkId === playerData.id);
-                if (targetPlayer) {
-                    const damageToShow = playerData.actualDamage || playerData.damage;
-                    this.scene.effectManager.showDamageText(targetPlayer.x, targetPlayer.y, damageToShow);
-                    
-                    if (targetPlayer.updateHealthFromServer) {
-                        targetPlayer.updateHealthFromServer();
-                    }
-                }
-            });
-        }
-
-        if (totalAffected > 0) {
-            console.log(`서버 데미지 결과: ${damageResult.totalDamage} 데미지, ${totalAffected}개 대상에게 적용`);
-        }
-    }
+    // handleSkillDamageResult 메서드는 사용되지 않아서 제거함
+    // 데미지 결과는 각각의 개별 이벤트 (enemy-damaged, player-damaged 등)로 처리됨
 
     /**
      * 스킬 에러 처리
      */
     handleSkillError(data) {
-        console.log('스킬 사용 실패:', data.error, data.skillType);
-        
         // "Player not found" 에러 감지 시 즉시 게임 초기화
         if (data.error && (
             data.error.includes('Player not found') || 
@@ -1054,6 +987,15 @@ export default class NetworkEventManager {
             
             // 스탯 정보 업데이트 (서버에서 계산된 값 사용)
             if (myPlayerState.stats) {
+                // stats 객체 전체를 업데이트
+                this.scene.player.stats = {
+                    attack: myPlayerState.stats.attack,
+                    speed: myPlayerState.stats.speed,
+                    visionRange: myPlayerState.stats.visionRange,
+                    basicAttackCooldown: myPlayerState.stats.basicAttackCooldown || 600 // 기본값 포함
+                };
+                
+                // 개별 속성도 호환성을 위해 유지
                 this.scene.player.attack = myPlayerState.stats.attack;
                 this.scene.player.speed = myPlayerState.stats.speed;
                 
@@ -1104,11 +1046,8 @@ export default class NetworkEventManager {
                             endTime: Date.now() + buffInfo.remainingTime,
                             effect: buffInfo.effect
                         });
-                        // console.log(`[클라이언트] 버프 적용됨: ${buffType}, 지속시간=${buffInfo.remainingTime}ms, 효과=`, buffInfo.effect);
                     }
                 });
-            } else {
-                console.log(`[클라이언트] 서버에서 받은 버프 정보 없음`);
             }
             
             // 은신 상태
@@ -1256,7 +1195,7 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 플레이어 힐 처리
+     * 플레이어 힐 처리 - 서버 신호 기반으로 틴트만 처리
      */
     handlePlayerHealed(data) {
         const targetPlayer = data.playerId === this.networkManager.playerId 
@@ -1276,16 +1215,16 @@ export default class NetworkEventManager {
             this.scene.effectManager.showHealText(targetPlayer.x, targetPlayer.y, data.healAmount);
         }
         
-        // 힐 상태 설정 및 노란색 tint 업데이트
-        targetPlayer.isHealed = true;
+        // 힐 상태 설정 및 노란색 tint 업데이트 (짧은 시간만)
+        targetPlayer.isHealedTint = true;
         if (targetPlayer.updateTint) {
             targetPlayer.updateTint();
         }
         
-        // 300ms 후 힐 상태 해제
+        // 300ms 후 힐 tint 해제 (시각적 효과만)
         this.scene.time.delayedCall(300, () => {
             if (targetPlayer && targetPlayer.active && !targetPlayer.isDead) {
-                targetPlayer.isHealed = false;
+                targetPlayer.isHealedTint = false;
                 if (targetPlayer.updateTint) {
                     targetPlayer.updateTint();
                 }
@@ -1294,32 +1233,23 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 플레이어 버프 처리 - 얼음 장판의 슬로우와 동일한 로직
+     * 플레이어 버프 처리 - 서버 신호 기반으로 추가/제거
      */
     handlePlayerBuffed(data) {
-        console.log('[handlePlayerBuffed] 플레이어 버프 효과 받음:', data);
-        console.log('[handlePlayerBuffed] 플레이어 버프 효과 처리 시작');
         const { playerId, effectId, speedMultiplier, attackSpeedMultiplier, duration } = data;
         
-        const targetPlayer = playerId === this.networkManager.playerId 
-            ? this.scene.player 
-            : this.scene.otherPlayers?.getChildren().find(p => p.networkId === playerId);
-        
+        const targetPlayer = this.findPlayerById(playerId);
         if (targetPlayer) {
-            console.log(`[handlePlayerBuffed] 대상 플레이어 발견: ${playerId}, isMainPlayer: ${targetPlayer === this.scene.player}`);
-            
-            // 버프 해제인지 확인 (speedMultiplier가 1이고 duration이 0이면 해제)
+
             if (speedMultiplier === 1 && attackSpeedMultiplier === 1 && duration === 0) {
-                console.log(`[handlePlayerBuffed] 버프 해제 처리: ${playerId}`);
                 
-                // 버프 효과 해제 (슬로우 해제와 동일한 방식)
+                // 버프 효과 해제 (서버 신호 기반)
                 if (targetPlayer.buffEffects) {
                     targetPlayer.buffEffects = targetPlayer.buffEffects.filter(effect => effect.id !== effectId);
                 }
                 
                 // 다른 버프 효과가 없으면 버프 tint 상태 해제
                 if (!targetPlayer.buffEffects || targetPlayer.buffEffects.length === 0) {
-                    console.log(`[handlePlayerBuffed] 버프 틴트 해제: ${playerId}`);
                     targetPlayer.isBuffedTint = false;
                     if (targetPlayer.updateTint) {
                         targetPlayer.updateTint();
@@ -1331,11 +1261,8 @@ export default class NetworkEventManager {
                     }
                 }
                 
-                console.log(`[handlePlayerBuffed] 버프 해제 완료: ${playerId}`);
             } else {
-                console.log(`[handlePlayerBuffed] 버프 적용 처리: ${playerId}, 속도=${speedMultiplier}, 공격속도=${attackSpeedMultiplier}`);
-                
-                // 버프 효과 적용 (슬로우 적용과 동일한 방식)
+                // 버프 효과 적용 (서버 신호 기반)
                 if (!targetPlayer.buffEffects) {
                     targetPlayer.buffEffects = [];
                 }
@@ -1343,15 +1270,12 @@ export default class NetworkEventManager {
                 const buffEffect = {
                     id: effectId,
                     speedMultiplier: speedMultiplier,
-                    attackSpeedMultiplier: attackSpeedMultiplier,
-                    duration: duration,
-                    startTime: Date.now()
+                    attackSpeedMultiplier: attackSpeedMultiplier
                 };
                 
                 targetPlayer.buffEffects.push(buffEffect);
                 
-                // 버프 tint 상태 설정 (슬로우와 동일한 방식)
-                console.log(`[handlePlayerBuffed] 버프 틴트 적용: ${playerId}`);
+                // 버프 tint 상태 설정
                 targetPlayer.isBuffedTint = true;
                 if (targetPlayer.updateTint) {
                     targetPlayer.updateTint();
@@ -1364,49 +1288,8 @@ export default class NetworkEventManager {
                         attackSpeedMultiplier: attackSpeedMultiplier
                     };
                     targetPlayer.applyBuff('speed_attack_boost', duration, effect);
-                    console.log(`[handlePlayerBuffed] 실제 버프 시스템 적용: ${playerId}`);
                 }
                 
-                // 버프 효과 메시지 표시
-                if (this.scene.effectManager) {
-                    this.scene.effectManager.showSkillMessage(targetPlayer.x, targetPlayer.y, '버프!');
-                }
-                
-                // 절대 시간 기준 타이머 매니저 사용 (슬로우와 동일한 방식)
-                const timerManager = getGlobalTimerManager();
-                const targetEndTime = Date.now() + duration;
-                const eventId = timerManager.addEvent(targetEndTime, () => {
-                    if (targetPlayer.active) {
-                        console.log(`[handlePlayerBuffed] 타이머로 버프 해제: ${playerId}`);
-                        
-                        // 버프 효과 제거
-                        targetPlayer.buffEffects = targetPlayer.buffEffects.filter(effect => effect.id !== effectId);
-                        
-                        // 다른 버프 효과가 없으면 버프 tint 상태 해제
-                        if (targetPlayer.buffEffects.length === 0) {
-                            targetPlayer.isBuffedTint = false;
-                            if (targetPlayer.updateTint) {
-                                targetPlayer.updateTint();
-                            }
-                            
-                            // 실제 버프 시스템에서도 제거
-                            if (targetPlayer === this.scene.player && targetPlayer.buffs) {
-                                targetPlayer.buffs.clear();
-                            }
-                        }
-                    }
-                });
-                
-                // 호환성을 위한 타이머 객체
-                const buffEffectTimer = {
-                    remove: () => timerManager.removeEvent(eventId)
-                };
-                
-                if (targetPlayer.delayedSkillTimers) {
-                    targetPlayer.delayedSkillTimers.add(buffEffectTimer);
-                }
-                
-                console.log(`[handlePlayerBuffed] 버프 적용 완료: ${playerId}, 타이머 설정됨`);
             }
         } else {
             console.warn(`[handlePlayerBuffed] 대상 플레이어를 찾을 수 없음: ${playerId}`);
@@ -2493,8 +2376,6 @@ export default class NetworkEventManager {
      * 공격 무효 처리
      */
     handleAttackInvalid(data) {
-        console.log('attack-invalid 이벤트 수신:', data);
-        
         // effectManager가 있는지 확인
         if (!this.scene.effectManager) {
             console.error('effectManager가 없습니다!');
@@ -2515,8 +2396,6 @@ export default class NetworkEventManager {
             },
             500 // 0.5초 동안 표시
         );
-        
-        console.log(`메시지 표시: "${data.message}" at (${data.x}, ${data.y})`);
     }
 
     /**
@@ -2556,14 +2435,14 @@ export default class NetworkEventManager {
         const { x, y, radius, casterId, affectedEnemies, affectedPlayers } = data;
         
         // 폭발 이펙트 생성 (모든 클라이언트에서 동일하게 표시)
-        this.effectManager.showMagicExplosion(x, y, radius);
+        this.scene.effectManager.showMagicExplosion(x, y, radius);
         
         // 데미지 표시 (서버에서 계산된 결과)
         if (affectedEnemies && affectedEnemies.length > 0) {
             affectedEnemies.forEach(enemyData => {
                 const enemy = this.scene.enemies.getChildren().find(e => e.networkId === enemyData.enemyId);
                 if (enemy) {
-                    this.effectManager.showDamageText(enemy.x, enemy.y, enemyData.damage, 'red');
+                    this.scene.effectManager.showDamageText(enemy.x, enemy.y, enemyData.damage, 'red');
                     
                     // 피격 상태 설정 및 tint 업데이트
                     enemy.isDamaged = true;
@@ -2588,7 +2467,7 @@ export default class NetworkEventManager {
             affectedPlayers.forEach(playerData => {
                 const targetPlayer = this.findPlayerById(playerData.playerId);
                 if (targetPlayer) {
-                    this.effectManager.showDamageText(targetPlayer.x, targetPlayer.y, playerData.damage, 'red');
+                    this.scene.effectManager.showDamageText(targetPlayer.x, targetPlayer.y, playerData.damage, 'red');
                 }
             });
         }
@@ -2635,64 +2514,59 @@ export default class NetworkEventManager {
     }
 
     /**
-     * 플레이어 슬로우 효과 처리
+     * 플레이어 슬로우 효과 처리 - 서버 신호 기반으로 추가/제거
      */
     handlePlayerSlowed(data) {
         console.log('플레이어 슬로우 효과 받음:', data);
-        console.log('플레이어 슬로우 효과 처리 시작');
         const { playerId, effectId, speedReduction, duration } = data;
         
         const targetPlayer = this.findPlayerById(playerId);
         if (targetPlayer) {
-            // 슬로우 효과 적용
-            if (!targetPlayer.slowEffects) {
-                targetPlayer.slowEffects = [];
-            }
-            
-            const slowEffect = {
-                id: effectId,
-                speedReduction: speedReduction,
-                duration: duration,
-                startTime: Date.now()
-            };
-            
-            targetPlayer.slowEffects.push(slowEffect);
-            
-            // 슬로우 tint 상태 설정
-            targetPlayer.isSlowedTint = true;
-            if (targetPlayer.updateTint) {
-                targetPlayer.updateTint();
-            }
-            
-            // 슬로우 효과 메시지 표시
-            this.effectManager.showSkillMessage(targetPlayer.x, targetPlayer.y, '슬로우!');
-            
-            // 절대 시간 기준 타이머 매니저 사용 (WarriorJob과 동일한 방식)
-            const timerManager = getGlobalTimerManager();
-            const targetEndTime = Date.now() + duration;
-            const eventId = timerManager.addEvent(targetEndTime, () => {
-                if (targetPlayer.active) {
-                    // 슬로우 효과 제거
+            if (speedReduction === 1 && duration === 0) {
+                console.log(`[handlePlayerSlowed] 슬로우 해제 처리: ${playerId}`);
+                
+                // 슬로우 효과 해제 (서버 신호 기반)
+                if (targetPlayer.slowEffects) {
                     targetPlayer.slowEffects = targetPlayer.slowEffects.filter(effect => effect.id !== effectId);
-                    
-                    // 다른 슬로우 효과가 없으면 슬로우 tint 상태 해제
-                    if (targetPlayer.slowEffects.length === 0) {
-                        targetPlayer.isSlowedTint = false;
-                        if (targetPlayer.updateTint) {
-                            targetPlayer.updateTint();
-                        }
+                }
+                
+                // 다른 슬로우 효과가 없으면 슬로우 tint 상태 해제
+                if (!targetPlayer.slowEffects || targetPlayer.slowEffects.length === 0) {
+                    targetPlayer.isSlowedTint = false;
+                    if (targetPlayer.updateTint) {
+                        targetPlayer.updateTint();
                     }
                 }
-            });
-            
-            // 호환성을 위한 타이머 객체
-            const slowEffectTimer = {
-                remove: () => timerManager.removeEvent(eventId)
-            };
-            
-            if (targetPlayer.delayedSkillTimers) {
-                targetPlayer.delayedSkillTimers.add(slowEffectTimer);
+                
+                console.log(`[handlePlayerSlowed] 슬로우 해제 완료: ${playerId}`);
+            } else {
+                console.log(`[handlePlayerSlowed] 슬로우 적용 처리: ${playerId}, 감소율=${speedReduction}`);
+                
+                // 슬로우 효과 적용 (서버 신호 기반)
+                if (!targetPlayer.slowEffects) {
+                    targetPlayer.slowEffects = [];
+                }
+                
+                const slowEffect = {
+                    id: effectId,
+                    speedReduction: speedReduction
+                };
+                
+                targetPlayer.slowEffects.push(slowEffect);
+                
+                // 슬로우 tint 상태 설정
+                targetPlayer.isSlowedTint = true;
+                if (targetPlayer.updateTint) {
+                    targetPlayer.updateTint();
+                }
+                
+                // 슬로우 효과 메시지 표시
+                this.scene.effectManager.showSkillMessage(targetPlayer.x, targetPlayer.y, '슬로우!');
+                
+                console.log(`[handlePlayerSlowed] 슬로우 적용 완료: ${playerId}`);
             }
+        } else {
+            console.warn(`[handlePlayerSlowed] 대상 플레이어를 찾을 수 없음: ${playerId}`);
         }
     }
   
@@ -2770,8 +2644,324 @@ export default class NetworkEventManager {
             // 마법사 직업이고 보호막 제거 메서드가 있으면 호출
             if (player.job && typeof player.job.removeShieldEffect === 'function') {
                 player.job.removeShieldEffect();
-                console.log('보호막 이펙트 즉시 제거 완료');
             }
         }
+    }
+
+    /**
+     * 플레이어 경험치 획득 처리
+     */
+    handlePlayerExpGained(data) {
+        const { playerId, expGained, newExp, newLevel } = data;
+        
+        const targetPlayer = this.findPlayerById(playerId);
+        if (targetPlayer) {
+            // 경험치 업데이트
+            targetPlayer.exp = newExp;
+            
+            // 레벨업이 발생한 경우
+            if (newLevel && newLevel !== targetPlayer.level) {
+                targetPlayer.level = newLevel;
+                console.log(`플레이어 ${playerId} 레벨업: ${newLevel}`);
+            }
+            
+            // UI 업데이트
+            if (targetPlayer.updateUI) {
+                targetPlayer.updateUI();
+            }
+        }
+    }
+
+    /**
+     * 직업 변경 오브 스폰 처리
+     */
+    handleJobOrbSpawned(data) {
+        console.log('🎯 클라이언트에서 job-orb-spawned 이벤트 받음:', data);
+        
+        const { orbId, jobClass, x, y } = data;
+        
+        // 이미 존재하는 오브인지 확인
+        if (this.scene.jobOrbs && this.scene.jobOrbs.has(orbId)) {
+            console.warn(`❌ 이미 존재하는 오브 ID: ${orbId}`);
+            return;
+        }
+        
+        console.log(`✅ 새로운 직업 변경 오브 생성 시도: ${jobClass} at (${x}, ${y})`);
+        
+        // 새로운 직업 변경 오브 생성
+        const jobOrb = new JobOrb(this.scene, x, y, orbId, jobClass);
+        
+        // 오브 저장
+        if (!this.scene.jobOrbs) {
+            this.scene.jobOrbs = new Map();
+            console.log('🗂️ jobOrbs Map 새로 생성됨');
+        }
+        this.scene.jobOrbs.set(orbId, jobOrb);
+        
+        // 오브 그룹에 추가 (충돌 감지용)
+        if (!this.scene.jobOrbGroup) {
+            this.scene.jobOrbGroup = this.scene.physics.add.group();
+            console.log('🗂️ jobOrbGroup 새로 생성됨');
+        }
+        this.scene.jobOrbGroup.add(jobOrb);
+        
+        console.log(`✅ 직업 변경 오브 스폰 완료: ${jobClass} (${x}, ${y}), 총 오브 수: ${this.scene.jobOrbs.size}`);
+    }
+    
+    /**
+     * 직업 변경 오브 제거 처리
+     */
+    handleJobOrbRemoved(data) {
+        const { orbId } = data;
+        
+        if (!this.scene.jobOrbs || !this.scene.jobOrbs.has(orbId)) {
+            return;
+        }
+        
+        const jobOrb = this.scene.jobOrbs.get(orbId);
+        
+        // 오브 제거 애니메이션
+        this.scene.tweens.add({
+            targets: jobOrb,
+            alpha: 0,
+            scaleX: 0.5,
+            scaleY: 0.5,
+            duration: 200,
+            onComplete: () => {
+                jobOrb.destroy();
+            }
+        });
+        
+        this.scene.jobOrbs.delete(orbId);
+        
+        console.log(`직업 변경 오브 제거: ${orbId}`);
+    }
+    
+    /**
+     * 직업 변경 오브 수집 처리 (다른 플레이어가 수집한 경우)
+     */
+    handleJobOrbCollected(data) {
+        const { playerId, orbId, jobClass } = data;
+        
+        if (!this.scene.jobOrbs || !this.scene.jobOrbs.has(orbId)) {
+            return;
+        }
+        
+        const jobOrb = this.scene.jobOrbs.get(orbId);
+        const collector = this.findPlayerById(playerId);
+        
+        // 수집 애니메이션
+        jobOrb.collect();
+        
+        // 오브 제거
+        this.scene.jobOrbs.delete(orbId);
+        
+        // 수집자 표시 (옵션)
+        if (collector) {
+            console.log(`플레이어 ${playerId}가 ${jobClass} 오브를 수집했습니다.`);
+        }
+    }
+    
+    /**
+     * 직업 변경 오브 충돌 결과 처리 (자신이 수집한 경우)
+     */
+    handleJobOrbCollisionResult(data) {
+        console.log('🎯 job-orb-collision-result 이벤트 리스너 호출됨');
+        console.log('받은 데이터:', data);
+        const { success, jobClass, message, orbId } = data;
+        
+        if (success) {
+            console.log(`✅ 오브 수집 성공: ${jobClass}, orbId: ${orbId}`);
+            
+            // 성공 시 클라이언트에서도 오브 제거
+            if (orbId && this.scene.jobOrbs && this.scene.jobOrbs.has(orbId)) {
+                const orb = this.scene.jobOrbs.get(orbId);
+                if (orb) {
+                    // 오브 그룹에서 제거
+                    if (this.scene.jobOrbGroup) {
+                        this.scene.jobOrbGroup.remove(orb);
+                    }
+                    // 오브 스프라이트 제거
+                    orb.destroy();
+                    // 맵에서 제거
+                    this.scene.jobOrbs.delete(orbId);
+                    console.log(`🗑️ 클라이언트에서 오브 제거 완료: ${orbId}`);
+                }
+            } else if (!orbId) {
+                // orbId가 없는 경우, 해당 직업의 모든 오브를 찾아서 제거
+                console.log('⚠️ orbId가 없음, 직업 기반으로 오브 찾기 시도:', jobClass);
+                const orbsToRemove = [];
+                if (this.scene.jobOrbs) {
+                    for (const [id, orb] of this.scene.jobOrbs.entries()) {
+                        if (orb && orb.jobClass === jobClass && orb.isCollected) {
+                            orbsToRemove.push({id, orb});
+                        }
+                    }
+                }
+                
+                // 찾은 오브들 제거
+                orbsToRemove.forEach(({id, orb}) => {
+                    if (this.scene.jobOrbGroup) {
+                        this.scene.jobOrbGroup.remove(orb);
+                    }
+                    orb.destroy();
+                    this.scene.jobOrbs.delete(id);
+                    console.log(`🗑️ 직업 기반으로 오브 제거 완료: ${id}`);
+                });
+            }
+            
+            // 전직 선택 UI 표시
+            console.log(`🎮 전직 UI 표시 시작: ${jobClass}`);
+            this.showJobChangeUI(jobClass);
+        } else {
+            console.log(`오브 수집 실패: ${message}`);
+        }
+    }
+    
+    /**
+     * 전직 선택 UI 표시
+     */
+    showJobChangeUI(jobClass) {
+        console.log(`🎮 showJobChangeUI 호출됨: ${jobClass}`);
+        
+        // 이미 전직 UI가 표시되어 있으면 무시
+        if (this.scene.jobChangeUI && this.scene.jobChangeUI.isVisible) {
+            console.log('⚠️ 이미 전직 UI가 표시되어 있음');
+            return;
+        }
+        
+        // 상단 알림 메시지 표시
+        const topMessage = this.scene.add.text(this.scene.cameras.main.centerX, 50, 
+            `${this.getJobDisplayName(jobClass)} 직업 변경 오브를 획득했습니다!`, {
+            fontSize: '18px',
+            fill: '#ffff00',
+            stroke: '#000000',
+            strokeThickness: 2,
+            align: 'center'
+        });
+        topMessage.setOrigin(0.5);
+        topMessage.setScrollFactor(0);
+        topMessage.setDepth(1000);
+        
+        // 3초 후 알림 메시지 제거
+        this.scene.time.delayedCall(3000, () => {
+            if (topMessage) {
+                topMessage.destroy();
+            }
+        });
+        
+        this.scene.jobChangeUI = {
+            isVisible: true,
+            targetJobClass: jobClass,
+            container: null,
+            topMessage: topMessage
+        };
+        
+        // UI 컨테이너 생성
+        const centerX = this.scene.cameras.main.centerX;
+        const centerY = this.scene.cameras.main.centerY;
+        
+        const container = this.scene.add.container(centerX, centerY);
+        container.setScrollFactor(0); // 카메라에 고정
+        container.setDepth(999); // 다른 UI보다 앞에 표시
+        
+        // 배경
+        const background = this.scene.add.rectangle(0, 0, 450, 250, 0x000000, 0.9);
+        background.setStrokeStyle(3, 0xffffff); // setStroke 대신 setStrokeStyle 사용
+        container.add(background);
+        
+        // 제목 텍스트
+        const jobDisplayName = this.getJobDisplayName(jobClass);
+        const titleText = this.scene.add.text(0, -80, `${jobDisplayName}으로 전직하시겠습니까?`, {
+            fontSize: '22px',
+            fill: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 1,
+            align: 'center'
+        });
+        titleText.setOrigin(0.5);
+        container.add(titleText);
+        
+        // 안내 텍스트
+        const guideText = this.scene.add.text(0, -30, 'ENTER: 전직 확인    ESC: 취소', {
+            fontSize: '18px',
+            fill: '#00ff00',
+            stroke: '#000000',
+            strokeThickness: 1,
+            align: 'center'
+        });
+        guideText.setOrigin(0.5);
+        container.add(guideText);
+        
+        // 직업 설명 (간단히)
+        const descText = this.scene.add.text(0, 30, this.getJobDescription(jobClass), {
+            fontSize: '16px',
+            fill: '#cccccc',
+            stroke: '#000000',
+            strokeThickness: 1,
+            align: 'center',
+            wordWrap: { width: 400 }
+        });
+        descText.setOrigin(0.5);
+        container.add(descText);
+        
+        // 컨테이너를 jobChangeUI에 저장
+        this.scene.jobChangeUI.container = container;
+        
+        console.log(`✅ 전직 UI 생성 완료: ${jobClass}`);
+        console.log('UI 상태:', this.scene.jobChangeUI);
+    }
+    
+    /**
+     * 전직 선택 UI 숨기기
+     */
+    hideJobChangeUI() {
+        console.log('🚫 전직 UI 숨김');
+        
+        if (this.scene.jobChangeUI) {
+            // 컨테이너 제거
+            if (this.scene.jobChangeUI.container) {
+                this.scene.jobChangeUI.container.destroy();
+            }
+            
+            // 상단 메시지 제거
+            if (this.scene.jobChangeUI.topMessage) {
+                this.scene.jobChangeUI.topMessage.destroy();
+            }
+            
+            // jobChangeUI 객체 제거
+            this.scene.jobChangeUI = null;
+        }
+    }
+    
+    /**
+     * 직업 표시 이름 반환
+     */
+    getJobDisplayName(jobClass) {
+        const jobNames = {
+            slime: '슬라임',
+            assassin: '어쌔신',
+            warrior: '전사',
+            mage: '마법사',
+            archer: '궁수',
+            supporter: '서포터'
+        };
+        
+        return jobNames[jobClass] || jobClass;
+    }
+    
+    /**
+     * 직업 설명 반환
+     */
+    getJobDescription(jobClass) {
+        const descriptions = {
+            assassin: '은신과 기습 공격에 특화된 직업입니다.',
+            warrior: '높은 체력과 방어력을 가진 근접 전투 전문가입니다.',
+            mage: '다양한 마법 스킬과 원거리 공격에 특화된 직업입니다.',
+            archer: '원거리 공격에 특화된 직업입니다.',
+            supporter: '팀원을 지원하고 치유하는 서포터 직업입니다.'
+        };
+        
+        return descriptions[jobClass] || '특별한 능력을 가진 직업입니다.';
     }
 }

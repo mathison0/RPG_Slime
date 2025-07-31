@@ -152,9 +152,10 @@ class NetworkManager {
             this.emit('enemies-update', data);
         });
 
-        this.socket.on('player-death', (data) => {
-            this.emit('player-death', data);
-        });
+        // player-death 이벤트는 사용되지 않음 (player-died 이벤트만 사용)
+        // this.socket.on('player-death', (data) => {
+        //     this.emit('player-death', data);
+        // });
 
         this.socket.on('monster-attack', (data) => {
             this.emit('monster-attack', data);
@@ -176,6 +177,10 @@ class NetworkManager {
 
         this.socket.on('player-job-changed', (data) => {
             this.emit('player-job-changed', data);
+        });
+
+        this.socket.on('player-exp-gained', (data) => {
+            this.emit('player-exp-gained', data);
         });
 
         this.socket.on('game-synced', (data) => {
@@ -218,16 +223,38 @@ class NetworkManager {
             this.emit('projectile-removed', data);
         });
 
-        this.socket.on('projectile-hit-wall', (data) => {
-            this.emit('projectile-hit-wall', data);
+        // 사용되지 않는 투사체 충돌 이벤트들 제거
+        // this.socket.on('projectile-hit-wall', (data) => {
+        //     this.emit('projectile-hit-wall', data);
+        // });
+
+        // this.socket.on('projectile-hit-player', (data) => {
+        //     this.emit('projectile-hit-player', data);
+        // });
+
+        // this.socket.on('projectile-hit-enemy', (data) => {
+        //     this.emit('projectile-hit-enemy', data);
+        // });
+
+        // 누락된 필수 이벤트 리스너들 추가
+        this.socket.on('player-buffed', (data) => {
+            this.emit('player-buffed', data);
         });
 
-        this.socket.on('projectile-hit-player', (data) => {
-            this.emit('projectile-hit-player', data);
+        this.socket.on('enemy-slowed', (data) => {
+            this.emit('enemy-slowed', data);
         });
 
-        this.socket.on('projectile-hit-enemy', (data) => {
-            this.emit('projectile-hit-enemy', data);
+        this.socket.on('player-slowed', (data) => {
+            this.emit('player-slowed', data);
+        });
+
+        this.socket.on('magic-missile-explosion', (data) => {
+            this.emit('magic-missile-explosion', data);
+        });
+
+        this.socket.on('shield-removed', (data) => {
+            this.emit('shield-removed', data);
         });
 
         // 공격 무효 이벤트
@@ -254,6 +281,26 @@ class NetworkManager {
         this.socket.on('suicide-error', (data) => {
             this.emit('suicide-error', data);
         });
+        
+        // 직업 변경 오브 관련 이벤트들
+        this.socket.on('job-orb-spawned', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-spawned 이벤트 받음:', data);
+            this.emit('job-orb-spawned', data);
+        });
+        
+        this.socket.on('job-orb-removed', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-removed 이벤트 받음:', data);
+            this.emit('job-orb-removed', data);
+        });
+        
+        this.socket.on('job-orb-collected', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-collected 이벤트 받음:', data);
+            this.emit('job-orb-collected', data);
+        });
+        
+        this.socket.on('job-orb-collision-result', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-collision-result 이벤트 받음:', data);
+            this.emit('job-orb-collision-result', data);
 
         // 은신 종료 이벤트
         this.socket.on('stealth-ended', (data) => {

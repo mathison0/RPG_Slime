@@ -41,7 +41,6 @@ class SkillManager {
    * 스킬 사용 시도
    */
   useSkill(player, skillType, targetX = null, targetY = null, options = {}) {
-    console.log(`SkillManager useSkill 호출: player=${player.id}, skillType=${skillType}, targetX=${targetX}, targetY=${targetY}, options=`, options);
     // 죽은 플레이어는 스킬 사용 불가
     if (player.isDead) {
       return { success: false, error: 'Cannot use skills while dead' };
@@ -197,7 +196,6 @@ class SkillManager {
           const ratio = castRange / distance;
           wardX = player.x + deltaX * ratio;
           wardY = player.y + deltaY * ratio;
-          console.log(`와드 사정거리 클램핑: 요청 거리=${Math.round(distance)}, 최대 거리=${castRange}, 클램핑된 위치=(${Math.round(wardX)}, ${Math.round(wardY)})`);
         } else {
           // 사정거리 내에 있으면 마우스 위치에 설치
           wardX = targetX;
@@ -229,11 +227,12 @@ class SkillManager {
     console.log(`플레이어 job 확인: job=${player.job}, jobClass=${player.jobClass}`);
     if (player.job && player.job.useSkill) {
       console.log(`직업별 스킬 사용 로직 호출: ${skillType}`);
-      // targetX, targetY를 options에 포함시켜서 전달
+      // targetX, targetY, gameStateManager를 options에 포함시켜서 전달
       const extendedOptions = {
         ...options,
         targetX: targetX,
-        targetY: targetY
+        targetY: targetY,
+        gameStateManager: this.gameStateManager
       };
       const jobResult = player.job.useSkill(skillType, extendedOptions);
       if (jobResult && jobResult.success) {
@@ -606,7 +605,6 @@ class SkillManager {
       const projectile = this.projectileManager.createProjectile(projectileConfig);
       
       if (projectile) {
-        console.log(`원거리 기본 공격 투사체 생성: ${player.jobClass}, 데미지: ${damage}, 속도: ${projectileSettings.speed}, 크기: ${projectileSettings.size}`);
         damageResult.projectileCreated = true;
       }
     }
@@ -782,7 +780,6 @@ class SkillManager {
       const projectile = this.projectileManager.createProjectile(projectileConfig);
       
       if (projectile) {
-        console.log(`마법 미사일 투사체 생성: 데미지: ${damage}, 속도: ${projectileSettings.speed}, 크기: ${projectileSettings.size}, 폭발반경: ${projectileConfig.explosionRadius}`);
         damageResult.projectileCreated = true;
       }
     }
@@ -937,7 +934,7 @@ class SkillManager {
           }
         }
         
-        console.log(`얼음 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${clampedTargetX}, ${clampedTargetY}), 범위: ${skillInfo.range}`);
+        console.log(`얼음 장판  플레이어: ${player.id}, 위치: (${clampedTargetX}, ${clampedTargetY}), 범위: ${skillInfo.range}`);
         // 장판 시스템에 등록 (클램핑된 좌표 사용)
         this.addField('ice_field', player.id, clampedTargetX, clampedTargetY, skillInfo.range, skillInfo.duration, skillInfo.damage);
         // 초기 데미지는 없음 (0.5초 후부터 적용)
@@ -1018,8 +1015,6 @@ class SkillManager {
           clampedBuffY = y;
         }
         
-        console.log(`버프 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${clampedBuffX}, ${clampedBuffY}), 범위: ${skillInfo.range}`);
-        // 장판 시스템에 등록 (클램핑된 좌표 사용)
         this.addField('buff_field', player.id, clampedBuffX, clampedBuffY, skillInfo.range, skillInfo.duration);
         
         // 위치 정보를 결과에 포함
@@ -1052,8 +1047,6 @@ class SkillManager {
           clampedHealY = y;
         }
         
-        console.log(`힐 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${clampedHealX}, ${clampedHealY}), 범위: ${skillInfo.range}`);
-        // 장판 시스템에 등록 (클램핑된 좌표 사용)
         const healAmount = skillInfo.heal || 20;
         this.addField('heal_field', player.id, clampedHealX, clampedHealY, skillInfo.range, skillInfo.duration, 0, healAmount);
         
@@ -1729,10 +1722,14 @@ class SkillManager {
   processActiveFields() {
     const now = Date.now();
     
-    // 만료된 장판 제거
+    // 만료된 장판 제거 및 관련 효과 해제
     this.activeFields = this.activeFields.filter(field => {
       if (now > field.endTime) {
         console.log(`장판 만료: ${field.type}, 위치: (${field.x}, ${field.y})`);
+        
+        // 장판 만료 시 관련 효과 해제
+        this.cleanupFieldEffects(field);
+        
         return false;
       }
       return true;
@@ -1752,6 +1749,94 @@ class SkillManager {
           break;
       }
     });
+  }
+
+  /**
+   * 장판 만료 시 관련 효과 해제
+   */
+  cleanupFieldEffects(field) {
+    const players = this.gameStateManager.players;
+    const enemies = this.gameStateManager.enemies;
+    
+    switch (field.type) {
+      case 'buff_field':
+        // 버프 장판 만료 시 모든 플레이어의 버프 해제
+        Array.from(players.values()).forEach(player => {
+          if (player.isBuffed) {
+            console.log(`[cleanupFieldEffects] 장판 만료로 인한 버프 해제: ${player.id}`);
+            
+            player.isBuffed = false;
+            player.buffedUntil = undefined;
+            
+            // 실제 버프 시스템에서 제거
+            player.removeBuff('speed_attack_boost');
+            
+            // 버프 해제 이벤트 전송 (저장된 effectId 사용)
+            if (this.gameStateManager.io) {
+              const effectIdToRemove = player.currentBuffEffectId || '';
+              
+              console.log(`[cleanupFieldEffects] 플레이어 ${player.id}에게 버프 해제 이벤트 전송, effectId: ${effectIdToRemove}`);
+              this.gameStateManager.io.emit('player-buffed', {
+                playerId: player.id,
+                effectId: effectIdToRemove,
+                speedMultiplier: 1,
+                attackSpeedMultiplier: 1,
+                duration: 0
+              });
+              
+              // effectId 초기화
+              player.currentBuffEffectId = null;
+            }
+          }
+        });
+        break;
+        
+      case 'ice_field':
+        // 얼음 장판 만료 시 적들의 슬로우 해제
+        const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+        enemyArray.forEach(enemy => {
+          if (enemy.isSlowed) {
+            console.log(`[cleanupFieldEffects] 장판 만료로 인한 슬로우 해제: ${enemy.id}`);
+            enemy.isSlowed = false;
+            enemy.slowAmount = 1;
+            
+                         if (this.gameStateManager.io) {
+               this.gameStateManager.io.emit('enemy-slowed', {
+                 enemyId: enemy.id,
+                 isSlowed: false,
+                 duration: 0,
+                 speedReduction: 1
+               });
+             }
+          }
+        });
+        
+        // 플레이어들의 슬로우 해제
+        Array.from(players.values()).forEach(player => {
+          if (player.isSlowed) {
+            console.log(`[cleanupFieldEffects] 장판 만료로 인한 플레이어 슬로우 해제: ${player.id}`);
+            player.isSlowed = false;
+            player.slowAmount = 1;
+            
+            // 슬로우 해제 이벤트 전송 (저장된 effectId 사용)
+            if (this.gameStateManager.io) {
+              const effectIdToRemove = player.currentSlowEffectId || '';
+              
+              console.log(`[cleanupFieldEffects] 플레이어 ${player.id}에게 슬로우 해제 이벤트 전송, effectId: ${effectIdToRemove}`);
+              this.gameStateManager.io.emit('player-slowed', {
+                playerId: player.id,
+                effectId: effectIdToRemove,
+                speedReduction: 1,
+                duration: 0
+              });
+              
+              // effectId 초기화
+              player.currentSlowEffectId = null;
+            }
+          }
+        });
+        break;
+    }
   }
 
   /**
@@ -1781,9 +1866,6 @@ class SkillManager {
         // 데미지 적용 (0.5초마다)
         if (field.damage > 0) {
           const result = this.gameStateManager.takeDamage(attacker, enemy, field.damage);
-          if (result.success) {
-            console.log(`얼음 장판 지속 데미지: ${enemy.id}에게 ${result.actualDamage} 데미지`);
-          }
         }
         
         // 슬로우 효과 유지/적용
@@ -1795,7 +1877,7 @@ class SkillManager {
         // 새로 슬로우가 걸린 경우에만 이벤트 전송
         if (!wasSlowed && this.gameStateManager.io) {
           this.gameStateManager.io.emit('enemy-slowed', {
-          enemyId: enemy.id,
+            enemyId: enemy.id,
             isSlowed: true,
             duration: 600,
             speedReduction: 0.5
@@ -1809,10 +1891,13 @@ class SkillManager {
           
           // 슬로우 해제 이벤트 전송
           if (this.gameStateManager.io) {
-        this.gameStateManager.io.emit('enemy-slowed', {
-          enemyId: enemy.id,
-              isSlowed: false
-        });
+            console.log(`[processIceField] 적 ${enemy.id}에게 슬로우 해제 이벤트 전송`);
+            this.gameStateManager.io.emit('enemy-slowed', {
+              enemyId: enemy.id,
+              isSlowed: false,
+              duration: 0,
+              speedReduction: 1
+            });
           }
         }
       }
@@ -1834,22 +1919,24 @@ class SkillManager {
         // 데미지 적용
         if (field.damage > 0) {
           const result = this.gameStateManager.takeDamage(attacker, targetPlayer, field.damage);
-          if (result.success) {
-            console.log(`얼음 장판 지속 데미지: 플레이어 ${targetPlayer.id}에게 ${result.actualDamage} 데미지`);
-          }
         }
         
         // 슬로우 효과 유지/적용
         const wasSlowed = targetPlayer.isSlowed;
         targetPlayer.isSlowed = true;
-        targetPlayer.slowedUntil = Date.now() + 600;
+        targetPlayer.slowedUntil = Date.now() + 600; // 0.6초 후 해제 (다음 틱 전까지 유지)
         targetPlayer.slowAmount = 0.5;
         
         // 새로 슬로우가 걸린 경우에만 이벤트 전송
         if (!wasSlowed && this.gameStateManager.io) {
+          const effectId = `ice_field_${field.playerId}_${Date.now()}`;
+          
+          // 플레이어의 현재 슬로우 effectId 저장
+          targetPlayer.currentSlowEffectId = effectId;
+          
           this.gameStateManager.io.emit('player-slowed', {
             playerId: targetPlayer.id,
-            effectId: `ice_field_${field.playerId}_${Date.now()}`,
+            effectId: effectId,
             speedReduction: 0.5,
             duration: 600
           });
@@ -1860,14 +1947,20 @@ class SkillManager {
           targetPlayer.isSlowed = false;
           targetPlayer.slowAmount = 1;
         
-          // 슬로우 해제 이벤트 전송
+          // 슬로우 해제 이벤트 전송 (저장된 effectId 사용)
           if (this.gameStateManager.io) {
-        this.gameStateManager.io.emit('player-slowed', {
-          playerId: targetPlayer.id,
-              effectId: '',
+            const effectIdToRemove = targetPlayer.currentSlowEffectId || '';
+            
+            console.log(`[processIceField] 플레이어 ${targetPlayer.id}에게 슬로우 해제 이벤트 전송, effectId: ${effectIdToRemove}`);
+            this.gameStateManager.io.emit('player-slowed', {
+              playerId: targetPlayer.id,
+              effectId: effectIdToRemove,
               speedReduction: 1,
               duration: 0
-        });
+            });
+            
+            // effectId 초기화
+            targetPlayer.currentSlowEffectId = null;
           }
         }
       }
@@ -1925,8 +2018,6 @@ class SkillManager {
    * 버프 장판 처리 (지속적인 버프 효과) - 얼음 장판과 동일한 로직
    */
   processBuffField(field) {
-    console.log(`[processBuffField] 호출됨 - 위치: (${field.x}, ${field.y}), 범위: ${field.range}`);
-    
     const players = this.gameStateManager.players;
     const caster = players.get(field.playerId);
     
@@ -1937,7 +2028,6 @@ class SkillManager {
     }
     
     const playerArray = Array.from(players.values());
-    console.log(`[processBuffField] 처리할 플레이어 수: ${playerArray.length}`);
     
     playerArray.forEach(player => {
       if (player.isDead) return;
@@ -1952,82 +2042,77 @@ class SkillManager {
       // 캐릭터 크기를 고려한 충돌 검사
       const effectiveRange = field.range + (player.size || 32) / 2;
       
-      console.log(`[processBuffField] 플레이어 ${player.id}: 거리=${Math.round(distance)}, 유효범위=${effectiveRange}, 범위내=${distance <= effectiveRange}`);
-        
       if (distance <= effectiveRange) {
-        // 버프 효과 유지/적용 (얼음 장판의 슬로우와 동일한 방식)
+        // 버프 효과 유지/적용
         const wasBuffed = player.isBuffed;
         player.isBuffed = true;
         player.buffedUntil = Date.now() + 600; // 0.6초 후 해제 (다음 틱 전까지 유지)
         
         console.log(`[processBuffField] 플레이어 ${player.id} 버프 적용: wasBuffed=${wasBuffed}`);
         
-        // 실제 버프 효과 적용 (스탯 변경)
+        // JobClasses에서 버프 효과 가져오기
+        const { getJobInfo } = require('../../shared/JobClasses.js');
+        const supporterInfo = getJobInfo('supporter');
+        const buffSkill = supporterInfo.skills.find(skill => skill.type === 'buff_field');
+        
+        const speedMultiplier = buffSkill?.speedMultiplier || 1.5;
+        const attackSpeedMultiplier = buffSkill?.attackSpeedMultiplier || 1.5;
+        
+        // 실제 버프 효과 적용 (첫 적용시에만)
         if (!wasBuffed) {
-          // JobClasses에서 버프 효과 가져오기
-          const { getJobInfo } = require('../../shared/JobClasses.js');
-          const supporterInfo = getJobInfo('supporter');
-          const buffSkill = supporterInfo.skills.find(skill => skill.type === 'buff_field');
-          
-          // 버프 효과를 플레이어 속성에 직접 적용
-          player.buffSpeedMultiplier = buffSkill?.speedMultiplier || 1.5;
-          player.buffAttackSpeedMultiplier = buffSkill?.attackSpeedMultiplier || 1.5;
-          
-          // 실제 스탯 적용
-          const originalSpeed = player.originalSpeed || player.speed;
-          const originalAttackCooldown = player.originalBasicAttackCooldown || player.basicAttackCooldown;
-          
-          player.originalSpeed = originalSpeed;
-          player.originalBasicAttackCooldown = originalAttackCooldown;
-          
-          player.speed = Math.floor(originalSpeed * player.buffSpeedMultiplier);
-          player.basicAttackCooldown = Math.floor(originalAttackCooldown / player.buffAttackSpeedMultiplier);
-          
-          console.log(`[processBuffField] 플레이어 ${player.id} 스탯 변경: 속도 ${originalSpeed}→${player.speed}, 공격속도 ${originalAttackCooldown}→${player.basicAttackCooldown}`);
-        }
-        
-        // 새로 버프가 걸린 경우에만 이벤트 전송 (얼음 장판과 동일한 방식)
-        if (!wasBuffed && this.gameStateManager.io) {
-          console.log(`[processBuffField] 플레이어 ${player.id}에게 버프 이벤트 전송`);
-          this.gameStateManager.io.emit('player-buffed', {
-            playerId: player.id,
-            effectId: `buff_field_${field.playerId}_${Date.now()}`,
-            speedMultiplier: player.buffSpeedMultiplier,
-            attackSpeedMultiplier: player.buffAttackSpeedMultiplier,
-            duration: 600
+          // 실제 버프 시스템에만 등록 (직접 스탯 변경 제거)
+          player.applyBuff('speed_attack_boost', 600, {
+            speedMultiplier: speedMultiplier,
+            attackSpeedMultiplier: attackSpeedMultiplier
           });
-        }
-      } else {
-        // 범위를 벗어난 경우 버프 해제 체크 (얼음 장판과 동일한 방식)
-        if (player.isBuffed && (!player.buffedUntil || Date.now() > player.buffedUntil)) {
-          console.log(`[processBuffField] 플레이어 ${player.id} 버프 해제 (범위 벗어남 또는 시간 만료)`);
           
-          player.isBuffed = false;
+          console.log(`[processBuffField] 플레이어 ${player.id} 실제 버프 시스템에 등록 완료`);
           
-          // 실제 버프 효과 해제 (스탯 복원)
-          if (player.originalSpeed !== undefined) {
-            player.speed = player.originalSpeed;
-            player.originalSpeed = undefined;
-          }
-          if (player.originalBasicAttackCooldown !== undefined) {
-            player.basicAttackCooldown = player.originalBasicAttackCooldown;
-            player.originalBasicAttackCooldown = undefined;
-          }
-          
-          // 버프 배율 정리
-          player.buffSpeedMultiplier = undefined;
-          player.buffAttackSpeedMultiplier = undefined;
-        
-          // 버프 해제 이벤트 전송 (얼음 장판과 동일한 방식)
+          // 새로 버프가 걸린 경우에만 이벤트 전송
           if (this.gameStateManager.io) {
-            console.log(`[processBuffField] 플레이어 ${player.id}에게 버프 해제 이벤트 전송`);
+            const effectId = `buff_field_${field.playerId}_${Date.now()}`;
+            
+            // 플레이어의 현재 버프 effectId 저장
+            player.currentBuffEffectId = effectId;
+            
+            console.log(`[processBuffField] 플레이어 ${player.id}에게 버프 이벤트 전송 (신규 적용)`);
             this.gameStateManager.io.emit('player-buffed', {
               playerId: player.id,
-              effectId: '',
+              effectId: effectId,
+              speedMultiplier: speedMultiplier,
+              attackSpeedMultiplier: attackSpeedMultiplier,
+              duration: 600
+            });
+          }
+        }
+      } else {
+        // 범위를 벗어난 경우 즉시 버프 해제
+        if (player.isBuffed) {
+          console.log(`[processBuffField] 플레이어 ${player.id} 버프 해제 (범위 벗어남)`);
+          
+          player.isBuffed = false;
+          player.buffedUntil = undefined;
+          
+          // 실제 버프 시스템에서만 제거 (직접 스탯 복원 제거)
+          player.removeBuff('speed_attack_boost');
+          
+          console.log(`[processBuffField] 플레이어 ${player.id} 실제 버프 시스템에서 제거 완료`);
+        
+          // 버프 해제 이벤트 전송 (저장된 effectId 사용)
+          if (this.gameStateManager.io) {
+            const effectIdToRemove = player.currentBuffEffectId || '';
+            
+            console.log(`[processBuffField] 플레이어 ${player.id}에게 버프 해제 이벤트 전송, effectId: ${effectIdToRemove}`);
+            this.gameStateManager.io.emit('player-buffed', {
+              playerId: player.id,
+              effectId: effectIdToRemove,
               speedMultiplier: 1,
               attackSpeedMultiplier: 1,
               duration: 0
             });
+            
+            // effectId 초기화
+            player.currentBuffEffectId = null;
           }
         }
       }
@@ -2051,7 +2136,19 @@ class SkillManager {
     };
     
     this.activeFields.push(field);
-    console.log(`장판 추가: ${type}, 위치: (${x}, ${y}), 지속시간: ${duration}ms`);
+    
+    // 장판 추가 직후 즉시 첫 번째 효과 적용
+    switch (field.type) {
+      case 'ice_field':
+        this.processIceField(field);
+        break;
+      case 'heal_field':
+        this.processHealField(field);
+        break;
+      case 'buff_field':
+        this.processBuffField(field);
+        break;
+    }
   }
 
   /**

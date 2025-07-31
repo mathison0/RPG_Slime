@@ -588,10 +588,6 @@ export default class AssassinJob extends BaseJob {
         }
     }
 
-    /**
-     * 업데이트 (매 프레임 호출)
-     * @param {number} delta - 델타 타임
-     */
     update(delta) {
         super.update(delta);
         

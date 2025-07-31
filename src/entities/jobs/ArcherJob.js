@@ -34,7 +34,6 @@ export default class ArcherJob extends BaseJob {
      */
     showRollEffect(data = null) {
         const startTime = Date.now();
-        console.log(`[${startTime}] 궁수 구르기 이펙트 시작`);
         
         // 기존 구르기 이펙트가 있다면 제거
         if (this.player.rollEffect) {
@@ -198,7 +197,6 @@ export default class ArcherJob extends BaseJob {
      */
     showFocusEffect(data = null) {
         const startTime = Date.now();
-        console.log(`[${startTime}] 궁수의 집중 이펙트 시작`);
         
         // 기존 집중 이펙트가 있다면 제거
         if (this.player.focusEffect) {
@@ -311,7 +309,6 @@ export default class ArcherJob extends BaseJob {
      */
     showBasicAttackEffect(targetX, targetY) {
         // 서버에서 투사체를 관리하므로 클라이언트에서는 이펙트만 처리
-        console.log('궁수 기본 공격 이펙트 처리');
     }
 
     

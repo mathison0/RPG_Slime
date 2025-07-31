@@ -27,6 +27,11 @@ export default class GameScene extends Phaser.Scene {
         this.spawnBarriers = null;
         this.activeWard = null;
         
+        // 직업 변경 오브 관련
+        this.jobOrbs = new Map(); // 직업 변경 오브 저장
+        this.jobOrbGroup = null; // 직업 변경 오브 물리 그룹
+        this.jobChangeUI = null; // 전직 선택 UI
+        
         // 맵 정보
         this.MAP_WIDTH = 0;
         this.MAP_HEIGHT = 0;
@@ -56,6 +61,9 @@ export default class GameScene extends Phaser.Scene {
         this.cheatManager = null;
         this.effectManager = null;
         this.projectileManager = null;
+        
+        // 전직 UI용 키 바인딩 (미리 생성)
+        this.jobChangeKeys = null;
     }
     
     init(data) {
@@ -78,6 +86,9 @@ export default class GameScene extends Phaser.Scene {
         this.otherPlayers = this.physics.add.group();
         this.enemies = this.physics.add.group();
         
+        // 직업 변경 오브 그룹 초기화
+        this.jobOrbGroup = this.physics.add.group();
+        
         // 매니저들 초기화
         this.initializeManagers();
         
@@ -97,6 +108,9 @@ export default class GameScene extends Phaser.Scene {
         
         // 탭 포커스 이벤트 처리
         this.setupTabFocusHandlers();
+        
+        // 플레이어와 직업 변경 오브 충돌 감지 설정
+        this.setupJobOrbCollision();
         
         console.log('GameScene 초기화 완료');
     }
@@ -165,6 +179,37 @@ export default class GameScene extends Phaser.Scene {
             } catch (e) {
                 console.warn('적 제거 중 오류:', e);
             }
+        }
+        
+        // 직업 변경 오브들 제거
+        if (this.jobOrbs) {
+            try {
+                this.jobOrbs.forEach(orb => {
+                    if (orb && orb.active) {
+                        orb.destroy();
+                    }
+                });
+                this.jobOrbs.clear();
+            } catch (e) {
+                console.warn('직업 변경 오브 제거 중 오류:', e);
+            }
+        }
+        
+        // 직업 변경 오브 그룹 초기화
+        if (this.jobOrbGroup) {
+            try {
+                this.jobOrbGroup.clear(false);
+            } catch (e) {
+                console.warn('직업 변경 오브 그룹 제거 중 오류:', e);
+            }
+        }
+        
+        // 전직 UI 초기화
+        if (this.jobChangeUI) {
+            if (this.jobChangeUI.container) {
+                this.jobChangeUI.container.destroy();
+            }
+            this.jobChangeUI = null;
         }
         
         // 네트워크 상태 초기화
@@ -623,6 +668,147 @@ export default class GameScene extends Phaser.Scene {
         
         // 스폰 구역 상태 체크 (경고 메시지용)
         this.checkSpawnZoneStatus();
+        
+        // 전직 UI 키 입력 처리
+        this.handleJobChangeUIInput();
+    }
+    
+    /**
+     * 플레이어와 직업 변경 오브 충돌 감지 설정
+     */
+    setupJobOrbCollision() {
+        console.log('🔧 setupJobOrbCollision 호출됨');
+        
+        if (!this.player) {
+            console.log('❌ 플레이어가 아직 생성되지 않음, 0.5초 후 재시도');
+            // 플레이어가 아직 생성되지 않았으면 잠시 후 재시도
+            setTimeout(() => {
+                this.setupJobOrbCollision();
+            }, 500);
+            return;
+        }
+        
+        if (!this.jobOrbGroup) {
+            console.log('❌ jobOrbGroup이 없음, jobOrbGroup 재생성');
+            this.jobOrbGroup = this.physics.add.group();
+        }
+        
+        // 플레이어와 오브 그룹 간의 충돌 감지 설정
+        this.physics.add.overlap(this.player, this.jobOrbGroup, (player, orb) => {
+            console.log('🎯 오브와 플레이어 충돌 감지:', orb.orbId);
+            this.handleJobOrbPickup(orb);
+        });
+        
+        console.log('✅ 직업 변경 오브 충돌 감지 설정 완료');
+    }
+    
+    /**
+     * 직업 변경 오브 픽업 처리
+     */
+    handleJobOrbPickup(orb) {
+        console.log(`직업 변경 오브 픽업 시도: ${orb.orbId}`);
+        
+        // 이미 수집된 오브인지 확인
+        if (orb.isCollected) {
+            console.log(`이미 수집된 오브입니다: ${orb.orbId}`);
+            return;
+        }
+        
+        // 즉시 수집 상태로 설정하여 중복 처리 방지
+        orb.isCollected = true;
+        
+        // 물리 바디 비활성화하여 추가 충돌 방지
+        if (orb.body) {
+            orb.body.enable = false;
+        }
+        
+        // 오브 그룹에서 즉시 제거
+        if (this.jobOrbGroup) {
+            this.jobOrbGroup.remove(orb);
+        }
+        
+        // 수집 애니메이션 시작
+        orb.collect();
+        
+        // 서버에 충돌 이벤트 전송
+        if (this.networkManager && this.networkManager.socket) {
+            this.networkManager.socket.emit('job-orb-collision', {
+                orbId: orb.orbId
+            });
+        }
+        
+        // 잠시 후 완전히 제거 (애니메이션 완료 후)
+        this.time.delayedCall(500, () => {
+            if (this.jobOrbs && this.jobOrbs.has(orb.orbId)) {
+                this.jobOrbs.delete(orb.orbId);
+            }
+            if (orb && orb.scene) {
+                orb.destroy();
+            }
+        });
+        
+        console.log(`직업 변경 오브 픽업 완료: ${orb.orbId}`);
+    }
+    
+    /**
+     * 전직 UI 키 입력 처리
+     */
+    handleJobChangeUIInput() {
+        if (!this.jobChangeUI || !this.jobChangeUI.isVisible) {
+            return;
+        }
+        
+        // 전직 UI용 키 바인딩이 없으면 생성
+        if (!this.jobChangeKeys) {
+            this.jobChangeKeys = {
+                enterKey: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER),
+                escKey: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
+            };
+        }
+
+        const enterKey = this.jobChangeKeys.enterKey;
+        const escKey = this.jobChangeKeys.escKey;
+        
+        // 엔터키로 전직 확인
+        if (Phaser.Input.Keyboard.JustDown(enterKey)) {
+            this.confirmJobChange();
+        }
+        
+        // ESC키로 전직 취소
+        if (Phaser.Input.Keyboard.JustDown(escKey)) {
+            this.cancelJobChange();
+        }
+    }
+    
+    /**
+     * 전직 확인
+     */
+    confirmJobChange() {
+        if (!this.jobChangeUI || !this.jobChangeUI.targetJobClass) {
+            return;
+        }
+        
+        const targetJob = this.jobChangeUI.targetJobClass;
+        
+        // 서버에 전직 요청
+        if (this.networkManager) {
+            this.networkManager.changeJob(targetJob);
+        }
+        
+        // UI 숨기기
+        this.networkEventManager.hideJobChangeUI();
+        
+        console.log(`전직 확인: ${targetJob}`);
+    }
+    
+    /**
+     * 전직 취소
+     */
+    cancelJobChange() {
+        // UI 숨기기
+        this.networkEventManager.hideJobChangeUI();
+        
+        console.log('전직 취소됨');
     }
 
     /**

@@ -172,8 +172,6 @@ export default class ProjectileManager {
             rotation: fallbackConfig.rotation
         };
 
-        console.log(`투사체 데이터 수신: ${jobClass}, 서버 sprite: ${sprite}, fallback sprite: ${fallbackConfig.sprite}, 최종 sprite: ${config.sprite}`);
-
         let projectile;
         
         if (config.sprite && config.sprite !== 'projectile') {
@@ -187,16 +185,12 @@ export default class ProjectileManager {
                     const angle = Math.atan2(vy, vx);
                     projectile.setRotation(angle);
                 }
-                
-                console.log(`스프라이트 투사체 생성 성공: ${config.sprite}`);
             } catch (error) {
                 console.warn(`스프라이트 로드 실패: ${config.sprite}, 원형으로 대체`);
                 // 스프라이트 로드 실패 시 원형으로 대체
                 projectile = this.scene.add.circle(x, y, config.size / 2, config.color || 0xffffff, 1);
             }
         } else {
-            // 원형 투사체 (마법사 또는 스프라이트 실패 시)
-            console.log(`원형 투사체 생성: ${jobClass}`);
             projectile = this.scene.add.circle(x, y, config.size / 2, config.color || 0xffffff, 1);
         }
 
@@ -221,8 +215,6 @@ export default class ProjectileManager {
 
         // 투사체 이펙트 추가
         this.addProjectileEffects(projectile, jobClass);
-        
-        console.log(`투사체 생성 완료: ${jobClass}, 크기: ${config.size}, 스프라이트: ${config.sprite}`);
     }
 
     /**

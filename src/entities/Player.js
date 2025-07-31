@@ -8,9 +8,7 @@ import HealthBar from '../ui/HealthBar.js';
 import SlimeJob from './jobs/SlimeJob.js';
 import MageJob from './jobs/MageJob.js';
 import AssassinJob from './jobs/AssassinJob.js';
-import NinjaJob from './jobs/NinjaJob.js';
 import WarriorJob from './jobs/WarriorJob.js';
-import MechanicJob from './jobs/MechanicJob.js';
 import ArcherJob from './jobs/ArcherJob.js';
 import SupporterJob from './jobs/SupporterJob.js';
 
@@ -37,6 +35,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.hp = this.maxHp;
         this.speed = 200;
         this.attack = 20;
+        
+        // 서버 동기화용 스탯 객체 초기화
+        this.stats = {
+            attack: 20,
+            speed: 200,
+            visionRange: 300,
+            basicAttackCooldown: 600 // 기본 공격 쿨다운 (ms)
+        };
         
         // 직업 관련
         this.jobClass = 'slime';
@@ -187,14 +193,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 case 'assassin':
                     this.job = new AssassinJob(this);
                     break;
-                case 'ninja':
-                    this.job = new NinjaJob(this);
-                    break;
                 case 'warrior':
                     this.job = new WarriorJob(this);
-                    break;
-                case 'mechanic':
-                    this.job = new MechanicJob(this);
                     break;
                 case 'archer':
                     this.job = new ArcherJob(this);
@@ -515,26 +515,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (Phaser.Input.Keyboard.JustDown(this.rKey)) {
             this.requestSkillUse('skill3');
         }
-        
-        // F키로 전직
-        if (Phaser.Input.Keyboard.JustDown(this.fKey)) {
-            this.showJobSelection();
-        }
-      
-        // I키로 무적 모드 토글
-        if (Phaser.Input.Keyboard.JustDown(this.iKey)) {
-            this.toggleInvincible();
-        }
-        
-        // L키로 레벨업 테스트
-        if (Phaser.Input.Keyboard.JustDown(this.lKey)) {
-            this.testLevelUp();
-        }
-        
-        // T키로 디버그 모드 토글
-        if (Phaser.Input.Keyboard.JustDown(this.tKey)) {
-            this.toggleDebugMode();
-        }
     }
   
         /**
@@ -756,7 +736,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 직업 변경 요청 (서버 권한 방식)
      */
     showJobSelection() {
-        const jobs = ['slime', 'assassin', 'ninja', 'warrior', 'mage', 'mechanic', 'archer', 'supporter'];
+        const jobs = ['slime', 'assassin', 'warrior', 'mage', 'archer', 'supporter'];
         const currentIndex = jobs.indexOf(this.jobClass);
         const nextIndex = (currentIndex + 1) % jobs.length;
         
@@ -910,8 +890,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (this.job && this.job.clearSkillEffects) {
             this.job.clearSkillEffects();
         }
-        
-        console.log(`플레이어 ${this.networkId || 'local'}의 지연된 스킬 이펙트들 정리 완료`);
     }
 
     /**
