@@ -250,6 +250,11 @@ class NetworkManager {
         this.socket.on('suicide-error', (data) => {
             this.emit('suicide-error', data);
         });
+
+        // 은신 종료 이벤트
+        this.socket.on('stealth-ended', (data) => {
+            this.emit('stealth-ended', data);
+        });
     }
 
     // 게임 입장

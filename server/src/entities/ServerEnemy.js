@@ -172,6 +172,10 @@ class ServerEnemy {
       if (!targetExists || targetExists.isDead) {
         // 타겟이 없거나 죽었으면 해제
         this.target = null;
+      } else if (targetExists.isStealth && targetExists.visibleToEnemies === false) {
+        // 타겟이 은신 상태가 되면 타겟 해제
+        this.target = null;
+        console.log(`몬스터 ${this.id} 타겟 해제: ${targetExists.id} (은신 상태)`);
       } else {
         // 현재 타겟과의 거리 계산
         const dx = this.target.x - this.x;
@@ -190,6 +194,9 @@ class ServerEnemy {
     for (const player of players.values()) {
       // 죽은 플레이어는 타겟에서 제외
       if (player.isDead || player.hp <= 0) continue;
+      
+      // 은신 중인 플레이어는 타겟에서 제외
+      if (player.isStealth && player.visibleToEnemies === false) continue;
       
       const dx = player.x - this.x;
       const dy = player.y - this.y;

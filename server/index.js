@@ -244,6 +244,11 @@ class GameServer {
     const allPlayers = this.gameStateManager.getAllPlayers();
     
     allPlayers.forEach(player => {
+      // 플레이어 업데이트 (은신 타이머 등)
+      if (player.job && player.job.update) {
+        player.job.update(gameConfig.SERVER.GAME_LOOP_INTERVAL);
+      }
+      
       // HP가 0 이하이고 아직 사망 처리되지 않은 플레이어 처리
       if (player.hp <= 0 && !player.isDead) {
         // HP를 정확히 0으로 설정
@@ -335,6 +340,9 @@ class GameServer {
           jobClass: player.jobClass,
           team: player.team,
           size: player.size,
+          // 은신 상태 추가
+          isStealth: player.isStealth || false,
+          visibleToEnemies: player.visibleToEnemies !== false, // 기본값은 true
           // 전체 스탯 정보 추가
           stats: {
             attack: player.attack,

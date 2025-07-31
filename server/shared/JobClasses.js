@@ -73,7 +73,9 @@ const JobClasses = {
                 damage: 50,
                 duration: 3000,
                 key: '1',
-                type: 'stealth'
+                type: 'stealth',
+                visionMultiplier: 1.3, // 시야 범위 30% 증가
+                speedMultiplier: 1.2   // 이동속도 20% 증가
             }
         ],
         basicAttackCooldown: 300,
@@ -309,7 +311,8 @@ const JobClasses = {
                 duration: 5000,
                 effect: 'attack_speed_boost',
                 key: '2',
-                type: 'focus'
+                type: 'focus',
+                attackSpeedMultiplier: 3.0 // 공격속도 3배 증가
             }
         ],
         basicAttackCooldown: 700,

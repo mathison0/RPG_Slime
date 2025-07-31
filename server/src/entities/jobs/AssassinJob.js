@@ -64,14 +64,35 @@ class AssassinJob extends BaseJob {
         this.player.isStealth = true;
         this.player.stealthStartTime = Date.now();
         this.player.stealthDuration = skillInfo.duration;
+        this.player.stealthEndTime = this.player.stealthStartTime + skillInfo.duration;
+        
+        // 다른 팀에게는 보이지 않도록 설정
+        this.player.visibleToEnemies = false;
 
-        console.log(`어쌔신 은신 발동! 지속시간: ${skillInfo.duration}ms`);
+        // 스킬 정보에서 배율 가져오기
+        const stealthSkillInfo = this.getSkillInfo('stealth');
+        const speedMultiplier = stealthSkillInfo?.speedMultiplier || 1.2;
+        const visionMultiplier = stealthSkillInfo?.visionMultiplier || 1.3;
+
+        // 은신 중 이동속도 증가
+        this.player.originalSpeed = this.player.speed || 1;
+        this.player.speed = this.player.originalSpeed * speedMultiplier;
+
+        // 은신 중 시야 범위 증가
+        this.player.originalVisionRange = this.player.visionRange || 1;
+        this.player.visionRange = this.player.originalVisionRange * visionMultiplier;
+
+        console.log(`어쌔신 은신 발동! 지속시간: ${skillInfo.duration}ms, 종료시간: ${this.player.stealthEndTime}`);
 
         return {
             success: true,
             skillType: 'stealth',
             duration: skillInfo.duration,
+            startTime: this.player.stealthStartTime,
+            endTime: this.player.stealthEndTime,
             bonusDamage: skillInfo.damage,
+            speedMultiplier: speedMultiplier,
+            visionMultiplier: visionMultiplier,
             caster: {
                 id: this.player.id,
                 x: this.player.x,
@@ -110,23 +131,20 @@ class AssassinJob extends BaseJob {
 
         this.lastBasicAttackTime = Date.now();
 
-        let damage = this.player.attack;
+        // 어쌔신은 쌍단검으로 각각 0.5배 데미지의 두 번 공격
+        let damage = this.player.attack; // 기본 데미지 (0.5 + 0.5 = 1.0)
         let wasStealthAttack = false;
         
-        // 은신 중이면 보너스 데미지 적용 후 은신 해제
+        // 은신 중이면 보너스 데미지 추가 적용
         if (this.player.isStealth) {
             const skillInfo = this.getSkillInfo('stealth');
             if (skillInfo) {
-                damage += skillInfo.damage;
+                damage += skillInfo.damage; // 은신 보너스 데미지 추가
             }
-            // 공격 후 은신 해제
-            this.player.isStealth = false;
-            this.player.stealthStartTime = 0;
-            this.player.stealthDuration = 0;
             wasStealthAttack = true;
         }
 
-        console.log(`어쌔신 기본 공격 발동! 데미지: ${damage}, 은신 공격: ${wasStealthAttack}`);
+        console.log(`어쌔신 쌍단검 공격 발동! 데미지: ${damage} (각 0.5배씩), 은신 공격: ${wasStealthAttack}`);
 
         return {
             success: true,
@@ -151,12 +169,45 @@ class AssassinJob extends BaseJob {
         // 은신 지속시간 체크
         if (this.player.isStealth) {
             const now = Date.now();
-            if (now - this.player.stealthStartTime >= this.player.stealthDuration) {
-                this.player.isStealth = false;
-                this.player.stealthStartTime = 0;
-                this.player.stealthDuration = 0;
-                console.log('어쌔신 은신 자동 해제');
+            if (now >= this.player.stealthEndTime) {
+                this.endStealth();
             }
+        }
+    }
+
+    /**
+     * 은신 상태 종료
+     */
+    endStealth() {
+        console.log('어쌔신 은신 자동 해제');
+        
+        this.player.isStealth = false;
+        this.player.stealthStartTime = 0;
+        this.player.stealthDuration = 0;
+        this.player.stealthEndTime = 0;
+        
+        // 이동속도 복원
+        if (this.player.originalSpeed !== undefined) {
+            this.player.speed = this.player.originalSpeed;
+            // originalSpeed를 undefined로 설정하지 않음 (클라이언트 동기화를 위해)
+        }
+        
+        // 시야 범위 복원
+        if (this.player.originalVisionRange !== undefined) {
+            this.player.visionRange = this.player.originalVisionRange;
+            // originalVisionRange를 undefined로 설정하지 않음 (클라이언트 동기화를 위해)
+        }
+        
+        // 다시 모든 팀에게 보이도록 설정
+        this.player.visibleToEnemies = true;
+
+        // 모든 클라이언트에게 은신 종료 이벤트 브로드캐스트
+        if (this.player.socket && this.player.socket.server) {
+            this.player.socket.server.emit('stealth-ended', {
+                playerId: this.player.id,
+                endTime: Date.now(),
+                originalVisionRange: this.player.originalVisionRange // 원본 시야 범위 포함
+            });
         }
     }
 }

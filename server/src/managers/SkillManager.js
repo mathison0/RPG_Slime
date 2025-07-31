@@ -525,7 +525,31 @@ class SkillManager {
         
         // 기본 공격 사용 시 은신 해제
         if (player.isStealth) {
-          player.isStealth = false;
+          console.log(`어쌔신 ${player.id} 기본 공격으로 은신 해제`);
+          
+          // 스킬 정보에서 배율 가져오기
+          const stealthSkillInfo = getSkillInfo(player.jobClass, 'stealth');
+          const visionMultiplier = stealthSkillInfo?.visionMultiplier || 1.3;
+          
+          // 원본 시야 범위 저장
+          const originalVisionRange = player.originalVisionRange || Math.round(player.visionRange / visionMultiplier);
+          
+          // 서버 플레이어의 은신 상태 및 스탯 복원
+          player.job.endStealth(); 
+          
+          // 다시 모든 팀에게 보이도록 설정
+          player.visibleToEnemies = true;
+          
+          // 클라이언트에게 은신 해제 이벤트 전송
+          if (this.gameStateManager.io) {
+            this.gameStateManager.io.emit('stealth-ended', {
+              playerId: player.id,
+              endTime: Date.now(),
+              originalVisionRange: originalVisionRange
+            });
+          } else {
+            console.log('gameStateManager.io가 null입니다');
+          }
         }
         
         return result;
@@ -653,7 +677,7 @@ class SkillManager {
   }
 
   /**
-   * 어쌔신 기본 공격 (연속 공격)
+   * 어쌔신 기본 공격 (직사각형 범위)
    */
   applyAssassinBasicAttack(player, damage, x, y, targetX, targetY) {
     const damageResult = {
@@ -662,16 +686,62 @@ class SkillManager {
       totalDamage: 0
     };
 
-    const range = 100; // 어쌔신 기본 공격 범위
-    const angleOffset = Math.PI / 4; // 45도 부채꼴
+    const width = 40; // 직사각형 너비 (클라이언트 이펙트와 맞춤)
+    const height = 60; // 직사각형 높이 (클라이언트 이펙트와 맞춤)
 
-    // 근접 부채꼴 공격 적용
-    const meleeResult = this.applyMeleeBasicAttack(player, damage, x, y, targetX, targetY);
+    // 적 대상
+    const enemies = this.gameStateManager.enemies;
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    
+    enemyArray.forEach(enemy => {
+      if (enemy.isDead) return;
 
-    // 결과 복사
-    damageResult.affectedEnemies = meleeResult.affectedEnemies;
-    damageResult.affectedPlayers = meleeResult.affectedPlayers;
-    damageResult.totalDamage = meleeResult.totalDamage;
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveWidth = width + (enemy.size || 32);
+      const effectiveHeight = height + (enemy.size || 32);
+      
+      if (this.isInRectangleRange(x, y, enemy.x, enemy.y, targetX, targetY, effectiveWidth, effectiveHeight)) {
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    // 다른 플레이어 대상
+    const players = this.gameStateManager.players;
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+    
+    playerArray.forEach(targetPlayer => {
+      if (targetPlayer.isDead || targetPlayer.team === player.team || targetPlayer.id === player.id) return;
+
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveWidth = width + (targetPlayer.size || 32);
+      const effectiveHeight = height + (targetPlayer.size || 32);
+      
+      if (this.isInRectangleRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, effectiveWidth, effectiveHeight)) {
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+        
+        if (result.success) {
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
 
     return damageResult;
   }
@@ -1015,16 +1085,18 @@ class SkillManager {
 
     switch (skillType) {
       case 'stealth':
-        player.isStealth = true;
-        player.stealthStartTime = Date.now();
-        player.stealthDuration = skillInfo.duration || 5000;
-        
-        setTimeout(() => {
-          if (player.isDead) return;
-          if (player.isStealth) {
-            player.isStealth = false;
-          }
-        }, player.stealthDuration);
+        // 은신 스킬 처리
+        const stealthResult = player.job.useSkill('stealth');
+        if (stealthResult.success) {
+          // 은신 상태 정보를 damageResult에 포함
+          damageResult.stealthData = {
+            startTime: stealthResult.startTime,
+            endTime: stealthResult.endTime,
+            duration: stealthResult.duration,
+            speedMultiplier: stealthResult.speedMultiplier,
+            visionMultiplier: stealthResult.visionMultiplier
+          };
+        }
         break;
     }
 
@@ -1065,9 +1137,12 @@ class SkillManager {
         // 구르기는 데미지 없음, 이동 효과만
         break;
       case 'focus':
+        // 스킬 정보에서 배율 가져오기
+        const attackSpeedMultiplier = skillInfo?.attackSpeedMultiplier || 2.0;
+        
         // 집중 스킬 - 공격속도 증가 버프 적용
         const focusEffect = {
-          attackSpeedMultiplier: 2.0 // 공격속도 2배 증가
+          attackSpeedMultiplier: attackSpeedMultiplier
         };
         player.applyBuff('attack_speed_boost', skillInfo.duration, focusEffect);
         
@@ -1575,6 +1650,37 @@ class SkillManager {
       clearInterval(this.fieldTickInterval);
       this.fieldTickInterval = null;
     }
+  }
+
+  /**
+   * 직사각형 범위 체크 (어쌔신용)
+   */
+  isInRectangleRange(centerX, centerY, targetX, targetY, mouseX, mouseY, width, height) {
+    // 마우스 방향으로의 각도 계산
+    const angleToMouse = Math.atan2(mouseY - centerY, mouseX - centerX);
+    
+    // 직사각형의 중심점을 마우스 방향으로 이동
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    
+    // 직사각형의 중심점 계산 (플레이어 위치에서 마우스 방향으로)
+    const rectCenterX = centerX + Math.cos(angleToMouse) * halfHeight;
+    const rectCenterY = centerY + Math.sin(angleToMouse) * halfHeight;
+    
+    // 목표점을 직사각형 중심 기준으로 변환
+    const relativeX = targetX - rectCenterX;
+    const relativeY = targetY - rectCenterY;
+    
+    // 직사각형을 마우스 방향으로 회전
+    const cos = Math.cos(-angleToMouse);
+    const sin = Math.sin(-angleToMouse);
+    
+    // 회전된 좌표 계산
+    const rotatedX = relativeX * cos - relativeY * sin;
+    const rotatedY = relativeX * sin + relativeY * cos;
+    
+    // 직사각형 범위 내에 있는지 확인
+    return Math.abs(rotatedX) <= halfWidth && Math.abs(rotatedY) <= halfHeight;
   }
 
   /**
