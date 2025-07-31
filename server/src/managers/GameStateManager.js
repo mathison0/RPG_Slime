@@ -358,8 +358,6 @@ class GameStateManager {
    * @returns {Object} - 처리 결과 { success: boolean, actualDamage: number, reason?: string }
    */
   takeDamage(attacker, target, damage) {
-    console.log(`takeDamage 호출: ${attacker.id} → ${target.id}, 데미지: ${damage}`);
-    
     // 기본 유효성 검사
     if (!attacker || !target || damage <= 0) {
       console.log(`takeDamage 실패: 유효하지 않은 파라미터`);
@@ -374,7 +372,6 @@ class GameStateManager {
     // 무적 상태 체크 (플레이어만)
     if (target.isInvincible === true) {
       // 무적 상태일 때 attack-invalid 이벤트 브로드캐스트
-      console.log(`무적 상태로 공격 무효: ${attacker.id} → ${target.id}`);
       if (this.io) {
         // 공격자가 플레이어인 경우: 공격자에게 메시지 전송
         // 공격자가 몬스터인 경우: 피격자(플레이어)에게 메시지 전송
@@ -385,8 +382,6 @@ class GameStateManager {
           y: target.y,
           message: '무적!'
         });
-        
-        console.log(`무적 메시지 전송: ${recipientId}에게 (공격자: ${attacker.id}, 피격자: ${target.id})`);
       }
       return { success: false, actualDamage: 0, reason: 'invincible' };
     }
@@ -405,7 +400,6 @@ class GameStateManager {
             message: '공격 무효!'
           });
         }
-        console.log(`레벨 다름으로 공격 무효: 공격자 레벨 ${attackerLevel}, 타겟 레벨 ${targetLevel}`);
         return { success: false, actualDamage: 0, reason: 'different level' };
       }
     }
@@ -413,57 +407,19 @@ class GameStateManager {
     // 실제 데미지 적용
     let actualDamage = damage;
     
-    console.log(`takeDamage 디버그: target.id=${target.id}, activeEffects존재=${!!target.activeEffects}, shield보유=${target.activeEffects ? target.activeEffects.has('shield') : 'N/A'}`);
-    
     // 보호막 효과 체크 (마법사의 보호막)
     if (target.activeEffects && target.activeEffects.has('shield')) {
-      console.log(`보호막으로 데미지 무효: ${attacker.id} → ${target.id}, 데미지: ${damage}`);
-      
-      // 보호막 폭발 범위 정보 가져오기
-      const { getJobInfo } = require('../../shared/JobClasses');
-      const mageJobInfo = getJobInfo('mage');
-      const shieldSkill = mageJobInfo.skills.find(skill => skill.type === 'shield');
-      const knockbackDistance = shieldSkill?.knockbackDistance || 80;
-      
-      // 보호막 제거
-      target.activeEffects.delete('shield');
-      target.shieldStartTime = null;
-      target.shieldDuration = null;
-      
-      console.log(`보호막 제거 완료: shield보유=${target.activeEffects.has('shield')}`);
-      
-      // 데미지 무효화
       actualDamage = 0;
-      
-      // 보호막 폭발 효과 - 주변 적들을 밀어내기
-      this.triggerShieldExplosion(target, attacker);
       
       // 보호막 무효화 메시지 브로드캐스트
       if (this.io) {
-        console.log(`보호막 폭발 이벤트 전송 시작: playerId=${target.id}, 위치=(${target.x}, ${target.y})`);
-        
         this.io.to(target.id).emit('attack-invalid', {
           x: target.x,
           y: target.y,
           message: '보호막!'
         });
         
-        // 보호막 폭발 이펙트 브로드캐스트 (범위 정보 포함)
-        this.io.emit('shield-exploded', {
-          playerId: target.id,
-          x: target.x,
-          y: target.y,
-          knockbackDistance: knockbackDistance
-        });
-        
-        console.log(`보호막 폭발 이벤트 브로드캐스트 완료`);
-        
-        // 보호막 이펙트 제거 이벤트도 전송
-        this.io.to(target.id).emit('shield-removed', {
-          playerId: target.id
-        });
-        
-        console.log(`보호막 제거 이벤트 전송 완료: playerId=${target.id}`);
+        console.log(`보호막 데미지 차단 메시지 전송: playerId=${target.id}`);
       }
       
       return { success: true, actualDamage: 0, newHp: target.hp, reason: 'shield blocked' };
@@ -476,7 +432,6 @@ class GameStateManager {
     // 몬스터가 피격당한 경우 공격자를 타겟으로 설정
     if (target.mapLevel !== undefined && attacker.team !== undefined) {
       target.target = attacker;
-      console.log(`몬스터 ${target.id}가 ${attacker.id}에게 피격당해 타겟으로 설정`);
     }
 
     // 플레이어가 피격당한 경우 데미지 소스 추적
@@ -553,8 +508,6 @@ class GameStateManager {
         });
       }
     }
-
-    console.log(`데미지 처리: ${attacker.id} → ${target.id}, 데미지: ${actualDamage}, 남은 HP: ${target.hp}`);
     
     return { 
       success: true, 
@@ -691,81 +644,7 @@ class GameStateManager {
     }
   }
 
-  /**
-   * 보호막 폭발 효과 - 주변 적들을 밀어내기
-   * @param {Object} shieldPlayer - 보호막을 가진 플레이어
-   * @param {Object} attacker - 공격자 (몬스터)
-   */
-  triggerShieldExplosion(shieldPlayer, attacker) {
-    const { getJobInfo } = require('../../shared/JobClasses');
-    const mageJobInfo = getJobInfo('mage');
-    const shieldSkill = mageJobInfo.skills.find(skill => skill.type === 'shield');
-    const knockbackDistance = shieldSkill?.knockbackDistance || 80;
-    
-    console.log(`보호막 폭발! 위치: (${shieldPlayer.x}, ${shieldPlayer.y}), 밀어내기 거리: ${knockbackDistance}`);
-    
-    // 주변 적들을 찾아서 밀어내기
-    const affectedEnemies = [];
-    
-    // 현재 맵의 모든 몬스터들 확인
-    if (this.enemyManager && this.enemyManager.enemies) {
-      this.enemyManager.enemies.forEach(enemy => {
-        if (enemy.isDead) return;
-        
-        // 보호막 플레이어와 몬스터 사이의 거리 계산
-        const distance = Math.sqrt(
-          Math.pow(enemy.x - shieldPlayer.x, 2) + 
-          Math.pow(enemy.y - shieldPlayer.y, 2)
-        );
-        
-        // 밀어내기 범위 내에 있는 몬스터만 처리
-        if (distance <= knockbackDistance && distance > 0) {
-          // 밀어내는 방향 계산
-          const angle = Math.atan2(enemy.y - shieldPlayer.y, enemy.x - shieldPlayer.x);
-          
-          // 새로운 위치 계산
-          let newX = shieldPlayer.x + Math.cos(angle) * knockbackDistance;
-          let newY = shieldPlayer.y + Math.sin(angle) * knockbackDistance;
-          
-          // 맵 경계 체크 (게임 설정에서 맵 크기 가져오기)
-          const gameConfig = require('../config/GameConfig');
-          const mapWidth = gameConfig.mapSize?.width || 3000;
-          const mapHeight = gameConfig.mapSize?.height || 3000;
-          
-          newX = Math.max(50, Math.min(mapWidth - 50, newX));
-          newY = Math.max(50, Math.min(mapHeight - 50, newY));
-          
-          // 벽 충돌 체크는 단순화 (실제로는 맵 데이터가 필요)
-          // 여기서는 기본적인 경계 체크만 수행
-          
-          // 몬스터 위치 업데이트
-          enemy.x = newX;
-          enemy.y = newY;
-          
-          affectedEnemies.push({
-            enemyId: enemy.id,
-            newX: newX,
-            newY: newY,
-            knockbackDistance: distance
-          });
-          
-          console.log(`몬스터 ${enemy.id} 밀어내기: (${enemy.x}, ${enemy.y}) → (${newX}, ${newY})`);
-        }
-      });
-    }
-    
-    // 밀어내기 효과 브로드캐스트
-    if (this.io && affectedEnemies.length > 0) {
-      this.io.emit('enemies-knockback', {
-        shieldPlayerId: shieldPlayer.id,
-        centerX: shieldPlayer.x,
-        centerY: shieldPlayer.y,
-        affectedEnemies: affectedEnemies
-      });
-    }
-    
-    console.log(`보호막 폭발 완료: ${affectedEnemies.length}마리 몬스터 밀어냄`);
-  }
+
 }
 
 module.exports = GameStateManager; 

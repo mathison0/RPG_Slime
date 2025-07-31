@@ -61,13 +61,9 @@ export default class NetworkEventManager {
         this.networkManager.off('attack-invalid');
         this.networkManager.off('enemy-stunned');
         this.networkManager.off('magic-missile-explosion');
-        this.networkManager.off('shield-exploded');
         this.networkManager.off('shield-removed');
-        this.networkManager.off('enemies-knockback');
         this.networkManager.off('stealth-ended');
-        
-        console.log('NetworkEventManager: 기존 이벤트 리스너 제거 완료');
-        
+      
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
             this.handleGameJoined(data);
@@ -99,6 +95,14 @@ export default class NetworkEventManager {
         
         this.networkManager.on('player-damaged', (data) => {
             this.handlePlayerDamaged(data);
+        });
+        
+        this.networkManager.on('player-healed', (data) => {
+            this.handlePlayerHealed(data);
+        });
+        
+        this.networkManager.on('player-buffed', (data) => {
+            this.handlePlayerBuffed(data);
         });
         
         this.networkManager.on('ward-destroyed', (data) => {
@@ -147,20 +151,14 @@ export default class NetworkEventManager {
             this.handleMagicMissileExplosion(data);
         });
         
-        // 보호막 폭발 이벤트
-        this.networkManager.on('shield-exploded', (data) => {
-            this.handleShieldExploded(data);
-        });
+
         
         // 보호막 제거 이벤트
         this.networkManager.on('shield-removed', (data) => {
             this.handleShieldRemoved(data);
         });
         
-        // 몬스터 밀어내기 이벤트
-        this.networkManager.on('enemies-knockback', (data) => {
-            this.handleEnemiesKnockback(data);
-        });
+
         
         // 슬로우 효과 이벤트 리스너 추가
         this.networkManager.on('enemy-slowed', (data) => {
@@ -1242,6 +1240,166 @@ export default class NetworkEventManager {
     }
 
     /**
+     * 플레이어 힐 처리
+     */
+    handlePlayerHealed(data) {
+        const targetPlayer = data.playerId === this.networkManager.playerId 
+            ? this.scene.player 
+            : this.scene.otherPlayers?.getChildren().find(p => p.networkId === data.playerId);
+        
+        if (!targetPlayer) return;
+        
+        // 본인 플레이어인 경우 체력 정보 업데이트
+        if (targetPlayer === this.scene.player) {
+            targetPlayer.setHealthFromServer(data.newHp, data.maxHp);
+            targetPlayer.updateUI();
+        }
+        
+        // 힐 텍스트 표시 (녹색)
+        if (data.healAmount > 0) {
+            this.scene.effectManager.showHealText(targetPlayer.x, targetPlayer.y, data.healAmount);
+        }
+        
+        // 힐 상태 설정 및 노란색 tint 업데이트
+        targetPlayer.isHealed = true;
+        if (targetPlayer.updateTint) {
+            targetPlayer.updateTint();
+        }
+        
+        // 300ms 후 힐 상태 해제
+        this.scene.time.delayedCall(300, () => {
+            if (targetPlayer && targetPlayer.active && !targetPlayer.isDead) {
+                targetPlayer.isHealed = false;
+                if (targetPlayer.updateTint) {
+                    targetPlayer.updateTint();
+                }
+            }
+        });
+    }
+
+    /**
+     * 플레이어 버프 처리 - 얼음 장판의 슬로우와 동일한 로직
+     */
+    handlePlayerBuffed(data) {
+        console.log('[handlePlayerBuffed] 플레이어 버프 효과 받음:', data);
+        console.log('[handlePlayerBuffed] 플레이어 버프 효과 처리 시작');
+        const { playerId, effectId, speedMultiplier, attackSpeedMultiplier, duration } = data;
+        
+        const targetPlayer = playerId === this.networkManager.playerId 
+            ? this.scene.player 
+            : this.scene.otherPlayers?.getChildren().find(p => p.networkId === playerId);
+        
+        if (targetPlayer) {
+            console.log(`[handlePlayerBuffed] 대상 플레이어 발견: ${playerId}, isMainPlayer: ${targetPlayer === this.scene.player}`);
+            
+            // 버프 해제인지 확인 (speedMultiplier가 1이고 duration이 0이면 해제)
+            if (speedMultiplier === 1 && attackSpeedMultiplier === 1 && duration === 0) {
+                console.log(`[handlePlayerBuffed] 버프 해제 처리: ${playerId}`);
+                
+                // 버프 효과 해제 (슬로우 해제와 동일한 방식)
+                if (targetPlayer.buffEffects) {
+                    targetPlayer.buffEffects = targetPlayer.buffEffects.filter(effect => effect.id !== effectId);
+                }
+                
+                // 다른 버프 효과가 없으면 버프 tint 상태 해제
+                if (!targetPlayer.buffEffects || targetPlayer.buffEffects.length === 0) {
+                    console.log(`[handlePlayerBuffed] 버프 틴트 해제: ${playerId}`);
+                    targetPlayer.isBuffedTint = false;
+                    if (targetPlayer.updateTint) {
+                        targetPlayer.updateTint();
+                    }
+                    
+                    // 실제 버프 시스템에서도 제거 (메인 플레이어인 경우)
+                    if (targetPlayer === this.scene.player && targetPlayer.buffs) {
+                        targetPlayer.buffs.clear();
+                    }
+                }
+                
+                console.log(`[handlePlayerBuffed] 버프 해제 완료: ${playerId}`);
+            } else {
+                console.log(`[handlePlayerBuffed] 버프 적용 처리: ${playerId}, 속도=${speedMultiplier}, 공격속도=${attackSpeedMultiplier}`);
+                
+                // 버프 효과 적용 (슬로우 적용과 동일한 방식)
+                if (!targetPlayer.buffEffects) {
+                    targetPlayer.buffEffects = [];
+                }
+                
+                const buffEffect = {
+                    id: effectId,
+                    speedMultiplier: speedMultiplier,
+                    attackSpeedMultiplier: attackSpeedMultiplier,
+                    duration: duration,
+                    startTime: Date.now()
+                };
+                
+                targetPlayer.buffEffects.push(buffEffect);
+                
+                // 버프 tint 상태 설정 (슬로우와 동일한 방식)
+                console.log(`[handlePlayerBuffed] 버프 틴트 적용: ${playerId}`);
+                targetPlayer.isBuffedTint = true;
+                if (targetPlayer.updateTint) {
+                    targetPlayer.updateTint();
+                }
+                
+                // 실제 버프 시스템에도 적용 (메인 플레이어인 경우)
+                if (targetPlayer === this.scene.player && targetPlayer.applyBuff) {
+                    const effect = {
+                        speedMultiplier: speedMultiplier,
+                        attackSpeedMultiplier: attackSpeedMultiplier
+                    };
+                    targetPlayer.applyBuff('speed_attack_boost', duration, effect);
+                    console.log(`[handlePlayerBuffed] 실제 버프 시스템 적용: ${playerId}`);
+                }
+                
+                // 버프 효과 메시지 표시
+                if (this.scene.effectManager) {
+                    this.scene.effectManager.showSkillMessage(targetPlayer.x, targetPlayer.y, '버프!');
+                }
+                
+                // 절대 시간 기준 타이머 매니저 사용 (슬로우와 동일한 방식)
+                const timerManager = getGlobalTimerManager();
+                const targetEndTime = Date.now() + duration;
+                const eventId = timerManager.addEvent(targetEndTime, () => {
+                    if (targetPlayer.active) {
+                        console.log(`[handlePlayerBuffed] 타이머로 버프 해제: ${playerId}`);
+                        
+                        // 버프 효과 제거
+                        targetPlayer.buffEffects = targetPlayer.buffEffects.filter(effect => effect.id !== effectId);
+                        
+                        // 다른 버프 효과가 없으면 버프 tint 상태 해제
+                        if (targetPlayer.buffEffects.length === 0) {
+                            targetPlayer.isBuffedTint = false;
+                            if (targetPlayer.updateTint) {
+                                targetPlayer.updateTint();
+                            }
+                            
+                            // 실제 버프 시스템에서도 제거
+                            if (targetPlayer === this.scene.player && targetPlayer.buffs) {
+                                targetPlayer.buffs.clear();
+                            }
+                        }
+                    }
+                });
+                
+                // 호환성을 위한 타이머 객체
+                const buffEffectTimer = {
+                    remove: () => timerManager.removeEvent(eventId)
+                };
+                
+                if (targetPlayer.delayedSkillTimers) {
+                    targetPlayer.delayedSkillTimers.add(buffEffectTimer);
+                }
+                
+                console.log(`[handlePlayerBuffed] 버프 적용 완료: ${playerId}, 타이머 설정됨`);
+            }
+        } else {
+            console.warn(`[handlePlayerBuffed] 대상 플레이어를 찾을 수 없음: ${playerId}`);
+        }
+    }
+
+
+
+    /**
      * 와드 파괴 처리
      */
     handleWardDestroyed(data) {
@@ -2043,6 +2201,16 @@ export default class NetworkEventManager {
                     player.applyBuff('attack_speed_boost', data.skillInfo.duration, focusEffect);
                 }
                 break;
+            case 'heal_field':
+                if (player.job.showHealFieldEffect) {
+                    player.job.showHealFieldEffect(data);
+                }
+                break;
+            case 'buff_field':
+                if (player.job.showBuffFieldEffect) {
+                    player.job.showBuffFieldEffect(data);
+                }
+                break;
         }
     }
 
@@ -2549,92 +2717,9 @@ export default class NetworkEventManager {
         return freezeSkills.includes(skillType);
     }
 
-    handleShieldExploded(data) {
-        console.log('보호막 폭발 이벤트 받음 - 상세 데이터:', JSON.stringify(data, null, 2));
-        
-        // 폭발 이펙트 생성 (서버에서 받은 범위 사용)
-        const explosionRadius = data.knockbackDistance || 80; // 서버에서 받은 밀어내기 거리와 동일한 범위
-        const explosion = this.scene.add.circle(data.x, data.y, explosionRadius, 0x00ffff, 0.4);
-        explosion.setDepth(750);
-        explosion.setStrokeStyle(4, 0x00ffff, 0.8);
-        
-        console.log(`보호막 폭발 이펙트 생성: 위치=(${data.x}, ${data.y}), 반지름=${explosionRadius}`);
-        
-        // 폭발 애니메이션
-        this.scene.tweens.add({
-            targets: explosion,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            alpha: 0,
-            duration: 600,
-            ease: 'Power2',
-            onComplete: () => {
-                explosion.destroy();
-                console.log('보호막 폭발 애니메이션 완료');
-            }
-        });
-        
-        // 폭발 메시지 표시
-        this.scene.effectManager.showSkillMessage(
-            data.x, 
-            data.y, 
-            '보호막 폭발!',
-            { 
-                fill: '#00ffff',
-                fontSize: '16px',
-                fontStyle: 'bold'
-            }
-        );
-    }
 
-    handleEnemiesKnockback(data) {
-        console.log('몬스터 밀어내기 이벤트 받음:', data);
-        
-        // 각 몬스터에 대해 밀어내기 애니메이션 적용
-        data.affectedEnemies.forEach(enemyData => {
-            const enemy = this.scene.enemies?.getChildren().find(e => e.networkId === enemyData.enemyId);
-            if (enemy) {
-                // 현재 위치에서 새 위치로 밀어내기 애니메이션
-                this.scene.tweens.add({
-                    targets: enemy,
-                    x: enemyData.newX,
-                    y: enemyData.newY,
-                    duration: 300,
-                    ease: 'Power2',
-                    onUpdate: () => {
-                        // 물리 바디 위치 동기화
-                        if (enemy.body) {
-                            enemy.body.reset(enemy.x, enemy.y);
-                        }
-                        // 체력바 위치 업데이트
-                        if (enemy.updateHealthBar) {
-                            enemy.updateHealthBar();
-                        }
-                    },
-                    onComplete: () => {
-                        // 밀어내기 완료 후 서버 위치와 동기화
-                        if (enemy.body) {
-                            enemy.body.reset(enemyData.newX, enemyData.newY);
-                        }
-                    }
-                });
-                
-                // 밀어내기 이펙트 (작은 폭발 효과)
-                const knockbackEffect = this.scene.add.circle(enemy.x, enemy.y, 15, 0x00ffff, 0.6);
-                knockbackEffect.setDepth(750);
-                this.scene.tweens.add({
-                    targets: knockbackEffect,
-                    scaleX: 2,
-                    scaleY: 2,
-                    alpha: 0,
-                    duration: 400,
-                    onComplete: () => {
-                        knockbackEffect.destroy();
-                    }
-                });
-            }
-        });
-    }
+
+
 
     handleShieldRemoved(data) {
         console.log('보호막 제거 이벤트 받음:', data);

@@ -18,8 +18,8 @@ const JobClasses = {
         name: '슬라임',
         description: '기본 직업. 균형잡힌 스탯과 범위 공격 스킬을 가지고 있습니다.',
         baseStats: {
-            hp: 100,
-            attack: 5,
+            hp: 200,
+            attack: 10,
             speed: 200,
             visionRange: 300
         },
@@ -29,7 +29,7 @@ const JobClasses = {
             speed: 0
         },
         projectile: {
-            speed: 350,
+            speed: 150,
             size: 12,
             maxDistance: 250
         },
@@ -38,14 +38,14 @@ const JobClasses = {
                 name: '퍼지기',
                 description: '주변 범위에 데미지를 입히는 슬라임 스킬입니다.',
                 cooldown: 1000,
-                damage: 'attack',
+                damage: 'attack * 2.0',
                 range: 150,
                 duration: 400,
                 key: '1',
                 type: 'spread'
             },
         ],
-        basicAttackCooldown: 600,
+        basicAttackCooldown: 800,
         color: 0x00ff00,
         maxLevel: 50
     },
@@ -54,23 +54,23 @@ const JobClasses = {
         name: '어쌔신',
         description: '은신과 기습 공격에 특화된 직업입니다.',
         baseStats: {
-            hp: 80,
-            attack: 25,
+            hp: 100,
+            attack: 10,
             speed: 250,
-            visionRange: 320
+            visionRange: 450
         },
         levelGrowth: {
-            hp: 15,
-            attack: 7,
-            speed: 0
+            hp: 10,
+            attack: 1,
+            speed: 5
         },
         projectile: null, // 근접 직업
         skills: [
             {
                 name: '은신',
                 description: '3초간 투명해져서 다음 공격에 추가 데미지를 입힙니다.',
-                cooldown: 10000,
-                damage: 50,
+                cooldown: 20000,
+                damage: 'attack * 5.0',
                 duration: 3000,
                 key: '1',
                 type: 'stealth',
@@ -78,7 +78,7 @@ const JobClasses = {
                 speedMultiplier: 1.2   // 이동속도 20% 증가
             }
         ],
-        basicAttackCooldown: 300,
+        basicAttackCooldown: 250,
         color: 0x000000,
         maxLevel: 50
     },
@@ -88,32 +88,32 @@ const JobClasses = {
         description: '빠른 은신과 치명적인 기습에 특화된 직업입니다.',
         baseStats: {
             hp: 75,
-            attack: 28,
-            speed: 260,
-            visionRange: 340
+            attack: 10,
+            speed: 230,
+            visionRange: 400
         },
         levelGrowth: {
-            hp: 12,
-            attack: 8,
+            hp: 7.5,
+            attack: 1,
             speed: 0
         },
         projectile: {
-            speed: 450,
+            speed: 300,
             size: 18,
-            maxDistance: 300
+            maxDistance: 200
         },
         skills: [
             {
                 name: '그림자 은신',
                 description: '3초간 투명해져서 다음 공격에 더 큰 추가 데미지를 입힙니다.',
-                cooldown: 8000,
-                damage: 60,
+                cooldown: 20000,
+                damage: 'attack * 5.0',
                 duration: 3000,
                 key: '1',
                 type: 'stealth'
             }
         ],
-        basicAttackCooldown: 500,
+        basicAttackCooldown: 400,
         color: 0x000000,
         maxLevel: 50
     },
@@ -122,14 +122,14 @@ const JobClasses = {
         name: '전사',
         description: '높은 체력과 방어력을 가진 근접 전투 전문가입니다.',
         baseStats: {
-            hp: 150,
-            attack: 30,
+            hp: 350,
+            attack: 10,
             speed: 180,
-            visionRange: 250
+            visionRange: 300
         },
         levelGrowth: {
-            hp: 30,
-            attack: 6,
+            hp: 35,
+            attack: 1,
             speed: 0
         },
         projectile: null, // 근접 직업
@@ -147,11 +147,11 @@ const JobClasses = {
             {
                 name: '휩쓸기',
                 description: '부채꼴 범위 공격으로 적을 기절시킵니다.',
-                cooldown: 3000,
-                damage: 'attack',
-                range: 100,
+                cooldown: 7000,
+                damage: 'attack * 2.0',
+                range: 150,
                 angleOffset: Math.PI / 4, 
-                delay: 1000,
+                delay: 500,
                 afterDelay: 300,
                 stunDuration: 2500,
                 key: 'E',
@@ -160,18 +160,18 @@ const JobClasses = {
             {
                 name: '찌르기',
                 description: '직사각형 범위 공격으로 강력한 데미지를 입힙니다.',
-                cooldown: 4000,
-                damage: 'attack * 3',
+                cooldown: 10000,
+                damage: 'attack * 7.0',
                 range: 200,
                 width: 50,
                 delay: 1500,
                 afterDelay: 800,
-                stunDuration: 1000,
+                stunDuration: 1200,
                 key: 'R',
                 type: 'thrust'
             }
         ],
-        basicAttackCooldown: 800,
+        basicAttackCooldown: 1000,
         color: 0xff0000,
         maxLevel: 50
     },
@@ -180,14 +180,14 @@ const JobClasses = {
         name: '마법사',
         description: '다양한 마법 스킬과 원거리 공격에 특화된 직업입니다.',
         baseStats: {
-            hp: 70,
-            attack: 35,
-            speed: 160,
-            visionRange: 400
+            hp: 130,
+            attack: 5,
+            speed: 210,
+            visionRange: 360
         },
         levelGrowth: {
-            hp: 10,
-            attack: 8,
+            hp: 13,
+            attack: 0.5,
             speed: 0
         },
         projectile: {
@@ -200,10 +200,10 @@ const JobClasses = {
                 name: '얼음 장판',
                 description: '범위 내 적들의 속도를 감소시킵니다.',
                 cooldown: 12000,
-                damage: 5,
+                damage: 'attack',
                 range: 150,  // 얼음 장판의 효과 범위 (반지름)
                 maxCastRange: 300, // 최대 시전 사거리
-                duration: 6000,
+                duration: 3000,
                 effect: 'slow',
                 key: '1',
                 type: 'ice_field'
@@ -211,7 +211,7 @@ const JobClasses = {
             {
                 name: '마법 투사체',
                 description: '마우스 방향으로 마법 투사체를 발사합니다.',
-                cooldown: 3000,
+                cooldown: 5000,
                 damage: 'attack * 5.0',
                 range: 400,
                 explosionRadius: 90, // 폭발 범위
@@ -227,11 +227,10 @@ const JobClasses = {
             {
                 name: '보호막',
                 description: '일정 시간 동안 보호막을 생성합니다.',
-                cooldown: 15000,
+                cooldown: 20000,
                 damage: 0,
-                duration: 4000,
+                duration: 1000,
                 effect: 'shield',
-                knockbackDistance: 40, // 밀어내기 거리
                 key: '3',
                 type: 'shield'
             }
@@ -278,35 +277,35 @@ const JobClasses = {
         description: '원거리 공격에 특화된 직업입니다.',
         baseStats: {
             hp: 85,
-            attack: 30,
-            speed: 200,
+            attack: 20,
+            speed: 180,
             visionRange: 350
         },
         levelGrowth: {
-            hp: 15,
-            attack: 8,
+            hp: 8.5,
+            attack: 2,
             speed: 0
         },
         projectile: {
-            speed: 500,
+            speed: 300,
             size: 16,
-            maxDistance: 450
+            maxDistance: 600
         },
         skills: [
             {
                 name: '구르기',
                 description: '빠르게 구르며 이동합니다.',
-                cooldown: 2000,
+                cooldown: 3000,
                 damage: 0,
                 range: 150,
-                afterDelay: 200,
+                afterDelay: 100,
                 key: '1',
                 type: 'roll'
             },
             {
                 name: '궁사의 집중',
                 description: '일정 시간 동안 공격 속도를 증가시킵니다.',
-                cooldown: 8000,
+                cooldown: 25000,
                 damage: 0,
                 duration: 5000,
                 effect: 'attack_speed_boost',
@@ -324,13 +323,13 @@ const JobClasses = {
         name: '힐러',
         description: '팀원을 지원하고 치유하는 서포터 직업입니다.',
         baseStats: {
-            hp: 90,
-            attack: 15,
+            hp: 150,
+            attack: 30,
             speed: 180,
             visionRange: 320
         },
         levelGrowth: {
-            hp: 20,
+            hp: 15,
             attack: 3,
             speed: 0
         },
@@ -351,27 +350,31 @@ const JobClasses = {
             {
                 name: '버프 장판',
                 description: '이동속도와 공격속도를 증가시키는 장판을 설치합니다.',
-                cooldown: 6000,
+                cooldown: 4000,
                 damage: 0,
-                range: 80,
-                duration: 4000,
+                range: 150,
+                castRange: 200, // 최대 시전 사거리
+                duration: 2000,
                 effect: 'speed_attack_boost',
+                speedMultiplier: 1.5, // 50% 속도 증가
+                attackSpeedMultiplier: 1.5, // 50% 공격속도 증가
                 key: '2',
                 type: 'buff_field'
             },
             {
                 name: '힐 장판',
                 description: '범위 내 아군의 체력을 지속적으로 회복시킵니다.',
-                cooldown: 15000,
+                cooldown: 10000,
                 damage: 0,
-                range: 100,
-                duration: 8000,
-                heal: 20,
+                range: 150,
+                castRange: 250, // 최대 시전 사거리
+                duration: 2500,
+                heal: 'attack * 0.4',
                 key: '3',
                 type: 'heal_field'
             }
         ],
-        basicAttackCooldown: 900,
+        basicAttackCooldown: 2000,
         color: 0xFFFF00,
         maxLevel: 50
     }

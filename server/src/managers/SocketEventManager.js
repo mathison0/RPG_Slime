@@ -191,9 +191,6 @@ class SocketEventManager {
    */
   setupPlayerSkillHandler(socket) {
     socket.on('player-skill', (data) => {
-      console.log(`스킬 요청 받음: ${data.skillType}, 플레이어: ${socket.id}`);
-      console.log(`받은 스킬 데이터:`, data);
-      
       const player = this.gameStateManager.getPlayer(socket.id);
       if (!player) {
         socket.emit('skill-error', { error: 'Player not found' });
@@ -364,7 +361,7 @@ class SocketEventManager {
     let damageResult = { affectedEnemies: [], affectedPlayers: [], totalDamage: 0 };
     
     // 일부 채널링 스킬은 즉시 효과 적용 (예: ice_field)
-    if (['ice_field', 'ward'].includes(skillResult.skillType)) {
+    if (['ice_field', 'ward', 'buff_field', 'heal_field'].includes(skillResult.skillType)) {
       damageResult = this.skillManager.applySkillDamage(
         player, 
         skillResult.skillType, 
@@ -413,11 +410,12 @@ class SocketEventManager {
    */
   addSpecialSkillInfo(broadcastData, skillResult, player) {
     const { skillType } = skillResult;
+    const damageResult = broadcastData.damageResult || {};
     
     // 얼음 장판 스킬 정보
     if (skillType === 'ice_field') {
-      broadcastData.x = skillResult.x || player.x;
-      broadcastData.y = skillResult.y || player.y;
+      broadcastData.x = skillResult.x || damageResult.x || player.x;
+      broadcastData.y = skillResult.y || damageResult.y || player.y;
     }
 
     // 구르기 스킬의 경우 시작 위치와 최종 위치 정보 추가
@@ -451,6 +449,18 @@ class SocketEventManager {
           reason: 'replaced'
         });
       }
+    }
+    
+    // 힐 장판 스킬의 경우 위치 정보 추가
+    if (skillType === 'heal_field') {
+      broadcastData.x = skillResult.x || damageResult.x || player.x;
+      broadcastData.y = skillResult.y || damageResult.y || player.y;
+    }
+    
+    // 버프 장판 스킬의 경우 위치 정보 추가
+    if (skillType === 'buff_field') {
+      broadcastData.x = skillResult.x || damageResult.x || player.x;
+      broadcastData.y = skillResult.y || damageResult.y || player.y;
     }
 
     // 타겟 위치 정보
