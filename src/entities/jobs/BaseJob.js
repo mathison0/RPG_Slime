@@ -33,7 +33,6 @@ export default class BaseJob {
      * 기본 공격 이펙트
      */
     showBasicAttackEffect(targetX, targetY) {
-        console.log('BaseJob: 기본 공격 이펙트');
         // 각 직업에서 오버라이드해야 함
     }
 
@@ -77,29 +76,31 @@ export default class BaseJob {
         const jobClass = this.player.jobClass;
         let cooldown = 600; // 기본값
         
-        console.log(`[클라이언트] 쿨다운 계산 시작: jobClass=${jobClass}, player.stats=`, this.player.stats);
-        
         // 1순위: 서버에서 받은 현재 플레이어 상태의 basicAttackCooldown (버프 적용된 값)
         if (this.player.stats && this.player.stats.basicAttackCooldown) {
             cooldown = this.player.stats.basicAttackCooldown;
-            console.log(`[클라이언트] 서버 상태의 쿨다운 사용: ${cooldown}ms`);
         }
         // 2순위: JobCooldowns에서 기본값
         else if (this.scene.jobCooldowns && this.scene.jobCooldowns[jobClass]) {
             cooldown = this.scene.jobCooldowns[jobClass].basicAttackCooldown;
-            console.log(`[클라이언트] 직업별 쿨다운 사용: ${cooldown}ms`);
-        } else {
-            console.log(`[클라이언트] 기본값 사용: ${cooldown}ms`);
+        }
+        
+        // 클라이언트 버프 효과 적용 (buffEffects에서)
+        if (this.player.buffEffects && this.player.buffEffects.length > 0) {
+            // 가장 강한 공격속도 버프 효과 적용
+            const strongestAttackSpeedBuff = this.player.buffEffects.reduce((strongest, current) => {
+                return (current.attackSpeedMultiplier || 1) > (strongest.attackSpeedMultiplier || 1) ? current : strongest;
+            });
+            
+            if (strongestAttackSpeedBuff.attackSpeedMultiplier && strongestAttackSpeedBuff.attackSpeedMultiplier > 1) {
+                const originalCooldown = cooldown;
+                cooldown = Math.floor(cooldown / strongestAttackSpeedBuff.attackSpeedMultiplier);
+                console.log(`[BaseJob] 클라이언트 공격속도 버프 적용: ${originalCooldown}ms → ${cooldown}ms (배율: ${strongestAttackSpeedBuff.attackSpeedMultiplier})`);
+            }
         }
         
         const timeSinceLastAttack = now - lastUsed;
         const isOnCooldown = (timeSinceLastAttack) < cooldown;
-        
-        console.log(`[클라이언트] 최종 쿨다운 계산: 경과시간=${timeSinceLastAttack}ms, 필요시간=${cooldown}ms, 쿨다운중=${isOnCooldown}`);
-        
-        if (isOnCooldown) {
-            console.log(`[클라이언트] 기본공격 쿨다운: ${cooldown - timeSinceLastAttack}ms 남음`);
-        }
         
         return isOnCooldown;
     }
@@ -309,7 +310,6 @@ export default class BaseJob {
      * 스킬 이펙트 정리 (사망 시 호출)
      */
     clearSkillEffects() {
-        console.log('BaseJob: 스킬 효과 정리');
         // 각 직업에서 필요에 따라 오버라이드
     }
 
@@ -317,7 +317,6 @@ export default class BaseJob {
      * 스킬 이펙트 표시
      */
     showSkillEffect(skillType, data = null) {
-        console.log('BaseJob: 스킬 이펙트 표시', skillType, data);
         // 각 직업에서 오버라이드해야 함
     }
 

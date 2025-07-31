@@ -221,6 +221,9 @@ class GameServer {
         });
       }
       
+      // 체력 재생 처리
+      this.gameStateManager.processHealthRegeneration();
+      
       // 플레이어 상태 업데이트 및 사망 처리
       this.updatePlayerStates();
       

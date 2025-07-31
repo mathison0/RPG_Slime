@@ -429,6 +429,11 @@ class GameStateManager {
     target.hp = Math.max(0, target.hp - actualDamage);
     const targetDied = target.hp <= 0 && oldHp > 0;
 
+    // 실제 데미지가 발생한 경우 체력 재생 타이머 리셋
+    if (actualDamage > 0 && target.onDamageTaken) {
+      target.onDamageTaken();
+    }
+
     // 몬스터가 피격당한 경우 공격자를 타겟으로 설정
     if (target.mapLevel !== undefined && attacker.team !== undefined) {
       target.target = attacker;
@@ -598,8 +603,6 @@ class GameStateManager {
    */
   giveExperience(player, expAmount, source = 'unknown') {
     if (!player || expAmount <= 0) return;
-
-    console.log(`플레이어 ${player.id} 경험치 지급: ${expAmount} (소스: ${source})`);
     
     const oldExp = player.exp;
     const oldLevel = player.level;
@@ -640,6 +643,25 @@ class GameStateManager {
             size: player.size
           }
         });
+      }
+    }
+  }
+
+  /**
+   * 모든 엔티티의 체력 재생 처리
+   */
+  processHealthRegeneration() {
+    // 모든 플레이어의 체력 재생 처리
+    for (const player of this.players.values()) {
+      if (player.processHealthRegeneration) {
+        player.processHealthRegeneration();
+      }
+    }
+    
+    // 모든 적의 체력 재생 처리
+    for (const enemy of this.enemies.values()) {
+      if (enemy.processHealthRegeneration) {
+        enemy.processHealthRegeneration();
       }
     }
   }

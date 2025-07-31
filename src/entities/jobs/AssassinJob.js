@@ -291,7 +291,6 @@ export default class AssassinJob extends BaseJob {
 
     performMeleeAttack(centerX, centerY, startAngle, endAngle, radius, damageMultiplier = 1.0) {
         // 시각적 효과만 (데미지는 서버에서 처리)
-        console.log('어쌔신 부채꼴 근접 공격 이펙트 (데미지는 서버에서 처리)');
     }
 
 

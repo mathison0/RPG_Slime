@@ -179,8 +179,6 @@ class ProjectileManager {
 
         this.projectiles.set(projectileId, projectile);
         
-        console.log(`투사체 생성: ID=${projectileId}, 직업=${jobClass}, 속도=${config.speed}, 크기=${config.size}, 스프라이트=${config.sprite}`);
-        
         return projectileId;
     }
 
@@ -229,12 +227,12 @@ class ProjectileManager {
 
             // 벽 충돌 체크
             if (this.checkWallCollision(projectile)) {
-                // 벽 충돌 시 클라이언트에게 충돌 이벤트 전송
-                this.gameStateManager.io.emit('projectile-hit-wall', {
-                    projectileId: projectileId,
-                    projectileJobClass: projectile.jobClass,
-                    hitPosition: { x: projectile.x, y: projectile.y }
-                });
+                // 벽 충돌 시 클라이언트에게 충돌 이벤트 전송 (사용되지 않으므로 주석 처리)
+                // this.gameStateManager.io.emit('projectile-hit-wall', {
+                //     projectileId: projectileId,
+                //     projectileJobClass: projectile.jobClass,
+                //     hitPosition: { x: projectile.x, y: projectile.y }
+                // });
                 
                 // 벽 충돌 시 클라이언트에게 제거 이벤트 전송
                 this.gameStateManager.io.emit('projectile-removed', {
@@ -396,15 +394,15 @@ class ProjectileManager {
         const result = this.gameStateManager.takeDamage(attacker, player, damage);
 
         if (result.success) {
-            // 클라이언트에게 충돌 이벤트 전송
-            this.gameStateManager.io.emit('projectile-hit-player', {
-                projectileId: projectile.id,
-                projectileJobClass: projectile.jobClass,
-                playerId: player.id,
-                damage: result.actualDamage,
-                newHp: result.newHp,
-                hitPosition: { x: projectile.x, y: projectile.y }
-            });
+            // 클라이언트에게 충돌 이벤트 전송 (사용되지 않으므로 주석 처리)
+            // this.gameStateManager.io.emit('projectile-hit-player', {
+            //     projectileId: projectile.id,
+            //     projectileJobClass: projectile.jobClass,
+            //     playerId: player.id,
+            //     damage: result.actualDamage,
+            //     newHp: result.newHp,
+            //     hitPosition: { x: projectile.x, y: projectile.y }
+            // });
 
             console.log(`플레이어 피격: ${player.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${result.actualDamage} 데미지`);
         } else {
@@ -428,15 +426,15 @@ class ProjectileManager {
         const result = this.gameStateManager.takeDamage(attacker, enemy, damage);
 
         if (result.success) {
-            // 클라이언트에게 충돌 이벤트 전송
-            this.gameStateManager.io.emit('projectile-hit-enemy', {
-                projectileId: projectile.id,
-                projectileJobClass: projectile.jobClass,
-                enemyId: enemy.id,
-                damage: result.actualDamage,
-                newHp: result.newHp,
-                hitPosition: { x: projectile.x, y: projectile.y }
-            });
+            // 클라이언트에게 충돌 이벤트 전송 (사용되지 않으므로 주석 처리)
+            // this.gameStateManager.io.emit('projectile-hit-enemy', {
+            //     projectileId: projectile.id,
+            //     projectileJobClass: projectile.jobClass,
+            //     enemyId: enemy.id,
+            //     damage: result.actualDamage,
+            //     newHp: result.newHp,
+            //     hitPosition: { x: projectile.x, y: projectile.y }
+            // });
 
             console.log(`적 피격: ${enemy.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${result.actualDamage} 데미지`);
         } else {

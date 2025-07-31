@@ -38,6 +38,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.speed = 200;
         this.attack = 20;
         
+        // 서버 동기화용 스탯 객체 초기화
+        this.stats = {
+            attack: 20,
+            speed: 200,
+            visionRange: 300,
+            basicAttackCooldown: 600 // 기본 공격 쿨다운 (ms)
+        };
+        
         // 직업 관련
         this.jobClass = 'slime';
         this.job = null; // 직업 클래스 인스턴스
@@ -829,8 +837,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (this.job && this.job.clearSkillEffects) {
             this.job.clearSkillEffects();
         }
-        
-        console.log(`플레이어 ${this.networkId || 'local'}의 지연된 스킬 이펙트들 정리 완료`);
     }
 
     /**

@@ -39,6 +39,10 @@ class ServerPlayer {
     this.isDead = false; // 사망 상태
     this.lastDamageSource = null; // 마지막 데미지 소스 추적
     
+    // 체력 재생 시스템
+    this.lastDamageTime = 0; // 마지막으로 데미지를 받은 시간
+    this.lastRegenTick = 0;  // 마지막 재생 틱 시간
+    
     // 스킬 관련
     this.skillCooldowns = {}; // 스킬별 마지막 사용 시간
     this.activeEffects = new Set(); // 활성 효과들
@@ -298,7 +302,13 @@ class ServerPlayer {
       isInvincible: this.isInvincible, // 무적 상태 추가
       activeActions: activeActions,  // 액션 상태 정보 추가
       skillCooldowns: this.getClientSkillCooldowns(), // 클라이언트용 스킬 쿨타임 정보 추가
-      buffs: buffState // 버프 상태 정보 추가
+      buffs: buffState, // 버프 상태 정보 추가
+      stats: { // 버프가 적용된 현재 스탯 정보
+        attack: this.attack,
+        speed: this.speed,
+        visionRange: this.visionRange,
+        basicAttackCooldown: this.getBasicAttackCooldown() // 버프가 적용된 기본 공격 쿨다운
+      }
     };
   }
 
@@ -308,6 +318,23 @@ class ServerPlayer {
   isDisconnected() {
     const now = Date.now();
     return now - this.lastUpdate > gameConfig.PLAYER.DISCONNECT_TIMEOUT;
+  }
+
+  /**
+   * 버프가 적용된 기본 공격 쿨다운 계산
+   */
+  getBasicAttackCooldown() {
+    let cooldown = this.basicAttackCooldown || 600; // 기본값
+    
+    // 버프 효과 적용
+    for (const [buffType, buff] of this.buffs) {
+      if (buff.effect && buff.effect.attackSpeedMultiplier) {
+        // 공격속도 증가는 쿨다운을 감소시킴 (공격속도 2배 = 쿨다운 1/2)
+        cooldown = cooldown / buff.effect.attackSpeedMultiplier;
+      }
+    }
+    
+    return Math.max(100, Math.round(cooldown)); // 최소 100ms
   }
 
   /**
@@ -382,6 +409,10 @@ class ServerPlayer {
     // 데미지 소스 추적 정보 리셋
     this.lastDamageSource = null;
     
+    // 체력 재생 시스템 리셋
+    this.lastDamageTime = 0;
+    this.lastRegenTick = 0;
+    
     // 스킬 관련 상태 초기화
     this.currentActions.skills.clear();
     this.isStunned = false;
@@ -402,6 +433,44 @@ class ServerPlayer {
    */
   heal(amount) {
     this.hp = Math.min(this.maxHp, this.hp + amount);
+  }
+
+  /**
+   * 체력 재생 처리
+   */
+  processHealthRegeneration() {
+    // 죽은 상태이거나 이미 풀피인 경우 재생하지 않음
+    if (this.isDead || this.hp >= this.maxHp) {
+      return;
+    }
+    
+    const now = Date.now();
+    const regenConfig = gameConfig.HEALTH_REGENERATION;
+    
+    // 마지막 데미지 후 충분한 시간이 지났는지 확인
+    const timeSinceLastDamage = now - this.lastDamageTime;
+    if (timeSinceLastDamage < regenConfig.DELAY_AFTER_DAMAGE) {
+      return;
+    }
+    
+    // 재생 틱 간격 확인
+    const timeSinceLastRegen = now - this.lastRegenTick;
+    if (timeSinceLastRegen < regenConfig.TICK_INTERVAL) {
+      return;
+    }
+    
+    // 체력 재생 수행
+    const regenAmount = Math.ceil(this.maxHp * regenConfig.REGENERATION_RATE);
+    const oldHp = this.hp;
+    this.hp = Math.min(this.maxHp, this.hp + regenAmount);
+    this.lastRegenTick = now;
+  }
+
+  /**
+   * 데미지 받았을 때 호출되는 메서드 (체력 재생 타이머 리셋용)
+   */
+  onDamageTaken() {
+    this.lastDamageTime = Date.now();
   }
 
   /**
@@ -583,12 +652,17 @@ class ServerPlayer {
         switch (buffType) {
           case 'attack_speed_boost':
             this.basicAttackCooldown = this.originalStats[buffType].attackSpeed;
+            console.log(`[서버] 버프 해제 - 공격속도 복원: ${this.basicAttackCooldown}ms`);
             break;
           case 'speed_attack_boost':
             this.speed = this.originalStats[buffType].speed;
             this.basicAttackCooldown = this.originalStats[buffType].attackSpeed;
+            console.log(`[서버] 버프 해제 - 속도 복원: ${this.speed}, 공격속도 복원: ${this.basicAttackCooldown}ms`);
             break;
         }
+        
+        // 원본 스탯 정보 삭제 (다음 버프 적용시 새로운 원본 저장을 위해)
+        delete this.originalStats[buffType];
       }
       
       this.buffs.delete(buffType);

@@ -275,13 +275,13 @@ const JobClasses = {
         description: '원거리 공격에 특화된 직업입니다.',
         baseStats: {
             hp: 85,
-            attack: 20,
-            speed: 180,
+            attack: 15,
+            speed: 160,
             visionRange: 350
         },
         levelGrowth: {
             hp: 8.5,
-            attack: 2,
+            attack: 1.5,
             speed: 0
         },
         projectile: {
@@ -317,7 +317,7 @@ const JobClasses = {
     },
 
     supporter: {
-        name: '힐러',
+        name: '서포터',
         description: '팀원을 지원하고 치유하는 서포터 직업입니다.',
         baseStats: {
             hp: 150,
@@ -347,14 +347,14 @@ const JobClasses = {
             {
                 name: '버프 장판',
                 description: '이동속도와 공격속도를 증가시키는 장판을 설치합니다.',
-                cooldown: 4000,
+                cooldown: 10000,
                 damage: 0,
                 range: 150,
                 castRange: 200, // 최대 시전 사거리
-                duration: 2000,
+                duration: 3000,
                 effect: 'speed_attack_boost',
-                speedMultiplier: 1.5, // 50% 속도 증가
-                attackSpeedMultiplier: 1.5, // 50% 공격속도 증가
+                speedMultiplier: 1.3,
+                attackSpeedMultiplier: 2,
                 key: '2',
                 type: 'buff_field'
             },
@@ -371,7 +371,7 @@ const JobClasses = {
                 type: 'heal_field'
             }
         ],
-        basicAttackCooldown: 2000,
+        basicAttackCooldown: 1300,
         color: 0xFFFF00,
         maxLevel: 50
     }

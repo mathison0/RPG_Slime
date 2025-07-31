@@ -19,8 +19,6 @@ export default class NinjaJob extends BaseJob {
      * 닌자 기본 공격 애니메이션 (서버에서 받은 이벤트 처리)
      */
     showBasicAttackEffect(targetX, targetY) {
-        // 서버에서 투사체를 관리하므로 클라이언트에서는 이펙트만 처리
-        console.log('닌자 기본 공격 이펙트 처리');
     }
 
     /**

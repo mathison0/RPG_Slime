@@ -209,8 +209,6 @@ export default class SupporterJob extends BaseJob {
         const healX = data?.x || this.player.x;
         const healY = data?.y || this.player.y;
         
-        console.log(`힐 장판 클라이언트 이펙트: 위치=(${healX}, ${healY}), range=${range}, duration=${duration}ms`);
-        
         // 힐 장판 생성 (노란색)
         const healField = this.player.scene.add.circle(healX, healY, range, 0xFFFF00, 0.4);
         healField.setDepth(650);
@@ -276,9 +274,7 @@ export default class SupporterJob extends BaseJob {
         // 서버에서 받은 실제 시전 위치 사용
         const buffX = data?.x || this.player.x;
         const buffY = data?.y || this.player.y;
-        
-        console.log(`버프 장판 클라이언트 이펙트: 위치=(${buffX}, ${buffY}), range=${range}, duration=${duration}ms`);
-        
+
         // 버프 장판 생성 (보라색)
         const buffField = this.player.scene.add.circle(buffX, buffY, range, 0x9370DB, 0.4);
         buffField.setDepth(650);

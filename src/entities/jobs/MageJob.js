@@ -57,7 +57,6 @@ export default class MageJob extends BaseJob {
      */
     showBasicAttackEffect(targetX, targetY) {
         // 서버에서 투사체를 관리하므로 클라이언트에서는 기본 이펙트만 처리
-        console.log('마법사 기본 공격 이펙트 처리');
     }
 
     /**
@@ -73,10 +72,6 @@ export default class MageJob extends BaseJob {
         // 서버에서 받은 실제 시전 위치 사용
         const iceX = data?.x || this.player.x;
         const iceY = data?.y || this.player.y;
-        
-        console.log(`얼음 장판 클라이언트 이펙트: 위치=(${iceX}, ${iceY}), range=${range}, duration=${duration}ms`);
-        console.log(`원본 데이터: data.x=${data?.x}, data.y=${data?.y}, player위치=(${this.player.x}, ${this.player.y})`);
-        
         // 얼음 장판 생성 (서버에서 받은 위치에)
         const iceField = this.player.scene.add.circle(iceX, iceY, range, 0x87ceeb, 0.4);
         iceField.setDepth(650);
@@ -125,8 +120,6 @@ export default class MageJob extends BaseJob {
         const afterDelay = skillInfo.afterDelay || 0;
         const endTime = data.endTime || (Date.now() + 3000);
         const effectEndTime = endTime - afterDelay; // 실제 투사체 효과 종료 시간
-        
-        console.log('마법 투사체 이펙트 시작 : [time: ' + Date.now() + '] [endTime: ' + endTime + ']');
         
         // 마법 투사체 생성
         const missile = this.player.scene.add.circle(this.player.x, this.player.y, 8, 0xff00ff, 1);
@@ -235,8 +228,6 @@ export default class MageJob extends BaseJob {
             if (attackText.active) {
                 attackText.destroy();
             }
-            
-            console.log('마법 투사체 이펙트 종료 [time: ' + Date.now() + '] [target: ' + endTime + ']');
         });
         
         // 호환성을 위한 타이머 객체
@@ -253,8 +244,6 @@ export default class MageJob extends BaseJob {
      * 보호막 이펙트 (서버에서 스킬 승인 시 호출)
      */
     showShieldEffect(data = null) {
-        console.log('보호막 이펙트 시작:', data);
-        
         // 서버에서 받은 스킬 정보 사용
         const skillInfo = data?.skillInfo || {};
         const duration = skillInfo.duration || 8000; // 서버에서 받은 지속시간
@@ -312,8 +301,6 @@ export default class MageJob extends BaseJob {
             if (this.shieldTimer === shieldTimer) {
                 this.shieldTimer = null;
             }
-            
-            console.log('보호막 이펙트 종료 [time: ' + Date.now() + '] [target: ' + endTime + ']');
         });
         
         // 호환성을 위한 타이머 객체
@@ -356,7 +343,6 @@ export default class MageJob extends BaseJob {
             this.shieldTimer.remove();
             this.shieldTimer = null;
         }
-        console.log('보호막 이펙트 제거 완료');
     }
 
     /**
@@ -388,7 +374,5 @@ export default class MageJob extends BaseJob {
             this.magicMissileGraphics.destroy();
             this.magicMissileGraphics = null;
         }
-        
-        console.log('MageJob: 스킬 이펙트 정리 완료');
     }
 } 

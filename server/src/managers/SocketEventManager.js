@@ -216,7 +216,6 @@ class SocketEventManager {
         direction: data.direction, // 클라이언트에서 받은 방향 정보 전달
         rotationDirection: data.rotationDirection // 회전 방향 정보 추가
       };
-      console.log(`스킬 사용 옵션:`, skillOptions);
 
       const skillResult = this.skillManager.useSkill(
         player,
@@ -236,8 +235,6 @@ class SocketEventManager {
 
       // 스킬 실행 방식에 따른 처리
       const processedResult = this.processSkillExecution(socket, player, skillResult);
-      
-      console.log(`Player ${socket.id} used skill: ${skillResult.skillType}`);
     });
   }
 
@@ -286,7 +283,7 @@ class SocketEventManager {
     
     // 지속시간이 있는 채널링 스킬들 (지속 효과)
     const channeledSkills = ['ice_field', 'shield', 'buff_field', 'heal_field'];
-    if (channeledSkills.includes(skillType) || skillInfo.duration > 0) {
+    if (channeledSkills.includes(skillType) || (skillInfo.duration > 0 && skillType !== 'spread')) {
       return 'CHANNELED';
     }
     

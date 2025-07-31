@@ -63,8 +63,6 @@ class SupporterJob extends BaseJob {
         const wardX = this.player.x;
         const wardY = this.player.y - 80;
 
-        console.log(`힐러 와드 설치! 위치: (${wardX}, ${wardY}), 지속시간: ${skillInfo.duration}ms`);
-
         return {
             success: true,
             skillType: 'ward',
@@ -127,12 +125,7 @@ class SupporterJob extends BaseJob {
             const angle = Math.atan2(targetY - this.player.y, targetX - this.player.x);
             finalX = this.player.x + Math.cos(angle) * maxCastRange;
             finalY = this.player.y + Math.sin(angle) * maxCastRange;
-            console.log(`버프 장판 최대 사거리 제한 적용: 거리=${distance}, 최대=${maxCastRange}, 최종 위치=(${finalX}, ${finalY})`);
         }
-
-        console.log(`버프 장판 최종 시전 위치: finalX=${finalX}, finalY=${finalY}`);
-
-        console.log(`힐러 버프 장판 스킬 발사! 플레이어: ${this.player.id}, 위치: (${finalX}, ${finalY}), 범위: ${skillInfo.range}`);
 
         return {
             success: true,
@@ -197,12 +190,7 @@ class SupporterJob extends BaseJob {
             const angle = Math.atan2(targetY - this.player.y, targetX - this.player.x);
             finalX = this.player.x + Math.cos(angle) * maxCastRange;
             finalY = this.player.y + Math.sin(angle) * maxCastRange;
-            console.log(`힐 장판 최대 사거리 제한 적용: 거리=${distance}, 최대=${maxCastRange}, 최종 위치=(${finalX}, ${finalY})`);
         }
-
-        console.log(`힐 장판 최종 시전 위치: finalX=${finalX}, finalY=${finalY}`);
-
-        console.log(`힐러 힐 장판 스킬 발사! 플레이어: ${this.player.id}, 위치: (${finalX}, ${finalY}), 범위: ${skillInfo.range}`);
 
         return {
             success: true,
@@ -257,8 +245,6 @@ class SupporterJob extends BaseJob {
         const finalY = this.player.y + Math.sin(angle) * maxDistance;
         
         const damage = this.player.attack;
-
-        console.log(`힐러 기본 공격 발동! 데미지: ${damage}, 각도: ${angle}`);
 
         return {
             success: true,
