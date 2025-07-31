@@ -1823,12 +1823,12 @@ export default class NetworkEventManager {
      */
     handlePlayerPing(data) {
         if (data.team === this.scene.player.team && data.playerId !== this.networkManager.playerId) {
-            this.scene.pingManager.createPing(data.x, data.y, data.playerId);
+            this.scene.pingManager.createPing(data.x, data.y, data.playerId, data.nickname);
             this.scene.pingManager.showPingMessage('팀원이 핑을 찍었습니다!');
             
             const pingId = `${data.playerId}_${Date.now()}`;
             this.scene.pingManager.activePingPositions.set(pingId, { x: data.x, y: data.y });
-            this.scene.pingManager.checkAndShowPingArrow(data.x, data.y, pingId);
+            this.scene.pingManager.checkAndShowPingArrow(data.x, data.y, pingId, data.nickname);
         }
     }
     

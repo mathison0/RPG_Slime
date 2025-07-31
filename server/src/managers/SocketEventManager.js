@@ -711,6 +711,7 @@ class SocketEventManager {
         const pingData = {
           playerId: socket.id,
           team: player.team,
+          nickname: player.nickname,
           x: data.x,
           y: data.y
         };
