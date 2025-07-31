@@ -19,6 +19,12 @@ export default class BaseJob {
      * @param {Object} options - 스킬 사용 옵션
      */
     useSkill(skillNumber, options = {}) {
+        // 기절 상태에서는 스킬 사용 불가
+        if (this.player.isStunned) {
+            console.log(`BaseJob: 기절 상태에서 스킬 사용 시도 - 무시됨`);
+            return;
+        }
+        
         console.log(`BaseJob: 스킬 ${skillNumber} 사용됨`);
         // 각 직업에서 오버라이드해야 함
     }
@@ -27,7 +33,6 @@ export default class BaseJob {
      * 기본 공격 이펙트
      */
     showBasicAttackEffect(targetX, targetY) {
-        console.log('BaseJob: 기본 공격 이펙트');
         // 각 직업에서 오버라이드해야 함
     }
 
@@ -37,8 +42,14 @@ export default class BaseJob {
      * @param {number} targetY - 목표 Y 좌표
      */
     useBasicAttack(targetX, targetY) {
-        // 클라이언트 사이드 쿨다운 체크
-        if (this.player.isSkillOnCooldown('basic_attack')) {
+        // 기절 상태에서는 기본 공격 사용 불가
+        if (this.player.isStunned) {
+            console.log(`BaseJob: 기절 상태에서 기본 공격 시도 - 무시됨`);
+            return;
+        }
+        
+        // 클라이언트 사이드 쿨다운 체크 (BaseJob의 메서드 사용)
+        if (this.isBasicAttackOnCooldown()) {
             return; // 서버에 요청을 보내지 않음
         }
         
@@ -61,15 +72,37 @@ export default class BaseJob {
         const now = this.scene.time.now;
         const lastUsed = this.lastBasicAttackTime || 0;
         
-        // 서버에서 받은 쿨타임 정보 사용
+        // 서버에서 받은 쿨타임 정보 사용 (버프가 적용된 실제 값)
         const jobClass = this.player.jobClass;
         let cooldown = 600; // 기본값
         
-        if (this.scene.jobCooldowns && this.scene.jobCooldowns[jobClass]) {
+        // 1순위: 서버에서 받은 현재 플레이어 상태의 basicAttackCooldown (버프 적용된 값)
+        if (this.player.stats && this.player.stats.basicAttackCooldown) {
+            cooldown = this.player.stats.basicAttackCooldown;
+        }
+        // 2순위: JobCooldowns에서 기본값
+        else if (this.scene.jobCooldowns && this.scene.jobCooldowns[jobClass]) {
             cooldown = this.scene.jobCooldowns[jobClass].basicAttackCooldown;
         }
         
-        return (now - lastUsed) < cooldown;
+        // 클라이언트 버프 효과 적용 (buffEffects에서)
+        if (this.player.buffEffects && this.player.buffEffects.length > 0) {
+            // 가장 강한 공격속도 버프 효과 적용
+            const strongestAttackSpeedBuff = this.player.buffEffects.reduce((strongest, current) => {
+                return (current.attackSpeedMultiplier || 1) > (strongest.attackSpeedMultiplier || 1) ? current : strongest;
+            });
+            
+            if (strongestAttackSpeedBuff.attackSpeedMultiplier && strongestAttackSpeedBuff.attackSpeedMultiplier > 1) {
+                const originalCooldown = cooldown;
+                cooldown = Math.floor(cooldown / strongestAttackSpeedBuff.attackSpeedMultiplier);
+                console.log(`[BaseJob] 클라이언트 공격속도 버프 적용: ${originalCooldown}ms → ${cooldown}ms (배율: ${strongestAttackSpeedBuff.attackSpeedMultiplier})`);
+            }
+        }
+        
+        const timeSinceLastAttack = now - lastUsed;
+        const isOnCooldown = (timeSinceLastAttack) < cooldown;
+        
+        return isOnCooldown;
     }
 
     /**
@@ -158,8 +191,8 @@ export default class BaseJob {
      * 점프 기능 (모든 직업 공통) - 서버에 요청만 전송
      */
     useJump() {
-        // 이미 점프 중이거나 다른 플레이어면 실행하지 않음
-        if (this.player.isJumping || this.player.isOtherPlayer) {
+        // 이미 점프 애니메이션 중이거나 다른 플레이어면 실행하지 않음
+        if (this.player.jumpAnimationInProgress || this.player.isOtherPlayer) {
             return;
         }
         
@@ -170,11 +203,6 @@ export default class BaseJob {
         
         // 네트워크 동기화 (서버에 점프 요청만 전송)
         if (this.player.networkManager && !this.player.isOtherPlayer) {
-            // 임시로 jumpEndTime 설정 (서버 응답 대기 중 연속 요청 방지)
-            const tempJumpDuration = 400; // 기본 점프 지속시간
-            this.player.jumpEndTime = Date.now() + tempJumpDuration;
-            console.log(`임시 점프 endTime 설정: ${this.player.jumpEndTime}`);
-            
             this.player.networkManager.useSkill('jump');
         }
 
@@ -282,7 +310,6 @@ export default class BaseJob {
      * 스킬 이펙트 정리 (사망 시 호출)
      */
     clearSkillEffects() {
-        console.log('BaseJob: 스킬 효과 정리');
         // 각 직업에서 필요에 따라 오버라이드
     }
 
@@ -290,7 +317,6 @@ export default class BaseJob {
      * 스킬 이펙트 표시
      */
     showSkillEffect(skillType, data = null) {
-        console.log('BaseJob: 스킬 이펙트 표시', skillType, data);
         // 각 직업에서 오버라이드해야 함
     }
 

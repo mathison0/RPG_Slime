@@ -14,6 +14,7 @@ class GameStateManager {
     this.mapData = null;
     this.io = io;
     this.skillManager = skillManager;
+    this.jobOrbs = new Map(); // 직업 변경 오브 관리
   }
 
   /**
@@ -66,9 +67,43 @@ class GameStateManager {
     if (this.skillManager) {
       for (const player of this.players.values()) {
         this.skillManager.cleanupExpiredActions(player);
+        // 버프 정리도 함께 수행
+        player.cleanupExpiredBuffs();
       }
     }
     return Array.from(this.players.values()).map(p => p.getState());
+  }
+
+  /**
+   * 모든 플레이어의 와드 정보 수집
+   */
+  getAllWards() {
+    const allWards = [];
+    const now = Date.now();
+    
+    for (const player of this.players.values()) {
+      if (player.wardList && player.wardList.length > 0) {
+        // 만료되지 않은 와드만 필터링
+        const activeWards = player.wardList.filter(ward => {
+          const isExpired = ward.duration > 0 && (now - ward.createdAt) > ward.duration;
+          return !isExpired;
+        });
+        
+        // 만료된 와드들은 플레이어 리스트에서 제거
+        if (activeWards.length !== player.wardList.length) {
+          player.wardList = activeWards;
+        }
+        
+        // 활성 와드들을 전체 리스트에 추가
+        allWards.push(...activeWards.map(ward => ({
+          ...ward,
+          playerId: player.id,
+          team: player.team
+        })));
+      }
+    }
+    
+    return allWards;
   }
 
   /**
@@ -232,7 +267,6 @@ class GameStateManager {
       if (inEnemyBarrierZone) {
         // 무적 상태 체크
         if (player.isInvincible) {
-          console.log(`플레이어 ${player.id} 무적 상태로 스폰 배리어 데미지 무시`);
           player.lastSpawnBarrierCheck = now;
           continue;
         }
@@ -314,6 +348,7 @@ class GameStateManager {
     this.players.clear();
     this.enemies.clear();
     this.rooms.clear();
+    this.jobOrbs.clear(); // 게임 리셋 시 오브 정보도 초기화
     console.log('게임 상태 리셋 완료');
   }
 
@@ -325,8 +360,6 @@ class GameStateManager {
    * @returns {Object} - 처리 결과 { success: boolean, actualDamage: number, reason?: string }
    */
   takeDamage(attacker, target, damage) {
-    console.log(`takeDamage 호출: ${attacker.id} → ${target.id}, 데미지: ${damage}`);
-    
     // 기본 유효성 검사
     if (!attacker || !target || damage <= 0) {
       console.log(`takeDamage 실패: 유효하지 않은 파라미터`);
@@ -341,7 +374,6 @@ class GameStateManager {
     // 무적 상태 체크 (플레이어만)
     if (target.isInvincible === true) {
       // 무적 상태일 때 attack-invalid 이벤트 브로드캐스트
-      console.log(`무적 상태로 공격 무효: ${attacker.id} → ${target.id}`);
       if (this.io) {
         // 공격자가 플레이어인 경우: 공격자에게 메시지 전송
         // 공격자가 몬스터인 경우: 피격자(플레이어)에게 메시지 전송
@@ -352,8 +384,6 @@ class GameStateManager {
           y: target.y,
           message: '무적!'
         });
-        
-        console.log(`무적 메시지 전송: ${recipientId}에게 (공격자: ${attacker.id}, 피격자: ${target.id})`);
       }
       return { success: false, actualDamage: 0, reason: 'invincible' };
     }
@@ -372,21 +402,41 @@ class GameStateManager {
             message: '공격 무효!'
           });
         }
-        console.log(`레벨 다름으로 공격 무효: 공격자 레벨 ${attackerLevel}, 타겟 레벨 ${targetLevel}`);
         return { success: false, actualDamage: 0, reason: 'different level' };
       }
     }
 
     // 실제 데미지 적용
-    const actualDamage = damage;
+    let actualDamage = damage;
+    
+    // 보호막 효과 체크 (마법사의 보호막)
+    if (target.activeEffects && target.activeEffects.has('shield')) {
+      actualDamage = 0;
+      
+      // 보호막 무효화 메시지 브로드캐스트
+      if (this.io) {
+        this.io.to(target.id).emit('attack-invalid', {
+          x: target.x,
+          y: target.y,
+          message: '보호막!'
+        });
+      }
+      
+      return { success: true, actualDamage: 0, newHp: target.hp, reason: 'shield blocked' };
+    }
+    
     const oldHp = target.hp;
     target.hp = Math.max(0, target.hp - actualDamage);
     const targetDied = target.hp <= 0 && oldHp > 0;
 
+    // 실제 데미지가 발생한 경우 체력 재생 타이머 리셋
+    if (actualDamage > 0 && target.onDamageTaken) {
+      target.onDamageTaken();
+    }
+
     // 몬스터가 피격당한 경우 공격자를 타겟으로 설정
     if (target.mapLevel !== undefined && attacker.team !== undefined) {
       target.target = attacker;
-      console.log(`몬스터 ${target.id}가 ${attacker.id}에게 피격당해 타겟으로 설정`);
     }
 
     // 플레이어가 피격당한 경우 데미지 소스 추적
@@ -409,9 +459,14 @@ class GameStateManager {
       if (attacker.team !== undefined) { // 공격자가 플레이어인 경우
         if (target.mapLevel !== undefined) {
           // 플레이어가 몬스터를 죽임
+          console.log(`🔥 몬스터 사망: ID=${target.id}, 타입=${target.type}, 레벨=${target.mapLevel}, 위치=(${target.x}, ${target.y})`);
+          
           const expAmount = this.calculateMonsterKillExp(target);
           this.giveExperience(attacker, expAmount, 'monster');
           console.log(`플레이어 ${attacker.id}가 몬스터 ${target.id}를 죽여 ${expAmount} 경험치 획득`);
+          
+          // 직업 변경 오브 드롭 처리 (슬라임 제외)
+          this.handleJobOrbDrop(target);
           
           // 몬스터 사망 이벤트 브로드캐스트
           if (this.io) {
@@ -463,8 +518,6 @@ class GameStateManager {
         });
       }
     }
-
-    console.log(`데미지 처리: ${attacker.id} → ${target.id}, 데미지: ${actualDamage}, 남은 HP: ${target.hp}`);
     
     return { 
       success: true, 
@@ -555,8 +608,6 @@ class GameStateManager {
    */
   giveExperience(player, expAmount, source = 'unknown') {
     if (!player || expAmount <= 0) return;
-
-    console.log(`플레이어 ${player.id} 경험치 지급: ${expAmount} (소스: ${source})`);
     
     const oldExp = player.exp;
     const oldLevel = player.level;
@@ -600,6 +651,186 @@ class GameStateManager {
       }
     }
   }
+
+  /**
+   * 모든 엔티티의 체력 재생 처리
+   */
+  processHealthRegeneration() {
+    // 모든 플레이어의 체력 재생 처리
+    for (const player of this.players.values()) {
+      if (player.processHealthRegeneration) {
+        player.processHealthRegeneration();
+      }
+    }
+    
+    // 모든 적의 체력 재생 처리
+    for (const enemy of this.enemies.values()) {
+      if (enemy.processHealthRegeneration) {
+        enemy.processHealthRegeneration();
+      }
+    }
+  }
+
+  /**
+   * 몬스터 사망 시 직업 변경 오브 드롭 처리
+   * @param {Object} monster - 사망한 몬스터
+   */
+  handleJobOrbDrop(monster) {
+    console.log('🎯 handleJobOrbDrop 호출됨:', {
+      monsterId: monster?.id,
+      monsterType: monster?.type,
+      monsterMapLevel: monster?.mapLevel,
+      monsterX: monster?.x,
+      monsterY: monster?.y
+    });
+
+    if (!monster || !monster.type) {
+      console.log('❌ 오브 드롭 실패: 몬스터 정보가 유효하지 않음');
+      return;
+    }
+
+    // 엘리트 몬스터는 100%, 일반 몬스터는 5% 확률로 드롭
+    const dropChance = monster.type === 'elite' ? 100 : 5;
+    const random = Math.random() * 100;
+
+    console.log(`🎲 드롭 확률 체크: 몬스터 타입=${monster.type}, 드롭 확률=${dropChance}%, 랜덤값=${random.toFixed(2)}%`);
+
+    if (random < dropChance) {
+      // 슬라임, 닌자, 메카닉을 제외한 랜덤 직업 선택
+      const availableJobs = ['assassin', 'warrior', 'mage', 'archer', 'supporter'];
+      const randomJob = availableJobs[Math.floor(Math.random() * availableJobs.length)];
+
+      const jobOrb = {
+        id: `job_orb_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // 고유 ID 생성
+        type: 'job_orb',
+        jobClass: randomJob, // 변경할 직업
+        x: monster.x,
+        y: monster.y,
+        createdAt: Date.now(),
+        duration: 30000, // 오브 지속 시간 (30초)
+        isActive: true,
+        isCollected: false
+      };
+
+      // 오브를 서버 상태에 저장
+      if (!this.jobOrbs) {
+        this.jobOrbs = new Map();
+      }
+      this.jobOrbs.set(jobOrb.id, jobOrb);
+
+      // 직업 변경 오브 스폰 이벤트 브로드캐스트
+      if (this.io) {
+        console.log('📡 job-orb-spawned 이벤트 브로드캐스트:', jobOrb);
+        this.io.emit('job-orb-spawned', {
+          orbId: jobOrb.id,
+          jobClass: jobOrb.jobClass,
+          x: jobOrb.x,
+          y: jobOrb.y
+        });
+      } else {
+        console.log('❌ io 객체가 없어서 오브 스폰 이벤트를 브로드캐스트할 수 없음');
+      }
+
+      console.log(`✅ 직업 변경 오브 드롭 성공: ${randomJob} (${monster.x}, ${monster.y})`);
+
+      // 30초 후 오브 자동 제거
+      setTimeout(() => {
+        this.removeJobOrb(jobOrb.id);
+      }, jobOrb.duration);
+    } else {
+      console.log(`❌ 드롭 실패: 확률 ${dropChance}%에서 ${random.toFixed(2)}% 뽑음`);
+    }
+  }
+
+  /**
+   * 직업 변경 오브 제거
+   * @param {string} orbId - 오브 ID
+   */
+  removeJobOrb(orbId) {
+    if (this.jobOrbs && this.jobOrbs.has(orbId)) {
+      this.jobOrbs.delete(orbId);
+      
+      if (this.io) {
+        this.io.emit('job-orb-removed', { orbId });
+      }
+    }
+  }
+
+  /**
+   * 플레이어와 직업 변경 오브 충돌 처리
+   * @param {string} playerId - 플레이어 ID
+   * @param {string} orbId - 오브 ID
+   */
+  handleJobOrbCollision(playerId, orbId) {
+    if (!this.jobOrbs || !this.jobOrbs.has(orbId)) {
+      return { 
+        success: false, 
+        orbId: orbId,
+        message: '오브를 찾을 수 없습니다.' 
+      };
+    }
+
+    const player = this.getPlayer(playerId);
+    if (!player) {
+      return { 
+        success: false, 
+        orbId: orbId,
+        message: '플레이어를 찾을 수 없습니다.' 
+      };
+    }
+
+    const jobOrb = this.jobOrbs.get(orbId);
+    if (!jobOrb) {
+      return { 
+        success: false, 
+        orbId: orbId,
+        message: '오브를 찾을 수 없습니다.' 
+      };
+    }
+
+    if (!jobOrb.isActive || jobOrb.isCollected) {
+      return { 
+        success: false, 
+        orbId: orbId,
+        message: '이미 수집된 오브입니다.' 
+      };
+    }
+
+    // 오브를 수집 상태로 변경
+    jobOrb.isCollected = true;
+    jobOrb.isActive = false;
+
+    if (this.io) {
+      this.io.emit('job-orb-collected', {
+        playerId,
+        orbId,
+        jobClass: jobOrb.jobClass
+      });
+    }
+
+    console.log(`✅ 플레이어 ${playerId}가 ${jobOrb.jobClass} 오브를 수집했습니다.`);
+    
+    // 성공 응답
+    const response = {
+      success: true,
+      jobClass: jobOrb.jobClass,
+      orbId: orbId,
+      message: `${jobOrb.jobClass} 직업 변경 오브를 획득했습니다!`
+    };
+    
+    return response;
+  }
+
+  /**
+   * 모든 직업 오브 상태 가져오기
+   */
+  getAllJobOrbs() {
+    if (!this.jobOrbs) return [];
+    
+    return Array.from(this.jobOrbs.values()).filter(orb => orb.isActive && !orb.isCollected);
+  }
+
+
 }
 
 module.exports = GameStateManager; 

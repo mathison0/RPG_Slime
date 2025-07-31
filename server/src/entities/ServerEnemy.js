@@ -48,6 +48,13 @@ class ServerEnemy {
     this.stunStartTime = 0;
     this.stunDuration = 0;
     
+    // 효과 상태 관리 (슬로우 등)
+    this.activeEffects = new Set();
+    
+    // 체력 재생 시스템
+    this.lastDamageTime = 0; // 마지막으로 데미지를 받은 시간
+    this.lastRegenTick = 0;  // 마지막 재생 틱 시간
+    
     // 이동 관련
     this.vx = 0;
     this.vy = 0;
@@ -106,11 +113,38 @@ class ServerEnemy {
   }
 
   /**
-   * 몬스터 AI 업데이트
+   * 효과가 적용된 실제 속도 계산
+   * @param {number} baseSpeed - 기본 속도
+   * @returns {number} - 효과가 적용된 속도
+   */
+  getEffectiveSpeed(baseSpeed) {
+    let effectiveSpeed = baseSpeed;
+    
+    // 슬로우 효과 적용
+    if (this.isSlowed && this.slowAmount) {
+      effectiveSpeed *= this.slowAmount;
+    } else if (this.activeEffects.has('slow')) {
+      // 구버전 호환성
+      effectiveSpeed *= 0.5;
+    }
+    
+    return effectiveSpeed;
+  }
+
+  /**
+   * 몬스터 업데이트
    */
   update(players, walls, delta) {
     const now = Date.now();
     this.lastUpdate = now;
+    
+    // 슬로우 효과 만료 체크
+    if (this.isSlowed && this.slowedUntil && now > this.slowedUntil) {
+      this.isSlowed = false;
+      this.slowedUntil = null;
+      this.slowAmount = 1;
+      console.log(`몬스터 ${this.id} 슬로우 효과 해제`);
+    }
     
     // 기절 상태에서는 행동 제한
     if (this.isStunned) {
@@ -130,6 +164,7 @@ class ServerEnemy {
 
   /**
    * 가장 가까운 타겟 찾기 (매 프레임마다 더 가까운 타겟으로 어그로 변경)
+   * 다른 레벨에 있는 플레이어는 어그로 대상에서 제외
    */
   findTarget(players) {
     let closestPlayer = null;
@@ -142,6 +177,10 @@ class ServerEnemy {
       if (!targetExists || targetExists.isDead) {
         // 타겟이 없거나 죽었으면 해제
         this.target = null;
+      } else if (targetExists.isStealth && targetExists.visibleToEnemies === false) {
+        // 타겟이 은신 상태가 되면 타겟 해제
+        this.target = null;
+        console.log(`몬스터 ${this.id} 타겟 해제: ${targetExists.id} (은신 상태)`);
       } else {
         // 현재 타겟과의 거리 계산
         const dx = this.target.x - this.x;
@@ -152,6 +191,13 @@ class ServerEnemy {
         if (currentTargetDistance > this.maxAggroRange) {
           this.target = null;
           currentTargetDistance = Infinity;
+        } else {
+          // 현재 타겟이 다른 레벨로 이동했는지 확인
+          const targetMapLevel = this.getPlayerMapLevel(this.target);
+          if (targetMapLevel !== this.mapLevel) {
+            this.target = null;
+            currentTargetDistance = Infinity;
+          }
         }
       }
     }
@@ -160,6 +206,15 @@ class ServerEnemy {
     for (const player of players.values()) {
       // 죽은 플레이어는 타겟에서 제외
       if (player.isDead || player.hp <= 0) continue;
+      
+      // 다른 레벨에 있는 플레이어는 타겟에서 제외
+      const playerMapLevel = this.getPlayerMapLevel(player);
+      if (playerMapLevel === null || playerMapLevel !== this.mapLevel) {
+        continue;
+      }
+      
+      // 은신 중인 플레이어는 타겟에서 제외
+      if (player.isStealth && player.visibleToEnemies === false) continue;
       
       const dx = player.x - this.x;
       const dy = player.y - this.y;
@@ -175,14 +230,20 @@ class ServerEnemy {
     // 새로 찾은 가장 가까운 플레이어로 타겟 업데이트
     // (현재 타겟이 없거나, 더 가까운 플레이어가 있을 때)
     if (closestPlayer && (!this.target || closestDistance < currentTargetDistance)) {
-      const previousTarget = this.target ? this.target.id : 'none';
       this.target = closestPlayer;
-      
-      // 타겟이 변경되었을 때만 로그 출력
-      if (previousTarget !== this.target.id) {
-        console.log(`몬스터 ${this.id} 타겟 변경: ${previousTarget} -> ${this.target.id} (거리: ${Math.round(closestDistance)})`);
-      }
     }
+  }
+
+  /**
+   * 플레이어의 현재 맵 레벨 계산
+   * @param {Object} player - 플레이어 객체
+   * @returns {number|null} 맵 레벨 또는 null
+   */
+  getPlayerMapLevel(player) {
+    const MonsterConfig = require('../../shared/MonsterConfig');
+    const gameConfig = require('../config/GameConfig');
+    
+    return MonsterConfig.getMapLevelFromPosition(player.x, player.y, gameConfig);
   }
 
   /**
@@ -217,8 +278,9 @@ class ServerEnemy {
     const dirX = dx / distance;
     const dirY = dy / distance;
     
-    this.vx = dirX * this.speed;
-    this.vy = dirY * this.speed;
+    const effectiveSpeed = this.getEffectiveSpeed(this.speed);
+    this.vx = dirX * effectiveSpeed;
+    this.vy = dirY * effectiveSpeed;
   }
 
   /**
@@ -230,8 +292,9 @@ class ServerEnemy {
       this.wanderChangeTime = now + Math.random() * 3000 + 2000;
     }
     
-    this.vx = Math.cos(this.wanderDirection) * this.wanderSpeed;
-    this.vy = Math.sin(this.wanderDirection) * this.wanderSpeed;
+    const effectiveWanderSpeed = this.getEffectiveSpeed(this.wanderSpeed);
+    this.vx = Math.cos(this.wanderDirection) * effectiveWanderSpeed;
+    this.vy = Math.sin(this.wanderDirection) * effectiveWanderSpeed;
   }
 
   /**
@@ -413,6 +476,44 @@ class ServerEnemy {
         duration: 0
       });
     }
+  }
+
+  /**
+   * 체력 재생 처리
+   */
+  processHealthRegeneration() {
+    // 이미 풀피인 경우 재생하지 않음
+    if (this.hp >= this.maxHp) {
+      return;
+    }
+    
+    const now = Date.now();
+    const regenConfig = gameConfig.HEALTH_REGENERATION;
+    
+    // 마지막 데미지 후 충분한 시간이 지났는지 확인
+    const timeSinceLastDamage = now - this.lastDamageTime;
+    if (timeSinceLastDamage < regenConfig.DELAY_AFTER_DAMAGE) {
+      return;
+    }
+    
+    // 재생 틱 간격 확인
+    const timeSinceLastRegen = now - this.lastRegenTick;
+    if (timeSinceLastRegen < regenConfig.TICK_INTERVAL) {
+      return;
+    }
+    
+    // 체력 재생 수행
+    const regenAmount = Math.ceil(this.maxHp * regenConfig.REGENERATION_RATE);
+    const oldHp = this.hp;
+    this.hp = Math.min(this.maxHp, this.hp + regenAmount);
+    this.lastRegenTick = now;
+  }
+
+  /**
+   * 데미지 받았을 때 호출되는 메서드 (체력 재생 타이머 리셋용)
+   */
+  onDamageTaken() {
+    this.lastDamageTime = Date.now();
   }
 }
 

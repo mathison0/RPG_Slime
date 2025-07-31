@@ -8,9 +8,7 @@ import HealthBar from '../ui/HealthBar.js';
 import SlimeJob from './jobs/SlimeJob.js';
 import MageJob from './jobs/MageJob.js';
 import AssassinJob from './jobs/AssassinJob.js';
-import NinjaJob from './jobs/NinjaJob.js';
 import WarriorJob from './jobs/WarriorJob.js';
-import MechanicJob from './jobs/MechanicJob.js';
 import ArcherJob from './jobs/ArcherJob.js';
 import SupporterJob from './jobs/SupporterJob.js';
 
@@ -38,6 +36,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.speed = 200;
         this.attack = 20;
         
+        // 서버 동기화용 스탯 객체 초기화
+        this.stats = {
+            attack: 20,
+            speed: 200,
+            visionRange: 300,
+            basicAttackCooldown: 600 // 기본 공격 쿨다운 (ms)
+        };
+        
         // 직업 관련
         this.jobClass = 'slime';
         this.job = null; // 직업 클래스 인스턴스
@@ -50,6 +56,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 방향 관련
         this.direction = 'front';
         this.lastDirection = 'front';
+        this.lastPressedKey = null; // 마지막으로 누른 키 추적
         
         // 네트워크 동기화 관련
         this.lastNetworkX = this.x;
@@ -59,11 +66,21 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 상태
         this.isJumping = false;
         this.jumpEndTime = null; // 점프 애니메이션 끝나는 시점
+        this.jumpAnimationInProgress = false; // 클라이언트 애니메이션 진행 상태 (isJumping과 별개)
         this.team = team;
         this.isInvincible = false;
         this.isDead = false; // 사망 상태
         this.visionRange = 300;
         this.minimapVisionRange = 200;
+        this.isStunned = false;
+        
+        // Tint 상태 관리 (우선순위: 피격 > 기절 > 은신 > 슬로우)
+        this.isDamaged = false;        // 피격 상태 (0xff0000)
+        this.isStunnedTint = false;    // 기절 상태 (0x888888)
+        this.isStealthTint = false;    // 은신 상태 (0x888888)
+        this.isSlowedTint = false;     // 슬로우 상태 (0x87ceeb)
+        this.isHealedTint = false;     // 힐 상태 (0x90EE90)
+        this.isBuffedTint = false;     // 버프 상태 (0x9370DB)
         
         // 디버그 모드 최적화
         this.lastEnemyDebugUpdate = 0;
@@ -85,6 +102,15 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // 후딜레이 관련
         this.isInAfterDelay = false;
         this.afterDelayEndTime = 0;
+        
+        // 버프 시스템
+        this.buffs = new Map(); // buffType -> { startTime, duration, endTime, effect }
+        this.buffUI = null; // 버프 UI 요소
+        
+        // 스킬별 스프라이트 상태 플래그 (클라이언트 전용)
+        this.isUsingRoar = false;
+        this.isUsingSpread = false;
+        this.skillSpriteTimers = new Map(); // 스킬 스프라이트 타이머 관리
         
         // 디버그 관련
         this.debugMode = false;
@@ -167,14 +193,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 case 'assassin':
                     this.job = new AssassinJob(this);
                     break;
-                case 'ninja':
-                    this.job = new NinjaJob(this);
-                    break;
                 case 'warrior':
                     this.job = new WarriorJob(this);
-                    break;
-                case 'mechanic':
-                    this.job = new MechanicJob(this);
                     break;
                 case 'archer':
                     this.job = new ArcherJob(this);
@@ -217,8 +237,8 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         // 스킬 쿨다운 UI 갱신
         if (this.skillCooldownUI) {
-            // updateVisibleSkills에서 직업 변경을 감지하여 자동으로 UI를 재생성하므로
-            // 여기서는 직업 정보만 업데이트하고 update()에서 처리되도록 함
+            // 직업 변경 시 최대 쿨타임 업데이트
+            this.skillCooldownUI.updateMaxCooldowns(newJobClass);
             console.log(`[Player] 직업 변경: ${newJobClass}`);
         }
         
@@ -300,6 +320,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 this.skillCooldownUI.update();
             }
             
+            // 버프 정리 및 UI 업데이트
+            this.cleanupExpiredBuffs();
+            this.updateBuffUI();
+            
             // 네트워크 위치 동기화
             this.syncNetworkPosition();
         }
@@ -332,19 +356,21 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 이동 처리 (클라이언트에서 처리)
      */
     handleMovement() {
-        // 죽은 상태에서는 이동 불가
-        if (this.isDead) {
-            this.setVelocity(0);
-            return;
-        }
+        this.setVelocity(0);
 
-        // 후딜레이 중일 때는 이동 불가
-        if (this.isInAfterDelay) {
-            this.setVelocity(0);
+        if (this.isDead) {
             return;
         }
         
-        // 슬로우 효과 적용
+        // 후딜레이 중일 때는 이동 불가
+        if (this.isInAfterDelay) {
+            return;
+        }
+
+        if (this.jumpAnimationInProgress || this.isCasting || this.isStunned || this.isRolling) {
+            return;
+        }
+        
         let effectiveSpeed = this.speed;
         if (this.slowEffects && this.slowEffects.length > 0) {
             // 가장 강한 슬로우 효과 적용
@@ -352,12 +378,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 return current.speedReduction < strongest.speedReduction ? current : strongest;
             });
             effectiveSpeed = this.speed * strongestSlow.speedReduction;
-        }
-        
-        this.setVelocity(0);
-        
-        if (this.isJumping || this.isCasting || this.isStunned) {
-            return;
         }
         
         let movingUp = false;
@@ -398,14 +418,37 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const isMoving = movingUp || movingDown || movingLeft || movingRight;
         
         if (isMoving) {
-            if (movingUp) {
+            // 대각선 이동 처리
+            if (movingUp && movingLeft && !movingDown && !movingRight) {
+                this.direction = 'back'; // 대각선은 위쪽 우선
+                this.lastPressedKey = 'up';
+            } else if (movingUp && movingRight && !movingDown && !movingLeft) {
+                this.direction = 'back'; // 대각선은 위쪽 우선
+                this.lastPressedKey = 'up';
+            } else if (movingDown && movingLeft && !movingUp && !movingRight) {
+                this.direction = 'front'; // 대각선은 아래쪽 우선
+                this.lastPressedKey = 'down';
+            } else if (movingDown && movingRight && !movingUp && !movingLeft) {
+                this.direction = 'front'; // 대각선은 아래쪽 우선
+                this.lastPressedKey = 'down';
+            } else if (movingLeft && movingRight) {
+                this.direction = 'left'; // 좌우 동시 누르면 왼쪽 우선
+                this.lastPressedKey = 'left';
+            } else if (movingUp && movingDown) {
+                this.direction = 'front'; // 상하 동시 누르면 아래쪽 우선
+                this.lastPressedKey = 'down';
+            } else if (movingUp) {
                 this.direction = 'back';
+                this.lastPressedKey = 'up';
             } else if (movingDown) {
                 this.direction = 'front';
+                this.lastPressedKey = 'down';
             } else if (movingLeft) {
                 this.direction = 'left';
+                this.lastPressedKey = 'left';
             } else if (movingRight) {
                 this.direction = 'right';
+                this.lastPressedKey = 'right';
             }
         }
         
@@ -423,6 +466,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
 
+        // 기절 상태에서는 기본 공격 사용 불가
+        if (this.isStunned) {
+            console.log(`[기본공격 차단] Player ${this.networkId || 'local'}: 기절 상태에서 기본 공격 시도 차단됨 (isStunned: ${this.isStunned})`);
+            return;
+        }
+
         this.lastClickTime = Date.now();
 
         // 서버로 투사체 발사 요청 전송
@@ -435,7 +484,16 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 스킬 입력 처리 (서버 권한 방식)
      */
     handleSkills() {
-        // 서버에서 모든 조건을 검증하므로 클라이언트에서는 조건 체크 없이 요청만 전송
+        // 기절 상태에서는 스킬 사용 불가
+        if (this.isStunned) {
+            if (Phaser.Input.Keyboard.JustDown(this.spaceKey) || 
+                Phaser.Input.Keyboard.JustDown(this.qKey) || 
+                Phaser.Input.Keyboard.JustDown(this.eKey) || 
+                Phaser.Input.Keyboard.JustDown(this.rKey)) {
+                console.log(`[스킬 차단] Player ${this.networkId || 'local'}: 기절 상태에서 스킬 사용 시도 차단됨 (isStunned: ${this.isStunned})`);
+            }
+            return;
+        }
 
         // 스페이스바로 점프 (모든 직업 공통)
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
@@ -444,6 +502,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Q키로 첫 번째 스킬
         if (Phaser.Input.Keyboard.JustDown(this.qKey)) {
+            console.log('Q키 눌림 - 구르기 스킬 요청');
             this.requestSkillUse('skill1');
         }
         
@@ -455,26 +514,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         // R키로 세 번째 스킬
         if (Phaser.Input.Keyboard.JustDown(this.rKey)) {
             this.requestSkillUse('skill3');
-        }
-        
-        // F키로 전직
-        if (Phaser.Input.Keyboard.JustDown(this.fKey)) {
-            this.showJobSelection();
-        }
-      
-        // I키로 무적 모드 토글
-        if (Phaser.Input.Keyboard.JustDown(this.iKey)) {
-            this.toggleInvincible();
-        }
-        
-        // L키로 레벨업 테스트
-        if (Phaser.Input.Keyboard.JustDown(this.lKey)) {
-            this.testLevelUp();
-        }
-        
-        // T키로 디버그 모드 토글
-        if (Phaser.Input.Keyboard.JustDown(this.tKey)) {
-            this.toggleDebugMode();
         }
     }
   
@@ -544,12 +583,13 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 서버에 스킬 사용 요청
+     * 스킬 사용 요청 (서버 권한 방식)
      */
     requestSkillUse(skillType) {
+        console.log(`requestSkillUse 호출: skillType=${skillType}`);
         if (this.networkManager) {
             // 클라이언트 사이드 쿨다운 체크
-            if (this.isSkillOnCooldown(skillType)) {
+            if (this.isStunned || this.isCasting || this.jumpAnimationInProgress || this.isDead || this.isSkillOnCooldown(skillType)) {
                 return; // 서버에 요청을 보내지 않음
             }
             
@@ -557,15 +597,140 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             const pointer = this.scene.input.activePointer;
             const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
             
-            this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y);
+            // 구르기 스킬의 경우 현재 누르고 있는 키들로 이동 방향 결정
+            let skillDirection = this.direction; // 기본값은 현재 방향
+            
+            if (skillType === 'roll' || skillType === 'skill1') {
+                // 현재 누르고 있는 키들 확인
+                const movingUp = this.wasd.W.isDown || this.cursors.up.isDown;
+                const movingDown = this.wasd.S.isDown || this.cursors.down.isDown;
+                const movingLeft = this.wasd.A.isDown || this.cursors.left.isDown;
+                const movingRight = this.wasd.D.isDown || this.cursors.right.isDown;
+                
+                console.log(`구르기 스킬 요청 - 현재 누르고 있는 키들: up=${movingUp}, down=${movingDown}, left=${movingLeft}, right=${movingRight}`);
+                
+                // 현재 누르고 있는 키들로 이동 방향 결정
+                if (movingUp && !movingDown && !movingLeft && !movingRight) {
+                    skillDirection = 'back';
+                } else if (movingDown && !movingUp && !movingLeft && !movingRight) {
+                    skillDirection = 'front';
+                } else if (movingLeft && !movingRight && !movingUp && !movingDown) {
+                    skillDirection = 'left';
+                } else if (movingRight && !movingLeft && !movingUp && !movingDown) {
+                    skillDirection = 'right';
+                } else if (movingUp && movingLeft && !movingDown && !movingRight) {
+                    skillDirection = 'back-left'; // 대각선: 위쪽 + 왼쪽
+                } else if (movingUp && movingRight && !movingDown && !movingLeft) {
+                    skillDirection = 'back-right'; // 대각선: 위쪽 + 오른쪽
+                } else if (movingDown && movingLeft && !movingUp && !movingRight) {
+                    skillDirection = 'front-left'; // 대각선: 아래쪽 + 왼쪽
+                } else if (movingDown && movingRight && !movingUp && !movingLeft) {
+                    skillDirection = 'front-right'; // 대각선: 아래쪽 + 오른쪽
+                } else if (movingLeft && movingRight) {
+                    skillDirection = 'left'; // 좌우 동시 누르면 왼쪽 우선
+                } else if (movingUp && movingDown) {
+                    skillDirection = 'front'; // 상하 동시 누르면 아래쪽 우선
+                }
+                // 아무 키도 누르지 않으면 현재 방향 유지
+                
+                // 회전 방향 결정 (마지막 누른 키 기준)
+                let rotationDirection = 'clockwise'; // 기본값: 시계방향
+                if (this.lastPressedKey === 'left') {
+                    rotationDirection = 'counterclockwise'; // 왼쪽 키를 마지막으로 눌렀으면 반시계방향
+                }
+                this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y, skillDirection, rotationDirection);
+                return; // 여기서 함수 종료
+            }
+            
+                             // 목긋기 스킬의 경우 마우스 커서 위치만 전송 (서버에서 대상 찾기)
+                 if (skillType === 'skill3' && this.jobClass === 'assassin') {
+                     this.networkManager.useSkill('backstab', {
+                         mouseX: worldPoint.x,
+                         mouseY: worldPoint.y
+                     });
+            } else {
+                this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y, skillDirection);
+            }
         }
     }
     
+             /**
+          * 마우스 커서 위치의 타겟 찾기 (상대팀 플레이어 또는 몬스터)
+          */
+         findTargetPlayerAtMouse(mouseX, mouseY) {
+             const backstabRange = 200; // 목긋기 사거리
+             
+             // 상대팀 플레이어 찾기
+             if (this.scene && this.scene.otherPlayers) {
+                 const otherPlayers = this.scene.otherPlayers.getChildren();
+                 
+                 for (const player of otherPlayers) {
+                     // 상대팀 플레이어인지 확인
+                     if (player.team === this.team) {
+                         continue;
+                     }
+             
+                     // 플레이어가 사망했는지 확인
+                     if (player.isDead) {
+                         continue;
+                     }
+             
+                     // 거리 계산
+                     const distance = Math.sqrt(
+                         Math.pow(this.x - player.x, 2) + 
+                         Math.pow(this.y - player.y, 2)
+                     );
+             
+                     // 사거리 내에 있는지 확인
+                     if (distance > backstabRange) {
+                         continue;
+                     }
+             
+                     // 마우스 커서가 플레이어 위에 있는지 확인
+                     const playerBounds = player.getBounds();
+                     if (playerBounds.contains(mouseX, mouseY)) {
+                         return player;
+                     }
+                 }
+             }
+             
+             // 몬스터 찾기
+             if (this.scene && this.scene.enemies) {
+                 const enemies = this.scene.enemies.getChildren();
+                 
+                 for (const enemy of enemies) {
+                     // 몬스터가 사망했는지 확인
+                     if (enemy.isDead) {
+                         continue;
+                     }
+             
+                     // 거리 계산
+                     const distance = Math.sqrt(
+                         Math.pow(this.x - enemy.x, 2) + 
+                         Math.pow(this.y - enemy.y, 2)
+                     );
+             
+                     // 사거리 내에 있는지 확인
+                     if (distance > backstabRange) {
+                         continue;
+                     }
+             
+                     // 마우스 커서가 몬스터 위에 있는지 확인
+                     const enemyBounds = enemy.getBounds();
+                     if (enemyBounds.contains(mouseX, mouseY)) {
+                         return enemy;
+                     }
+                 }
+             }
+       
+             return null;
+         }
+
     /**
      * 직업 변경 요청 (서버 권한 방식)
      */
     showJobSelection() {
-        const jobs = ['slime', 'assassin', 'ninja', 'warrior', 'mage', 'mechanic', 'archer', 'supporter'];
+        const jobs = ['slime', 'assassin', 'warrior', 'mage', 'archer', 'supporter'];
         const currentIndex = jobs.indexOf(this.jobClass);
         const nextIndex = (currentIndex + 1) % jobs.length;
         
@@ -579,7 +744,25 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 스프라이트 업데이트
      */
     updateJobSprite() {
-        const spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
+
+        if (this.jumpAnimationInProgress || this.isDead) {
+            return;
+        }
+
+        let spriteKey;
+        
+        // 스킬 스프라이트 우선순위 확인
+        if (this.isUsingRoar && this.jobClass === 'warrior') {
+            spriteKey = 'warrior_skill';
+        } else if (this.isUsingSpread && this.jobClass === 'slime') {
+            spriteKey = 'slime_skill';
+        } else if (this.isCasting) {
+            // 캐스팅 중인 경우 현재 스프라이트 유지 (스프라이트 변경 안함)
+            return;
+        } else {
+            // 일반 상태의 스프라이트
+            spriteKey = AssetLoader.getPlayerSpriteKey(this.jobClass, this.direction);
+        }
         
         if (this.scene.textures.exists(spriteKey)) {
             this.setTexture(spriteKey);
@@ -662,6 +845,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 플레이어 사망 처리
      */
     die() {
+        // 스킬 스프라이트 상태 정리
+        this.clearAllSkillSpriteStates();
+        
         // 새로운 사망 처리 로직 사용
         this.scene.handlePlayerDeath('direct');
     }
@@ -698,8 +884,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         if (this.job && this.job.clearSkillEffects) {
             this.job.clearSkillEffects();
         }
-        
-        console.log(`플레이어 ${this.networkId || 'local'}의 지연된 스킬 이펙트들 정리 완료`);
     }
 
     /**
@@ -772,6 +956,29 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
+     * Tint 상태를 우선순위에 따라 업데이트
+     * 우선순위: 피격 > 기절 > 은신 > 힐 > 슬로우 > 버프
+     */
+    updateTint() {
+        // 우선순위에 따라 tint 결정
+        if (this.isDamaged) {
+            this.setTint(0xff0000); // 빨간색 (피격)
+        } else if (this.isStunnedTint) {
+            this.setTint(0x888888); // 회색 (기절)
+        } else if (this.isStealthTint) {
+            this.setTint(0x888888); // 회색 (은신)
+        } else if (this.isHealedTint) {
+            this.setTint(0xFFFF00); // 노란색 (힐)
+        } else if (this.isSlowedTint) {
+            this.setTint(0x87ceeb); // 하늘색 (슬로우)
+        } else if (this.isBuffedTint) {
+            this.setTint(0x9370DB); // 보라색 (버프)
+        } else {
+            this.clearTint(); // 모든 효과가 없으면 원래 색상
+        }
+    }
+
+    /**
      * 자살 (치트) - 서버에 사망 요청
      */
     suicide() {
@@ -814,21 +1021,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     setIsOtherPlayer(isOther) {
         this.isOtherPlayer = isOther;
-    }
-
-    updateFromNetwork(data) {
-        this.setPosition(data.x, data.y);
-        this.direction = data.direction;
-        
-        // 점프 상태 변경 시 속도를 0으로 설정
-        if (data.isJumping) {
-            // 점프가 시작될 때 즉시 속도를 0으로 설정
-            this.setVelocity(0, 0);
-        }
-        
-        this.isJumping = data.isJumping;
-        this.isStunned = data.isStunned; // 기절 상태 추가
-        this.updateJobSprite();
     }
 
     // 체력바 관련 메서드들
@@ -1237,8 +1429,6 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         const endTime = cooldownInfo.nextAvailableTime;
         const isOnCooldown = now < endTime;
         
-        console.log('remain:', endTime - now);
-        
         return isOnCooldown;
     }
 
@@ -1246,9 +1436,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
      * 점프 애니메이션이 끝났는지 확인
      */
     isJumpAnimationFinished() {
-        // 점프 중이 아니면 바로 점프 가능
-        if (!this.isJumping) {
-            console.log('점프 체크: 점프 중이 아님 -> 가능');
+        // 점프 애니메이션 중이 아니면 바로 점프 가능
+        if (!this.jumpAnimationInProgress) {
+            console.log('점프 체크: 점프 애니메이션 중이 아님 -> 가능');
             return true;
         }
         
@@ -1260,9 +1450,380 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             return finished;
         }
         
-        // 점프 액션 정보가 없으면 현재 점프 상태를 기준으로 판단
-        console.log('점프 체크: jumpEndTime 없음, isJumping=true -> 불가능');
+        // 점프 액션 정보가 없으면 현재 점프 애니메이션 상태를 기준으로 판단
+        console.log('점프 체크: jumpEndTime 없음, jumpAnimationInProgress=true -> 불가능');
         return false;
+    }
+
+    /**
+     * 스킬 타입을 클라이언트 스킬 키로 변환
+     * @param {string} skillType - 서버 스킬 타입 (skill1, skill2, skill3, jump 등)
+     * @returns {string} - 클라이언트 스킬 키
+     */
+    getClientSkillKey(skillType) {
+        // 직접 매핑되는 경우
+        if (skillType === 'skill1' || skillType === 'skill2' || skillType === 'skill3') {
+            return skillType;
+        }
+        
+        // 직업별 스킬 매핑
+        const skillMappings = {
+            'slime': {
+                'spread': 'skill1'
+            },
+            'warrior': {
+                'roar': 'skill1',
+                'sweep': 'skill2', 
+                'thrust': 'skill3'
+            },
+            'mage': {
+                'ward': 'skill1',
+                'ice_field': 'skill2',
+                'magic_missile': 'skill3',
+                'shield': 'skill3' // 일부 스킬은 동일 키에 매핑될 수 있음
+            },
+            'assassin': {
+                'stealth': 'skill1',
+                'blade_dance': 'skill2'
+            },
+            'ninja': {
+                'stealth': 'skill1',
+                'triple_throw': 'skill2',
+                'blink': 'skill3'
+            },
+            'archer': {
+                'roll': 'skill1',
+                'focus': 'skill2'
+            },
+            'supporter': {
+                'ward': 'skill1',
+                'buff_field': 'skill2',
+                'heal_field': 'skill3'
+            },
+            'mechanic': {
+                'grab': 'skill1',
+                'mine': 'skill2',
+                'flask': 'skill3'
+            }
+        };
+        
+        const jobSkills = skillMappings[this.jobClass];
+        if (jobSkills && jobSkills[skillType]) {
+            return jobSkills[skillType];
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 스킬 스프라이트 상태 설정 (클라이언트 전용)
+     */
+    setSkillSpriteState(skillType, duration) {
+        // 기존 타이머가 있으면 제거
+        if (this.skillSpriteTimers.has(skillType)) {
+            clearTimeout(this.skillSpriteTimers.get(skillType));
+            this.skillSpriteTimers.delete(skillType);
+        }
+        
+        // 스킬 타입에 따라 플래그 설정
+        if (skillType === 'roar' && this.jobClass === 'warrior') {
+            this.isUsingRoar = true;
+            console.log(`전사 ${this.networkId || 'local'} roar 스프라이트 설정, 지속시간: ${duration}ms`);
+        } else if (skillType === 'spread' && this.jobClass === 'slime') {
+            this.isUsingSpread = true;
+            console.log(`슬라임 ${this.networkId || 'local'} spread 스프라이트 설정, 지속시간: ${duration}ms`);
+        } else {
+            // 다른 스킬은 처리하지 않음
+            return;
+        }
+        
+        // 스프라이트 즉시 업데이트
+        this.updateJobSprite();
+        
+        // 지속시간 후 플래그 해제
+        const timer = setTimeout(() => {
+            this.clearSkillSpriteState(skillType);
+        }, duration);
+        
+        this.skillSpriteTimers.set(skillType, timer);
+    }
+    
+    /**
+     * 스킬 스프라이트 상태 해제 (클라이언트 전용)
+     */
+    clearSkillSpriteState(skillType) {
+        // 타이머 제거
+        if (this.skillSpriteTimers.has(skillType)) {
+            clearTimeout(this.skillSpriteTimers.get(skillType));
+            this.skillSpriteTimers.delete(skillType);
+        }
+        
+        // 스킬 타입에 따라 플래그 해제
+        if (skillType === 'roar') {
+            this.isUsingRoar = false;
+            console.log(`전사 ${this.networkId || 'local'} roar 스프라이트 해제`);
+        } else if (skillType === 'spread') {
+            this.isUsingSpread = false;
+            console.log(`슬라임 ${this.networkId || 'local'} spread 스프라이트 해제`);
+        }
+        
+        // 스프라이트 즉시 업데이트
+        this.updateJobSprite();
+    }
+    
+    /**
+     * 모든 스킬 스프라이트 상태 해제 (클라이언트 전용)
+     */
+    clearAllSkillSpriteStates() {
+        // 모든 타이머 정리
+        for (const [skillType, timer] of this.skillSpriteTimers) {
+            clearTimeout(timer);
+        }
+        this.skillSpriteTimers.clear();
+        
+        // 모든 플래그 해제
+        this.isUsingRoar = false;
+        this.isUsingSpread = false;
+        
+        console.log(`플레이어 ${this.networkId || 'local'} 모든 스킬 스프라이트 상태 해제`);
+        
+        // 스프라이트 즉시 업데이트
+        this.updateJobSprite();
+    }
+
+    /**
+     * 버프 적용
+     */
+    applyBuff(buffType, duration, effect) {
+        const now = Date.now();
+        const endTime = now + duration;
+        
+        this.buffs.set(buffType, {
+            startTime: now,
+            duration: duration,
+            endTime: endTime,
+            effect: effect
+        });
+        
+        console.log(`버프 적용: ${buffType}, 지속시간: ${duration}ms, 효과:`, effect);
+        
+        // 버프 효과를 실제 스탯에 적용
+        this.applyBuffEffects();
+        
+        // 버프 UI 업데이트
+        this.updateBuffUI();
+        this.updateTint();
+        
+        // 버프 만료 체크 및 UI 업데이트를 위한 타이머 설정
+        if (!this.buffUpdateTimer) {
+            this.buffUpdateTimer = this.scene.time.addEvent({
+                delay: 100, // 0.1초마다 체크
+                callback: this.updateBuffStates,
+                callbackScope: this,
+                loop: true
+            });
+        }
+    }
+
+    /**
+     * 버프 제거
+     */
+    removeBuff(buffType) {
+        if (this.buffs.has(buffType)) {
+            this.buffs.delete(buffType);
+            console.log(`버프 제거: ${buffType}`);
+            
+            // 버프 효과를 실제 스탯에서 제거
+            this.applyBuffEffects();
+            
+            this.updateBuffUI();
+            this.updateTint();
+        }
+    }
+    
+    /**
+     * 버프 효과를 실제 스탯에 적용
+     */
+    applyBuffEffects() {
+        // 원본 스탯 저장 (최초 1회만)
+        if (!this.originalStats) {
+            this.originalStats = {
+                speed: this.speed,
+                basicAttackCooldown: this.basicAttackCooldown
+            };
+        }
+        
+        // 기본 스탯으로 초기화
+        this.speed = this.originalStats.speed;
+        this.basicAttackCooldown = this.originalStats.basicAttackCooldown;
+        
+        // 모든 활성 버프 효과 적용
+        let totalSpeedMultiplier = 1;
+        let totalAttackSpeedMultiplier = 1;
+        
+        for (const [buffType, buff] of this.buffs) {
+            if (Date.now() < buff.endTime && buff.effect) {
+                if (buff.effect.speedMultiplier) {
+                    totalSpeedMultiplier *= buff.effect.speedMultiplier;
+                }
+                if (buff.effect.attackSpeedMultiplier) {
+                    totalAttackSpeedMultiplier *= buff.effect.attackSpeedMultiplier;
+                }
+            }
+        }
+        
+        // 스탯 적용
+        this.speed = Math.round(this.originalStats.speed * totalSpeedMultiplier);
+        this.basicAttackCooldown = Math.round(this.originalStats.basicAttackCooldown / totalAttackSpeedMultiplier);
+        
+        // 물리 바디 속도도 업데이트
+        if (this.body) {
+            this.body.setMaxSpeed(this.speed);
+        }
+        
+        console.log(`버프 효과 적용: 이동속도=${this.speed} (배율=${totalSpeedMultiplier.toFixed(2)}), 공격속도=${this.basicAttackCooldown}ms (배율=${totalAttackSpeedMultiplier.toFixed(2)})`);
+    }
+
+    /**
+     * 만료된 버프 정리
+     */
+    cleanupExpiredBuffs() {
+        const now = Date.now();
+        const expiredBuffs = [];
+        
+        for (const [buffType, buff] of this.buffs) {
+            if (now >= buff.endTime) {
+                expiredBuffs.push(buffType);
+            }
+        }
+        
+        expiredBuffs.forEach(buffType => {
+            this.removeBuff(buffType);
+        });
+    }
+
+    /**
+     * 버프 상태 업데이트 (만료된 버프 제거 및 UI 갱신)
+     */
+    updateBuffStates() {
+        const now = Date.now();
+        let hasExpiredBuff = false;
+        
+        // 만료된 버프 제거
+        for (const [buffType, buff] of this.buffs) {
+            if (now >= buff.endTime) {
+                this.buffs.delete(buffType);
+                hasExpiredBuff = true;
+                console.log(`버프 만료: ${buffType}`);
+            }
+        }
+        
+        // 만료된 버프가 있으면 스탯 재계산 및 UI 업데이트
+        if (hasExpiredBuff) {
+            this.applyBuffEffects(); // 스탯 재계산
+            this.updateBuffUI();
+            this.updateTint();
+        }
+        
+        // 모든 버프가 없으면 타이머 제거
+        if (this.buffs.size === 0 && this.buffUpdateTimer) {
+            this.buffUpdateTimer.remove();
+            this.buffUpdateTimer = null;
+        }
+    }
+
+    /**
+     * 버프 상태 가져오기
+     */
+    getBuffState() {
+        const now = Date.now();
+        const activeBuffs = {};
+        
+        for (const [buffType, buff] of this.buffs) {
+            if (now < buff.endTime) {
+                activeBuffs[buffType] = {
+                    remainingTime: buff.endTime - now,
+                    effect: buff.effect
+                };
+            }
+        }
+        
+        return activeBuffs;
+    }
+
+    /**
+     * 버프가 활성화되어 있는지 확인
+     */
+    hasBuff(buffType) {
+        if (!this.buffs.has(buffType)) return false;
+        
+        const buff = this.buffs.get(buffType);
+        return Date.now() < buff.endTime;
+    }
+
+    /**
+     * 버프 UI 업데이트
+     */
+    updateBuffUI() {
+        if (!this.buffUI) {
+            this.createBuffUI();
+        }
+        
+        const activeBuffs = this.getBuffState();
+        const buffTypes = Object.keys(activeBuffs);
+        
+        if (buffTypes.length === 0) {
+            if (this.buffUI) {
+                this.buffUI.destroy();
+                this.buffUI = null;
+            }
+            return;
+        }
+        
+        // 버프 아이콘들 업데이트
+        this.buffUI.removeAll(true);
+        
+        buffTypes.forEach((buffType, index) => {
+            const buff = activeBuffs[buffType];
+            const remainingTime = buff.remainingTime;
+            const progress = remainingTime / (buff.remainingTime + (Date.now() - (this.buffs.get(buffType).endTime - buff.remainingTime)));
+            
+            // 버프 아이콘 생성
+            const icon = this.scene.add.circle(10 + index * 30, 10, 8, this.getBuffColor(buffType), 0.8);
+            this.buffUI.add(icon);
+            
+            // 남은 시간 텍스트
+            const timeText = this.scene.add.text(10 + index * 30, 20, 
+                Math.ceil(remainingTime / 1000) + 's', 
+                { fontSize: '10px', fill: '#ffffff' });
+            this.buffUI.add(timeText);
+        });
+    }
+
+    /**
+     * 버프 UI 생성
+     */
+    createBuffUI() {
+        if (this.buffUI) {
+            this.buffUI.destroy();
+        }
+        
+        this.buffUI = this.scene.add.container(10, 60);
+        this.buffUI.setDepth(1000);
+    }
+
+    /**
+     * 버프 타입별 색상 반환
+     */
+    getBuffColor(buffType) {
+        switch (buffType) {
+            case 'attack_speed_boost':
+                return 0xFFD700; // 금색
+            case 'speed_attack_boost':
+                return 0x00FF00; // 초록색
+            default:
+                return 0xFFFFFF; // 흰색
+        }
     }
 
     /**
@@ -1271,6 +1832,13 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     destroy() {
         this.destroyDebugBoxes();
         this.destroyEnemyDebugBoxes();
+        
+        // 스킬 스프라이트 타이머 정리
+        this.clearAllSkillSpriteStates();
+        
+        // 점프 애니메이션 상태 정리
+        this.jumpAnimationInProgress = false;
+        
         // 스킬 이펙트 타이머 정리
         if (this.roarEffectTimer) {
             this.scene.time.removeEvent(this.roarEffectTimer);
@@ -1299,6 +1867,16 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         if (this.skillCooldownUI) {
             this.skillCooldownUI.destroy();
+        }
+        
+        if (this.buffUI) {
+            this.buffUI.destroy();
+        }
+        
+        // 버프 업데이트 타이머 정리
+        if (this.buffUpdateTimer) {
+            this.buffUpdateTimer.remove();
+            this.buffUpdateTimer = null;
         }
         
         if (this.job) {

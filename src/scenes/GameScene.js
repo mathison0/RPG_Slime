@@ -27,6 +27,11 @@ export default class GameScene extends Phaser.Scene {
         this.spawnBarriers = null;
         this.activeWard = null;
         
+        // 직업 변경 오브 관련
+        this.jobOrbs = new Map(); // 직업 변경 오브 저장
+        this.jobOrbGroup = null; // 직업 변경 오브 물리 그룹
+        this.jobChangeUI = null; // 전직 선택 UI
+        
         // 맵 정보
         this.MAP_WIDTH = 0;
         this.MAP_HEIGHT = 0;
@@ -56,6 +61,14 @@ export default class GameScene extends Phaser.Scene {
         this.cheatManager = null;
         this.effectManager = null;
         this.projectileManager = null;
+        
+        // 랭킹 시스템
+        this.rankingData = [];
+        this.lastRankingUpdate = 0;
+        this.rankingUpdateInterval = 5000; // 5초마다 업데이트
+        
+        // 전직 UI용 키 바인딩 (미리 생성)
+        this.jobChangeKeys = null;
     }
     
     init(data) {
@@ -78,6 +91,9 @@ export default class GameScene extends Phaser.Scene {
         this.otherPlayers = this.physics.add.group();
         this.enemies = this.physics.add.group();
         
+        // 직업 변경 오브 그룹 초기화
+        this.jobOrbGroup = this.physics.add.group();
+        
         // 매니저들 초기화
         this.initializeManagers();
         
@@ -86,6 +102,9 @@ export default class GameScene extends Phaser.Scene {
         
         // 네트워크 이벤트 설정
         this.networkEventManager.setupNetworkListeners();
+        
+        // 랭킹 시스템 초기화
+        this.setupRanking();
         
         // 게임 입장 요청
         this.networkManager.joinGame({
@@ -97,6 +116,9 @@ export default class GameScene extends Phaser.Scene {
         
         // 탭 포커스 이벤트 처리
         this.setupTabFocusHandlers();
+        
+        // 플레이어와 직업 변경 오브 충돌 감지 설정
+        this.setupJobOrbCollision();
         
         console.log('GameScene 초기화 완료');
     }
@@ -165,6 +187,37 @@ export default class GameScene extends Phaser.Scene {
             } catch (e) {
                 console.warn('적 제거 중 오류:', e);
             }
+        }
+        
+        // 직업 변경 오브들 제거
+        if (this.jobOrbs) {
+            try {
+                this.jobOrbs.forEach(orb => {
+                    if (orb && orb.active) {
+                        orb.destroy();
+                    }
+                });
+                this.jobOrbs.clear();
+            } catch (e) {
+                console.warn('직업 변경 오브 제거 중 오류:', e);
+            }
+        }
+        
+        // 직업 변경 오브 그룹 초기화
+        if (this.jobOrbGroup) {
+            try {
+                this.jobOrbGroup.clear(false);
+            } catch (e) {
+                console.warn('직업 변경 오브 그룹 제거 중 오류:', e);
+            }
+        }
+        
+        // 전직 UI 초기화
+        if (this.jobChangeUI) {
+            if (this.jobChangeUI.container) {
+                this.jobChangeUI.container.destroy();
+            }
+            this.jobChangeUI = null;
         }
         
         // 네트워크 상태 초기화
@@ -567,17 +620,22 @@ export default class GameScene extends Phaser.Scene {
         // 치트 키 처리
         this.cheatManager.handleCheatKeys();
         
+        // 투사체 매니저 업데이트 (보간 처리)
+        if (this.projectileManager) {
+            this.projectileManager.update(delta);
+        }
+        
         // 점프 상태 변화 감지 및 카메라 제어
-        if (this.player.isJumping && !this.wasJumping) {
+        if (this.player.jumpAnimationInProgress && !this.wasJumping) {
             this.cameras.main.stopFollow();
             this.wasJumping = true;
-        } else if (!this.player.isJumping && this.wasJumping) {
+        } else if (!this.player.jumpAnimationInProgress && this.wasJumping) {
             this.cameras.main.startFollow(this.player);
             this.wasJumping = false;
         }
         
-        // 벽 충돌 체크 (점프 중이 아닐 때만)
-        if (!this.player.isJumping) {
+        // 벽 충돌 체크 (점프 애니메이션 중이 아닐 때만)
+        if (!this.player.jumpAnimationInProgress) {
             const collidingWalls = this.mapManager.checkPlayerWallCollision();
             if (collidingWalls && collidingWalls.length > 0) {
                 this.mapManager.pushPlayerOutOfWall(collidingWalls);
@@ -597,8 +655,8 @@ export default class GameScene extends Phaser.Scene {
         // 맵 토글 처리
         this.minimapManager.handleMapToggle();
 
-        // 점프 중이 아닐 때만 시야 및 미니맵 업데이트
-        if (!this.player.isJumping) {
+        // 점프 애니메이션 중이 아닐 때만 시야 및 미니맵 업데이트
+        if (!this.player.jumpAnimationInProgress) {
             this.minimapManager.updateMinimapVision();
             this.visionManager.updateVision();
 
@@ -618,6 +676,146 @@ export default class GameScene extends Phaser.Scene {
         
         // 스폰 구역 상태 체크 (경고 메시지용)
         this.checkSpawnZoneStatus();
+        
+        // 전직 UI 키 입력 처리
+        this.handleJobChangeUIInput();
+        
+        // 랭킹 업데이트 체크
+        this.updateRanking(time);
+        
+        // 디버깅: 오브와 플레이어 간 거리 체크 (5초마다)
+        if (this.jobOrbs && this.jobOrbs.size > 0 && time > (this.lastDistanceCheck || 0) + 5000) {
+            this.lastDistanceCheck = time;
+            console.log(`🎯 총 오브 수: ${this.jobOrbs.size}, jobOrbGroup 오브 수: ${this.jobOrbGroup?.children?.size || 0}`);
+            this.jobOrbs.forEach((orb, orbId) => {
+                const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, orb.x, orb.y);
+                console.log(`🎯 플레이어(${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}) - 오브 ${orbId}(${orb.x.toFixed(0)}, ${orb.y.toFixed(0)}) 거리: ${distance.toFixed(2)}px, 물리바디: ${orb.body?.enable ? '활성' : '비활성'}, 수집됨: ${orb.isCollected}`);
+            });
+        }
+    }
+    
+    /**
+     * 플레이어와 직업 변경 오브 충돌 감지 설정
+     */
+    setupJobOrbCollision() {
+        console.log('🔧 setupJobOrbCollision 호출됨');
+        
+        if (!this.player) {
+            console.log('❌ 플레이어가 아직 생성되지 않음, 0.5초 후 재시도');
+            // 플레이어가 아직 생성되지 않았으면 잠시 후 재시도
+            setTimeout(() => {
+                this.setupJobOrbCollision();
+            }, 500);
+            return;
+        }
+        
+        if (!this.jobOrbGroup) {
+            console.log('❌ jobOrbGroup이 없음, jobOrbGroup 재생성');
+            this.jobOrbGroup = this.physics.add.group();
+        }
+        
+        console.log('🔧 플레이어 상태:', this.player ? '존재함' : '없음');
+        console.log('🔧 jobOrbGroup 상태:', this.jobOrbGroup ? `존재함 (오브 수: ${this.jobOrbGroup.children.size})` : '없음');
+        console.log('🔧 jobOrbs Map 상태:', this.jobOrbs ? `존재함 (오브 수: ${this.jobOrbs.size})` : '없음');
+        
+        // 기존 충돌 감지 제거 (중복 방지)
+        if (this.jobOrbCollider) {
+            this.jobOrbCollider.destroy();
+        }
+        
+        // 플레이어와 오브 그룹 간의 충돌 감지 설정
+        this.jobOrbCollider = this.physics.add.overlap(this.player, this.jobOrbGroup, (player, orb) => {
+            console.log('🎯 오브와 플레이어 충돌 감지:', orb.orbId);
+            this.handleJobOrbPickup(orb);
+        });
+        
+        console.log('✅ 직업 변경 오브 충돌 감지 설정 완료');
+    }
+    
+    /**
+     * 직업 변경 오브 픽업 처리
+     */
+    handleJobOrbPickup(orb) {
+        console.log(`직업 변경 오브 픽업 시도: ${orb.orbId}`);
+        
+        // 이미 수집된 오브이거나 처리 중인 오브인지 확인
+        if (orb.isCollected || orb.isProcessing) {
+            console.log(`이미 수집되었거나 처리 중인 오브입니다: ${orb.orbId}`);
+            return;
+        }
+        
+        // 처리 중 플래그 설정하여 중복 처리 방지
+        orb.isProcessing = true;
+        
+        // 서버에 충돌 이벤트 전송
+        if (this.networkManager && this.networkManager.socket) {
+            this.networkManager.socket.emit('job-orb-collision', {
+                orbId: orb.orbId
+            });
+        }
+        
+        console.log(`직업 변경 오브 픽업 요청 전송: ${orb.orbId}`);
+    }
+    
+    /**
+     * 전직 UI 키 입력 처리
+     */
+    handleJobChangeUIInput() {
+        if (!this.jobChangeUI || !this.jobChangeUI.isVisible) {
+            return;
+        }
+        
+        // 전직 UI용 키 바인딩이 없으면 생성
+        if (!this.jobChangeKeys) {
+            this.jobChangeKeys = {
+                enterKey: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER),
+                escKey: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
+            };
+        }
+
+        const enterKey = this.jobChangeKeys.enterKey;
+        const escKey = this.jobChangeKeys.escKey;
+        
+        // 엔터키로 전직 확인
+        if (Phaser.Input.Keyboard.JustDown(enterKey)) {
+            this.confirmJobChange();
+        }
+        
+        // ESC키로 전직 취소
+        if (Phaser.Input.Keyboard.JustDown(escKey)) {
+            this.cancelJobChange();
+        }
+    }
+    
+    /**
+     * 전직 확인
+     */
+    confirmJobChange() {
+        if (!this.jobChangeUI || !this.jobChangeUI.targetJobClass) {
+            return;
+        }
+        
+        const targetJob = this.jobChangeUI.targetJobClass;
+        
+        // 서버에 전직 요청
+        if (this.networkManager) {
+            this.networkManager.changeJob(targetJob);
+        }
+        
+        // UI 숨기기
+        this.networkEventManager.hideJobChangeUI();
+        
+        console.log(`전직 확인: ${targetJob}`);
+    }
+    
+    /**
+     * 전직 취소
+     */
+    cancelJobChange() {
+        // UI 숨기기
+        this.networkEventManager.hideJobChangeUI();
+        
+        console.log('전직 취소됨');
     }
 
     /**
@@ -692,12 +890,17 @@ export default class GameScene extends Phaser.Scene {
         this.player.isStunned = false;
         this.player.isStealth = false;
         this.player.isJumping = false;
+        this.player.jumpAnimationInProgress = false;
         
         // 지연된 스킬 이펙트들 정리
         this.player.clearDelayedSkillEffects();
         
         // 색상 초기화 (데미지로 인한 빨간색 제거)
-        this.player.clearTint();
+        this.player.isDamaged = false;
+        this.player.isStunnedTint = false;
+        this.player.isStealthTint = false;
+        this.player.isSlowedTint = false;
+        this.player.updateTint();
         
         // 진행 중인 모든 타이머 정리 (데미지 틴트 타이머 등)
         if (this.time && this.time.getAllEvents) {
@@ -830,8 +1033,6 @@ export default class GameScene extends Phaser.Scene {
      * 플레이어 리스폰
      */
     respawnPlayer() {
-        console.log('플레이어 리스폰 요청 시작');
-        
         if (!this.player) {
             console.warn('플레이어가 존재하지 않아 리스폰을 건너뜁니다');
             return;
@@ -1065,5 +1266,92 @@ export default class GameScene extends Phaser.Scene {
         });
 
         console.log('=== 디버그 정보 끝 ===');
+    }
+
+    /**
+     * 랭킹 시스템 초기화
+     */
+    setupRanking() {
+        // 랭킹 데이터 수신 이벤트 리스너
+        this.networkManager.on('ranking-data', (data) => {
+            this.rankingData = data.players;
+            this.updateRankingUI();
+        });
+
+        // 랭킹 에러 처리
+        this.networkManager.on('ranking-error', (error) => {
+            console.error('랭킹 데이터 오류:', error);
+        });
+
+        // 게임 UI가 표시된 후 랭킹 UI도 표시
+        this.time.delayedCall(1000, () => {
+            const rankingUI = document.getElementById('ranking-ui');
+            if (rankingUI) {
+                rankingUI.style.display = 'block';
+            }
+        });
+    }
+
+    /**
+     * 랭킹 업데이트 체크 및 요청
+     */
+    updateRanking(time) {
+        if (time > this.lastRankingUpdate + this.rankingUpdateInterval) {
+            this.lastRankingUpdate = time;
+            this.networkManager.requestRanking();
+        }
+    }
+
+    /**
+     * 랭킹 UI 업데이트
+     */
+    updateRankingUI() {
+        const rankingList = document.getElementById('ranking-list');
+        if (!rankingList) return;
+
+        // 기존 내용 제거
+        rankingList.innerHTML = '';
+
+        // 랭킹 데이터가 없으면 빈 상태 표시
+        if (!this.rankingData || this.rankingData.length === 0) {
+            rankingList.innerHTML = '<li style="text-align: center; opacity: 0.6; padding: 20px;">플레이어가 없습니다</li>';
+            return;
+        }
+
+        // 각 플레이어에 대해 랭킹 아이템 생성
+        this.rankingData.forEach((player, index) => {
+            const rank = index + 1;
+            const listItem = document.createElement('li');
+            listItem.className = `ranking-item rank-${rank}`;
+
+            // 팀 색상 클래스
+            const teamClass = player.team === 'red' ? 'team-red' : 'team-blue';
+
+            // 직업 이름 변환
+            const jobNames = {
+                'slime': '슬라임',
+                'mage': '마법사',
+                'assassin': '어쌔신',
+                'warrior': '전사',
+                'archer': '궁수',
+                'ninja': '닌자',
+                'supporter': '서포터',
+                'mechanic': '메카닉'
+            };
+            const jobDisplayName = jobNames[player.jobClass] || player.jobClass;
+
+            listItem.innerHTML = `
+                <div class="ranking-rank">${rank}</div>
+                <div class="ranking-info">
+                    <div class="ranking-nickname ${teamClass}">${player.nickname}</div>
+                    <div class="ranking-details">
+                        레벨 ${player.level}
+                        <span class="job-badge">${jobDisplayName}</span>
+                    </div>
+                </div>
+            `;
+
+            rankingList.appendChild(listItem);
+        });
     }
 }

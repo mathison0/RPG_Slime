@@ -29,6 +29,7 @@ class SocketEventManager {
       this.setupJoinGameHandler(socket);
       this.setupPlayerUpdateHandler(socket);
       this.setupPlayerJobChangeHandler(socket);
+      this.setupJobOrbCollisionHandler(socket); // 직업 오브 충돌 핸들러 추가
       this.setupPlayerSkillHandler(socket);
       this.setupWardDetectionHandler(socket); // 와드 감지 핸들러 추가
       this.setupPlayerLevelUpHandler(socket); // 레벨업 요청 핸들러 추가
@@ -40,6 +41,7 @@ class SocketEventManager {
       this.setupGameSyncHandler(socket);
       this.setupPlayerRespawnHandler(socket);
       this.setupPingTestHandler(socket); // 핑 테스트 핸들러 추가
+      this.setupRankingHandler(socket); // 랭킹 요청 핸들러 추가
       this.setupDisconnectHandler(socket);
     });
   }
@@ -78,6 +80,9 @@ class SocketEventManager {
       // 플레이어 생성
       const player = this.gameStateManager.addPlayer(playerId, spawnPoint.x, spawnPoint.y, team, nickname);
       
+      // 플레이어에게 소켓 참조 설정
+      player.socket = socket;
+      
               // JobClasses를 사용한 올바른 초기 스탯 설정
         player.initializeStatsFromJobClass();
         
@@ -85,12 +90,15 @@ class SocketEventManager {
         const { getJobInfo } = require('../../shared/JobClasses.js');
         const jobCooldowns = {};
         
-        // 모든 직업의 기본공격 쿨타임 정보 수집
+        // 모든 직업의 스킬 쿨타임 정보 수집
         const jobClasses = ['slime', 'ninja', 'archer', 'mage', 'assassin', 'warrior', 'supporter', 'mechanic'];
         jobClasses.forEach(jobClass => {
             const jobInfo = getJobInfo(jobClass);
             jobCooldowns[jobClass] = {
-                basicAttackCooldown: jobInfo.basicAttackCooldown
+                basicAttackCooldown: jobInfo.basicAttackCooldown,
+                skill1: { cooldown: jobInfo.skills[0]?.cooldown || 3000 },
+                skill2: { cooldown: jobInfo.skills[1]?.cooldown || 3000 },
+                skill3: { cooldown: jobInfo.skills[2]?.cooldown || 3000 }
             };
         });
         
@@ -131,6 +139,12 @@ class SocketEventManager {
       
       // 죽은 플레이어의 업데이트는 무시
       if (player.isDead) {
+        return;
+      }
+      
+      // 기절 상태에서는 이동 업데이트 무시
+      if (player.isStunned) {
+        console.log(`플레이어 ${socket.id}가 기절 상태에서 이동 시도 - 무시됨`);
         return;
       }
       
@@ -175,12 +189,36 @@ class SocketEventManager {
   }
 
   /**
+   * 직업 변경 오브 충돌 이벤트 핸들러
+   */
+  setupJobOrbCollisionHandler(socket) {
+    socket.on('job-orb-collision', (data) => {
+      const result = this.gameStateManager.handleJobOrbCollision(socket.id, data.orbId);
+      
+      if (result.success) {
+        // 오브 수집 성공 시 클라이언트에 응답
+        socket.emit('job-orb-collision-result', {
+          success: true,
+          jobClass: result.jobClass,
+          orbId: result.orbId,
+          message: result.message
+        });
+      } else {
+        // 오브 수집 실패 시 에러 응답
+        socket.emit('job-orb-collision-result', {
+          success: false,
+          orbId: result.orbId,
+          message: result.message
+        });
+      }
+    });
+  }
+
+  /**
    * 플레이어 스킬 사용 이벤트 핸들러
    */
   setupPlayerSkillHandler(socket) {
     socket.on('player-skill', (data) => {
-      console.log(`스킬 요청 받음: ${data.skillType}, 플레이어: ${socket.id}`);
-      
       const player = this.gameStateManager.getPlayer(socket.id);
       if (!player) {
         socket.emit('skill-error', { error: 'Player not found' });
@@ -194,26 +232,43 @@ class SocketEventManager {
       }
 
       // 스킬 타입을 직업별 스킬로 매핑
-      const actualSkillType = this.mapSkillType(player.jobClass, data.skillType);
+      let actualSkillType = this.mapSkillType(player.jobClass, data.skillType);
       
+      // 매핑이 실패했지만, 직접 전송된 스킬 타입이 유효한 스킬인지 확인
       if (!actualSkillType) {
-        socket.emit('skill-error', { 
-          error: 'Invalid skill type',
-          skillType: data.skillType 
-        });
-        return;
+        // 직접 전송된 스킬 타입이 유효한 스킬인지 확인 (예: backstab)
+        const validDirectSkills = ['backstab', 'stealth', 'blade_dance', 'spread', 'roar', 'sweep', 'thrust', 'ice_field', 'magic_missile', 'shield', 'repair', 'roll', 'focus', 'ward', 'buff_field', 'heal_field'];
+        if (validDirectSkills.includes(data.skillType)) {
+          actualSkillType = data.skillType;
+        } else {
+          socket.emit('skill-error', { 
+            error: 'Invalid skill type',
+            skillType: data.skillType 
+          });
+          return;
+        }
       }
 
       // 서버에서 스킬 사용 검증 및 처리 (모든 조건 체크는 SkillManager에서 수행)
+      const skillOptions = { 
+        direction: data.direction, // 클라이언트에서 받은 방향 정보 전달
+        rotationDirection: data.rotationDirection // 회전 방향 정보 추가
+      };
+      
+      if (actualSkillType === 'backstab' && data.mouseX !== undefined && data.mouseY !== undefined) {
+        skillOptions.mouseX = data.mouseX;
+        skillOptions.mouseY = data.mouseY;
+      }
+
       const skillResult = this.skillManager.useSkill(
         player,
         actualSkillType, 
         data.targetX, 
-        data.targetY
+        data.targetY,
+        skillOptions
       );
 
       if (!skillResult.success) {
-        // 스킬 사용 실패 시 요청한 클라이언트에게만 에러 전송
         socket.emit('skill-error', { 
           error: skillResult.error,
           skillType: data.skillType 
@@ -221,71 +276,298 @@ class SocketEventManager {
         return;
       }
 
-      // 서버에서 데미지 계산 및 적용 (투사체 스킬은 폭발 시에만 데미지 적용)
-      let damageResult = { affectedEnemies: [], affectedPlayers: [], totalDamage: 0 };
-      
-      console.log(`스킬 처리 중: ${skillResult.skillType}, magic_missile과 다른가? ${skillResult.skillType !== 'magic_missile'}`);
-      
-      // 투사체 스킬이 아닌 경우에만 즉시 데미지 적용
-      if (skillResult.skillType !== 'magic_missile') {
-        console.log(`즉시 데미지 적용 시작: ${skillResult.skillType}`);
-        damageResult = this.skillManager.applySkillDamage(
-          player, 
-          skillResult.skillType, 
-          skillResult.skillInfo, 
-          skillResult.x, 
-          skillResult.y, 
-          skillResult.targetX, 
-          skillResult.targetY
-        );
-        console.log(`데미지 적용 완료: ${skillResult.skillType}, 결과:`, damageResult);
-      }
-
-      // 스킬 사용 성공 시 모든 클라이언트에게 브로드캐스트
-      const broadcastData = {
-        playerId: socket.id,
-        skillType: skillResult.skillType,
-        endTime: skillResult.endTime, // 스킬 완료 시간 (후딜레이 포함)
-        x: player.x, // 항상 플레이어의 실제 서버 위치 사용
-        y: player.y, // 항상 플레이어의 실제 서버 위치 사용
-        team: player.team,
-        skillInfo: skillResult.skillInfo,
-        damageResult: damageResult // 데미지 결과 추가
-      };
-
-      // 와드 스킬의 경우 크기 정보 추가 (서포터만)
-      if (skillResult.skillType === 'ward') {
-        broadcastData.wardScale = 0.2; // 와드 크기 정보
-        broadcastData.wardBodySize = 125; // 와드 물리 바디 크기
-        broadcastData.playerId = socket.id; // 와드 설치자 ID 추가
-        broadcastData.playerTeam = player.team; // 와드 설치자 팀 정보 추가
-        // 와드 설치 위치 정보 추가 (플레이어 위치와 별도로)
-        broadcastData.wardX = data.targetX || player.x;
-        broadcastData.wardY = data.targetY || player.y;
-        // 와드 ID 추가
-        broadcastData.wardId = skillResult.wardId;
-        
-        // 와드가 제거된 경우 제거 이벤트도 브로드캐스트
-        if (skillResult.removedWard) {
-          this.io.emit('ward-destroyed', {
-            playerId: socket.id,
-            wardId: skillResult.removedWard.id,
-            reason: 'replaced'
-          });
-        }
-      }
-
-      // 타겟 위치가 있는 경우 추가
-      if (skillResult.targetX !== null) {
-        broadcastData.targetX = skillResult.targetX;
-        broadcastData.targetY = skillResult.targetY;
-      }
-
-      // 모든 클라이언트에게 스킬 사용 알림
-      this.io.emit('player-skill-used', broadcastData);
-      
-      console.log(`Player ${socket.id} used skill: ${skillResult.skillType}`);
+      // 스킬 실행 방식에 따른 처리
+      const processedResult = this.processSkillExecution(socket, player, skillResult);
     });
+  }
+
+  /**
+   * 스킬 실행 방식에 따른 처리
+   */
+  processSkillExecution(socket, player, skillResult) {
+    const { skillType, skillInfo } = skillResult;
+    
+    // 스킬 타입별 실행 방식 결정
+    const executionType = this.determineSkillExecutionType(skillType, skillInfo);
+    
+    switch (executionType) {
+      case 'IMMEDIATE':
+        return this.handleImmediateSkill(socket, player, skillResult);
+      
+      case 'PROJECTILE':
+        return this.handleProjectileSkill(socket, player, skillResult);
+      
+      case 'DELAYED':
+        return this.handleDelayedSkill(socket, player, skillResult);
+      
+      case 'CHANNELED':
+        return this.handleChanneledSkill(socket, player, skillResult);
+      
+      default:
+        console.warn(`Unknown skill execution type: ${executionType} for skill: ${skillType}`);
+        return this.handleImmediateSkill(socket, player, skillResult);
+    }
+  }
+
+  /**
+   * 스킬 실행 타입 결정
+   */
+  determineSkillExecutionType(skillType, skillInfo) {
+    // 투사체 스킬들 (클라이언트에서 투사체 처리, 충돌 시 서버에서 데미지)
+    const projectileSkills = ['magic_missile', 'basic_attack'];
+    if (projectileSkills.includes(skillType)) {
+      return 'PROJECTILE';
+    }
+    
+    // 시전시간이 있는 지연 스킬들 (시전시간 후 데미지)
+    if (skillInfo.delay > 0) {
+      return 'DELAYED';
+    }
+    
+    // 지속시간이 있는 채널링 스킬들 (지속 효과)
+    const channeledSkills = ['ice_field', 'shield', 'buff_field', 'heal_field'];
+    if (channeledSkills.includes(skillType) || (skillInfo.duration > 0 && skillType !== 'spread')) {
+      return 'CHANNELED';
+    }
+    
+    // 즉시 실행 스킬들 (즉시 효과 적용)
+    return 'IMMEDIATE';
+  }
+
+
+  /**
+   * 즉시 실행 스킬 처리 (즉시 데미지/효과 적용)
+   */
+  handleImmediateSkill(socket, player, skillResult) {
+    // 즉시 데미지/효과 적용
+    const options = skillResult.options || {};
+    
+    const damageResult = this.skillManager.applySkillDamage(
+      player, 
+      skillResult.skillType, 
+      skillResult.skillInfo, 
+      skillResult.x, 
+      skillResult.y, 
+      skillResult.targetX, 
+      skillResult.targetY,
+      options
+    );
+
+    // skillResult의 추가 데이터를 damageResult에 병합 (focus 스킬의 attackSpeedMultiplier 등)
+    if (skillResult.attackSpeedMultiplier) {
+      damageResult.attackSpeedMultiplier = skillResult.attackSpeedMultiplier;
+    }
+    if (skillResult.attackPowerMultiplier) {
+      damageResult.attackPowerMultiplier = skillResult.attackPowerMultiplier;
+    }
+
+    // 클라이언트에 브로드캐스트
+    this.broadcastSkillUsed(socket, player, skillResult, damageResult);
+    
+    return { executionType: 'IMMEDIATE', damageResult };
+  }
+
+  /**
+   * 투사체 스킬 처리 (클라이언트에서 투사체 관리, 충돌 시 서버 처리)
+   */
+  handleProjectileSkill(socket, player, skillResult) {
+    // 투사체는 클라이언트에서 관리, 충돌 시 서버에서 데미지 처리
+    // 여기서는 데미지 적용하지 않음
+    const damageResult = { affectedEnemies: [], affectedPlayers: [], totalDamage: 0 };
+
+    // 클라이언트에 브로드캐스트
+    this.broadcastSkillUsed(socket, player, skillResult, damageResult);
+    
+    return { executionType: 'PROJECTILE', damageResult };
+  }
+
+  /**
+   * 지연 스킬 처리 (시전시간 후 데미지 적용)
+   */
+  handleDelayedSkill(socket, player, skillResult) {
+    const damageResult = this.skillManager.applySkillDamage(
+      player, 
+      skillResult.skillType, 
+      skillResult.skillInfo, 
+      skillResult.x, 
+      skillResult.y, 
+      skillResult.targetX, 
+      skillResult.targetY
+    );
+
+    // 클라이언트에 브로드캐스트 (시전 시작 알림)
+    this.broadcastSkillUsed(socket, player, skillResult, damageResult);
+    
+    return { executionType: 'DELAYED', damageResult };
+  }
+
+  /**
+   * 채널링 스킬 처리 (지속 효과)
+   */
+  handleChanneledSkill(socket, player, skillResult) {
+    // 채널링 스킬은 즉시 효과를 적용하거나 상태를 설정
+    let damageResult = { affectedEnemies: [], affectedPlayers: [], totalDamage: 0 };
+    
+    // 일부 채널링 스킬은 즉시 효과 적용 (예: ice_field)
+    if (['ice_field', 'ward', 'buff_field', 'heal_field'].includes(skillResult.skillType)) {
+      damageResult = this.skillManager.applySkillDamage(
+        player, 
+        skillResult.skillType, 
+        skillResult.skillInfo, 
+        skillResult.x, 
+        skillResult.y, 
+        skillResult.targetX, 
+        skillResult.targetY
+      );
+    }
+
+    // 클라이언트에 브로드캐스트
+    this.broadcastSkillUsed(socket, player, skillResult, damageResult);
+    
+    return { executionType: 'CHANNELED', damageResult };
+  }
+
+  /**
+   * 스킬 사용 브로드캐스트
+   */
+  broadcastSkillUsed(socket, player, skillResult, damageResult) {
+    console.log(`[서버] broadcastSkillUsed 호출 - skillType: ${skillResult.skillType}, damageResult:`, damageResult);
+    
+    const broadcastData = {
+      playerId: socket.id,
+      skillType: skillResult.skillType,
+      endTime: skillResult.endTime,
+      x: player.x,
+      y: player.y,
+      team: player.team,
+      skillInfo: skillResult.skillInfo,
+      damageResult: damageResult,
+      cooldownInfo: {
+        totalCooldown: skillResult.skillInfo.cooldown || 0,
+        cooldownEndTime: player.skillCooldowns[skillResult.skillType] || 0
+      }
+    };
+
+    // 특수 스킬별 추가 정보 처리
+    this.addSpecialSkillInfo(broadcastData, skillResult, player);
+
+    // 모든 클라이언트에게 스킬 사용 알림
+    this.io.emit('player-skill-used', broadcastData);
+  }
+
+  /**
+   * 특수 스킬별 추가 정보 설정
+   */
+  addSpecialSkillInfo(broadcastData, skillResult, player) {
+    const { skillType } = skillResult;
+    const damageResult = broadcastData.damageResult || {};
+    
+    // 얼음 장판 스킬 정보
+    if (skillType === 'ice_field') {
+      broadcastData.x = skillResult.x || damageResult.x || player.x;
+      broadcastData.y = skillResult.y || damageResult.y || player.y;
+    }
+
+    // 구르기 스킬의 경우 시작 위치와 최종 위치 정보 추가
+    if (skillType === 'roll') {
+      broadcastData.startX = skillResult.startX;
+      broadcastData.startY = skillResult.startY;
+      broadcastData.endX = skillResult.endX;
+      broadcastData.endY = skillResult.endY;
+      broadcastData.direction = skillResult.direction;
+      broadcastData.rotationDirection = skillResult.rotationDirection;
+      console.log(`구르기 위치 정보 추가: 시작(${skillResult.startX}, ${skillResult.startY}) -> 끝(${skillResult.endX}, ${skillResult.endY})`);
+    }
+
+    // 와드 스킬의 경우 크기 정보 추가 (서포터만)
+    if (skillType === 'ward') {
+      broadcastData.wardScale = 0.2; // 와드 크기 정보
+      broadcastData.wardBodySize = 125; // 와드 물리 바디 크기
+      broadcastData.playerId = player.id; // 와드 설치자 ID 추가
+      broadcastData.playerTeam = player.team; // 와드 설치자 팀 정보 추가
+      // 와드 설치 위치 정보 추가 (플레이어 위치와 별도로)
+      broadcastData.wardX = skillResult.targetX || player.x;
+      broadcastData.wardY = skillResult.targetY || player.y;
+      // 와드 ID 추가
+      broadcastData.wardId = skillResult.wardId;
+      
+      // 와드가 제거된 경우 제거 이벤트도 브로드캐스트
+      if (skillResult.removedWard) {
+        this.io.emit('ward-destroyed', {
+          playerId: player.id,
+          wardId: skillResult.removedWard.id,
+          reason: 'replaced'
+        });
+      }
+    }
+    
+    // 힐 장판 스킬의 경우 위치 정보 추가
+    if (skillType === 'heal_field') {
+      broadcastData.x = skillResult.x || damageResult.x || player.x;
+      broadcastData.y = skillResult.y || damageResult.y || player.y;
+    }
+    
+    // 버프 장판 스킬의 경우 위치 정보 추가
+    if (skillType === 'buff_field') {
+      broadcastData.x = skillResult.x || damageResult.x || player.x;
+      broadcastData.y = skillResult.y || damageResult.y || player.y;
+    }
+
+    // 타겟 위치 정보
+    if (skillResult.targetX !== null && skillResult.targetY !== null) {
+      broadcastData.targetX = skillResult.targetX;
+      broadcastData.targetY = skillResult.targetY;
+    }
+
+    // 은신 스킬 정보
+    if (skillType === 'stealth') {
+      broadcastData.stealthData = skillResult.stealthData;
+    }
+    
+    // 목긋기 스킬 정보
+    if (skillType === 'backstab' && damageResult.backstabData) {
+      broadcastData.backstabData = damageResult.backstabData;
+      console.log('목긋기 데이터 브로드캐스트에 추가:', damageResult.backstabData);
+    }
+    
+    // 은신 스킬 정보
+    if (skillType === 'stealth') {
+      broadcastData.startTime = skillResult.startTime;
+      broadcastData.endTime = skillResult.endTime;
+      broadcastData.duration = skillResult.duration;
+      broadcastData.speedMultiplier = skillResult.speedMultiplier;
+      broadcastData.visionMultiplier = skillResult.visionMultiplier;
+    }
+
+    // 칼춤 스킬 정보
+    if (skillType === 'blade_dance') {
+      broadcastData.bladeDanceData = damageResult.bladeDanceData;
+      broadcastData.endTime = skillResult.endTime;
+      broadcastData.duration = skillResult.duration;
+      broadcastData.attackPowerMultiplier = skillResult.attackPowerMultiplier;
+    }
+
+    // 집중 스킬 정보 (궁수)
+    if (skillType === 'focus') {
+      console.log('[서버] 집중 스킬 브로드캐스트 데이터:', {
+        focusData: damageResult.focusData,
+        endTime: skillResult.endTime,
+        duration: skillResult.duration,
+        attackSpeedMultiplier: damageResult.attackSpeedMultiplier || damageResult.focusData?.attackSpeedMultiplier || skillResult.attackSpeedMultiplier
+      });
+      console.log('[서버] damageResult 전체:', damageResult);
+      console.log('[서버] skillResult 전체:', skillResult);
+      broadcastData.focusData = damageResult.focusData;
+      broadcastData.endTime = skillResult.endTime;
+      broadcastData.duration = skillResult.duration;
+      broadcastData.attackSpeedMultiplier = damageResult.attackSpeedMultiplier || damageResult.focusData?.attackSpeedMultiplier || skillResult.attackSpeedMultiplier;
+    }
+    
+    // 목긋기 스킬 정보
+    if (skillType === 'backstab' && damageResult.backstabData) {
+      broadcastData.backstabData = damageResult.backstabData;
+      console.log('목긋기 데이터 브로드캐스트에 추가:', damageResult.backstabData);
+    }
   }
 
   /**
@@ -314,12 +596,15 @@ class SocketEventManager {
    * 스킬 타입을 직업별 실제 스킬로 매핑
    */
   mapSkillType(jobClass, skillType) {
+    
     const skillMappings = {
       slime: {
         skill1: 'spread'
       },
       assassin: {
-        skill1: 'stealth'
+        skill1: 'stealth',
+        skill2: 'blade_dance',
+        skill3: 'backstab'
       },
       ninja: {
         skill1: 'stealth'
@@ -353,6 +638,7 @@ class SocketEventManager {
     }
     
     const jobSkills = skillMappings[jobClass];
+    
     const mappedSkill = jobSkills ? jobSkills[skillType] : null;
     
     return mappedSkill;
@@ -430,6 +716,7 @@ class SocketEventManager {
         const pingData = {
           playerId: socket.id,
           team: player.team,
+          nickname: player.nickname,
           x: data.x,
           y: data.y
         };
@@ -675,22 +962,6 @@ class SocketEventManager {
   }
 
   /**
-   * 플레이어 전직 이벤트 핸들러
-   */
-  setupPlayerJobChangeHandler(socket) {
-    socket.on('player-job-change', (data) => {
-      const player = this.gameStateManager.getPlayer(socket.id);
-      if (player) {
-        player.changeJob(data.jobClass);
-        this.io.emit('player-job-changed', {
-          id: socket.id,
-          jobClass: data.jobClass
-        });
-      }
-    });
-  }
-
-  /**
    * 플레이어 자살 치트 요청 이벤트 핸들러
    */
   setupPlayerSuicideHandler(socket) {
@@ -779,6 +1050,41 @@ class SocketEventManager {
     socket.on('ping-test', (clientTimestamp) => {
       // 즉시 응답 (서버 처리 시간 최소화)
       socket.emit('ping-response', clientTimestamp);
+    });
+  }
+
+  /**
+   * 랭킹 요청 핸들러 설정
+   */
+  setupRankingHandler(socket) {
+    socket.on('request-ranking', () => {
+      try {
+        // 모든 플레이어 데이터를 레벨 기준으로 정렬
+        const players = Array.from(this.gameStateManager.players.values())
+          .filter(player => !player.isDead) // 죽은 플레이어 제외
+          .sort((a, b) => {
+            // 레벨 기준 내림차순 정렬, 같으면 경험치 기준
+            if (b.level !== a.level) {
+              return b.level - a.level;
+            }
+            return b.exp - a.exp;
+          })
+          .slice(0, 5) // 상위 5명만
+          .map(player => ({
+            id: player.id,
+            nickname: player.nickname,
+            level: player.level,
+            exp: player.exp,
+            jobClass: player.jobClass,
+            team: player.team
+          }));
+
+        // 랭킹 데이터 전송
+        socket.emit('ranking-data', { players });
+      } catch (error) {
+        console.error('랭킹 데이터 처리 중 오류:', error);
+        socket.emit('ranking-error', { error: 'Failed to fetch ranking data' });
+      }
     });
   }
 }

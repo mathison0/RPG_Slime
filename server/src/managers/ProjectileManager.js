@@ -10,10 +10,10 @@ class ProjectileManager {
         this.projectiles = new Map(); // 투사체 ID -> 투사체 정보
         this.nextProjectileId = 1;
         
-        // 투사체 타입별 설정
-        this.projectileConfigs = {
+        // 기본 투사체 설정 (JobClasses에 없는 경우 사용)
+        this.fallbackProjectileConfigs = {
             'ninja': {
-                speed: 300,
+                speed: 450,
                 maxDistance: 300,
                 size: 18,
                 sprite: 'ninja_basic_attack',
@@ -21,21 +21,21 @@ class ProjectileManager {
             },
             'mage': {
                 speed: 280,
-                maxDistance: 350,
+                maxDistance: 400,
                 size: 4,
-                sprite: 'mage_projectile',
+                sprite: null,
                 lifetime: 3000
             },
             'archer': {
-                speed: 300,
-                maxDistance: 400,
+                speed: 500,
+                maxDistance: 450,
                 size: 16,
                 sprite: 'archer_basic_attack',
                 lifetime: 3000
             },
             'slime': {
-                speed: 250,
-                maxDistance: 200,
+                speed: 350,
+                maxDistance: 250,
                 size: 12,
                 sprite: 'slime_basic_attack',
                 lifetime: 3000
@@ -44,18 +44,104 @@ class ProjectileManager {
     }
 
     /**
-     * 새로운 투사체 생성
+     * JobClasses에서 투사체 설정 가져오기
      */
-    createProjectile(playerId, targetX, targetY, jobClass) {
+    getProjectileConfig(jobClass, skillType = null) {
+        const { getJobInfo } = require('../../shared/JobClasses');
+        const jobInfo = getJobInfo(jobClass);
+        
+        let projectileSettings = null;
+        
+        // 특정 스킬의 투사체 설정 확인
+        if (skillType) {
+            const skill = jobInfo.skills.find(s => s.type === skillType);
+            if (skill && skill.projectile) {
+                projectileSettings = skill.projectile;
+            }
+        }
+        
+        // 기본 투사체 설정 사용
+        if (!projectileSettings && jobInfo.projectile) {
+            projectileSettings = jobInfo.projectile;
+        }
+        
+        // fallback 설정 가져오기 (sprite 정보용)
+        const fallbackConfig = this.fallbackProjectileConfigs[jobClass];
+        
+        if (!projectileSettings && !fallbackConfig) {
+            console.error(`투사체 설정을 찾을 수 없음: ${jobClass}`);
+            return null;
+        }
+        
+        // JobClasses 설정과 fallback 설정 합치기
+        const finalConfig = {
+            speed: projectileSettings?.speed || fallbackConfig?.speed || 300,
+            maxDistance: projectileSettings?.maxDistance || fallbackConfig?.maxDistance || 300,
+            size: projectileSettings?.size || fallbackConfig?.size || 10,
+            sprite: fallbackConfig?.sprite || 'projectile', // sprite는 항상 fallback에서
+            lifetime: fallbackConfig?.lifetime || 3000
+        };
+        
+        return finalConfig;
+    }
+
+    /**
+     * 새로운 투사체 생성
+     * @param {string|Object} playerIdOrConfig - 플레이어 ID 또는 투사체 설정 객체
+     * @param {number} targetX - 목표 X 좌표 (첫 번째 파라미터가 ID일 때)
+     * @param {number} targetY - 목표 Y 좌표 (첫 번째 파라미터가 ID일 때)
+     * @param {string} jobClass - 직업 클래스 (첫 번째 파라미터가 ID일 때)
+     */
+    createProjectile(playerIdOrConfig, targetX, targetY, jobClass) {
+        let playerId, config, x, y, damage, speed, size, attackType, skillType;
+        
+        // 파라미터가 객체인 경우 (새로운 방식)
+        if (typeof playerIdOrConfig === 'object') {
+            const projectileConfig = playerIdOrConfig;
+            playerId = projectileConfig.playerId;
+            x = projectileConfig.x;
+            y = projectileConfig.y;
+            targetX = projectileConfig.targetX;
+            targetY = projectileConfig.targetY;
+            damage = projectileConfig.damage;
+            speed = projectileConfig.speed;
+            size = projectileConfig.size;
+            jobClass = projectileConfig.jobClass;
+            attackType = projectileConfig.attackType;
+            skillType = projectileConfig.attackType === 'magic_missile' ? 'magic_missile' : null;
+            
+            // JobClasses에서 투사체 설정 가져오기
+            config = this.getProjectileConfig(jobClass, skillType);
+            if (!config) {
+                return null;
+            }
+            
+            // 커스텀 값이 있으면 덮어쓰기
+            if (speed !== undefined) config.speed = speed;
+            if (size !== undefined) config.size = size;
+        } else {
+            // 기존 방식 (레거시 지원)
+            playerId = playerIdOrConfig;
+            const player = this.gameStateManager.getPlayer(playerId);
+            if (!player) {
+                console.error(`플레이어를 찾을 수 없음: ${playerId}`);
+                return null;
+            }
+            
+            config = this.getProjectileConfig(jobClass);
+            if (!config) {
+                return null;
+            }
+            
+            x = player.x;
+            y = player.y;
+            damage = player.attack;
+            attackType = 'basic';
+        }
+
         const player = this.gameStateManager.getPlayer(playerId);
         if (!player) {
             console.error(`플레이어를 찾을 수 없음: ${playerId}`);
-            return null;
-        }
-
-        const config = this.projectileConfigs[jobClass];
-        if (!config) {
-            console.error(`지원하지 않는 직업: ${jobClass}`);
             return null;
         }
 
@@ -63,30 +149,33 @@ class ProjectileManager {
         const projectileId = this.nextProjectileId++;
         
         // 투사체 방향 계산
-        const angle = Math.atan2(targetY - player.y, targetX - player.x);
+        const angle = Math.atan2(targetY - y, targetX - x);
         
-                       // 투사체 정보 생성
-               const projectile = {
-                   id: projectileId,
-                   playerId: playerId,
-                   jobClass: jobClass,
-                   x: player.x,
-                   y: player.y,
-                   startX: player.x,  // 발사 위치 저장
-                   startY: player.y,  // 발사 위치 저장
-                   vx: Math.cos(angle) * config.speed,
-                   vy: Math.sin(angle) * config.speed,
-                   targetX: targetX,
-                   targetY: targetY,
-                   maxDistance: config.maxDistance,
-                   speed: config.speed,
-                   size: config.size,
-                   sprite: config.sprite,
-                   lifetime: config.lifetime,
-                   createdAt: Date.now(),
-                   team: player.team,
-                   isActive: true
-               };
+        // 투사체 정보 생성
+        const projectile = {
+            id: projectileId,
+            playerId: playerId,
+            jobClass: jobClass,
+            x: x,
+            y: y,
+            startX: x,  // 발사 위치 저장
+            startY: y,  // 발사 위치 저장
+            vx: Math.cos(angle) * config.speed,
+            vy: Math.sin(angle) * config.speed,
+            targetX: targetX,
+            targetY: targetY,
+            maxDistance: config.maxDistance,
+            speed: config.speed,
+            size: config.size,
+            sprite: config.sprite,
+            lifetime: config.lifetime,
+            createdAt: Date.now(),
+            team: player.team,
+            isActive: true,
+            damage: damage,
+            attackType: attackType,
+            explosionRadius: playerIdOrConfig.explosionRadius // 마법 미사일용
+        };
 
         this.projectiles.set(projectileId, projectile);
         
@@ -122,14 +211,12 @@ class ProjectileManager {
             projectile.x += projectile.vx * dt;
             projectile.y += projectile.vy * dt;
 
-                            // 최대 거리 체크 (발사 위치에서 현재 위치까지의 거리)
                 const distance = Math.sqrt(
                     Math.pow(projectile.x - projectile.startX, 2) + 
                     Math.pow(projectile.y - projectile.startY, 2)
                 );
                 
                 if (distance > projectile.maxDistance) {
-                    // 최대 거리 도달 시 클라이언트에게 제거 이벤트 전송
                     this.gameStateManager.io.emit('projectile-removed', {
                         projectileId: projectileId,
                         reason: 'max_distance'
@@ -140,12 +227,12 @@ class ProjectileManager {
 
             // 벽 충돌 체크
             if (this.checkWallCollision(projectile)) {
-                // 벽 충돌 시 클라이언트에게 충돌 이벤트 전송
-                this.gameStateManager.io.emit('projectile-hit-wall', {
-                    projectileId: projectileId,
-                    projectileJobClass: projectile.jobClass,
-                    hitPosition: { x: projectile.x, y: projectile.y }
-                });
+                // 벽 충돌 시 클라이언트에게 충돌 이벤트 전송 (사용되지 않으므로 주석 처리)
+                // this.gameStateManager.io.emit('projectile-hit-wall', {
+                //     projectileId: projectileId,
+                //     projectileJobClass: projectile.jobClass,
+                //     hitPosition: { x: projectile.x, y: projectile.y }
+                // });
                 
                 // 벽 충돌 시 클라이언트에게 제거 이벤트 전송
                 this.gameStateManager.io.emit('projectile-removed', {
@@ -235,22 +322,25 @@ class ProjectileManager {
         const players = this.gameStateManager.getAllPlayers();
         
         for (const player of players) {
-            // 발사한 플레이어와는 충돌하지 않음
-            if (player.id === projectile.playerId) {
-                continue;
-            }
-
-            // 같은 팀과는 충돌하지 않음
-            if (player.team === projectile.team) {
-                continue;
-            }
+            // 자기 자신은 제외
+            if (player.id === projectile.playerId) continue;
+            
+            // 같은 팀은 제외
+            if (player.team === projectile.team) continue;
+            
+            // 죽은 플레이어 제외
+            if (player.isDead) continue;
 
             const distance = Math.sqrt(
                 Math.pow(projectile.x - player.x, 2) + 
                 Math.pow(projectile.y - player.y, 2)
             );
             
-            if (distance < player.size + projectile.size) {
+            // 캐릭터 크기를 고려한 충돌 검사
+            const playerRadius = (player.size || 32) / 2;
+            const projectileRadius = projectile.size / 2;
+            
+            if (distance < playerRadius + projectileRadius) {
                 // 데미지 처리
                 this.handlePlayerHit(projectile, player);
                 return true;
@@ -274,7 +364,11 @@ class ProjectileManager {
                 Math.pow(projectile.y - enemy.y, 2)
             );
             
-            if (distance < enemy.size + projectile.size) {
+            // 캐릭터 크기를 고려한 충돌 검사
+            const enemyRadius = (enemy.size || 32) / 2;
+            const projectileRadius = projectile.size / 2;
+            
+            if (distance < enemyRadius + projectileRadius) {
                 // 데미지 처리
                 this.handleEnemyHit(projectile, enemy);
                 return true;
@@ -300,17 +394,6 @@ class ProjectileManager {
         const result = this.gameStateManager.takeDamage(attacker, player, damage);
 
         if (result.success) {
-            // 클라이언트에게 충돌 이벤트 전송
-            this.gameStateManager.io.emit('projectile-hit-player', {
-                projectileId: projectile.id,
-                projectileJobClass: projectile.jobClass,
-                playerId: player.id,
-                damage: result.actualDamage,
-                newHp: result.newHp,
-                hitPosition: { x: projectile.x, y: projectile.y }
-            });
-
-            console.log(`플레이어 피격: ${player.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${result.actualDamage} 데미지`);
         } else {
             console.log(`플레이어 피격 실패: ${result.reason}`);
         }
@@ -330,22 +413,6 @@ class ProjectileManager {
         
         // gameStateManager를 통한 데미지 처리
         const result = this.gameStateManager.takeDamage(attacker, enemy, damage);
-
-        if (result.success) {
-            // 클라이언트에게 충돌 이벤트 전송
-            this.gameStateManager.io.emit('projectile-hit-enemy', {
-                projectileId: projectile.id,
-                projectileJobClass: projectile.jobClass,
-                enemyId: enemy.id,
-                damage: result.actualDamage,
-                newHp: result.newHp,
-                hitPosition: { x: projectile.x, y: projectile.y }
-            });
-
-            console.log(`적 피격: ${enemy.id}가 ${projectile.playerId}의 ${projectile.jobClass} 투사체에 의해 ${result.actualDamage} 데미지`);
-        } else {
-            console.log(`적 피격 실패: ${result.reason}`);
-        }
     }
 
     /**

@@ -30,7 +30,6 @@ export default class SlimeJob extends BaseJob {
      */
     showSpreadEffect(data = null) {
         const startTime = Date.now();
-        console.log(`[${startTime}] 슬라임 퍼지기 이펙트 시작`);
         
         // 기존 슬라임 스킬 이펙트가 있다면 제거
         if (this.player.slimeSkillEffect) {
@@ -64,8 +63,6 @@ export default class SlimeJob extends BaseJob {
         const skillInfo = data.skillInfo;
         const range = skillInfo.range; // 서버에서 받은 범위
         const endTime = data.endTime; // 서버에서 받은 절대 종료 시간
-        
-        console.log(`[${startTime}] 슬라임 퍼지기 스킬 정보 (서버에서 받음): range=${range}, endTime=${endTime}`);
         
         // 초록색 범위 효과 생성
         const effect = this.player.scene.add.circle(this.player.x, this.player.y, range, 0x00ff00, 0.3);
@@ -150,13 +147,6 @@ export default class SlimeJob extends BaseJob {
             }
         });
         
-        // 투사체 이펙트 (미세한 크기 변화)
-        const effectTween = this.player.scene.tweens.add({
-            targets: projectile,
-            yoyo: true,
-            repeat: -1
-        });
-        
         // 투사체 파괴 함수
         const destroyProjectile = () => {
             if (projectile.active) {
@@ -192,22 +182,4 @@ export default class SlimeJob extends BaseJob {
             }
         });
     }
-
-    /**
-     * 슬라임 폭발 이펙트 생성 (매우 작게)
-     */
-    createSlimeExplosion(x, y) {
-        const explosion = this.player.scene.add.circle(x, y, 5, 0x00ff00, 0.6);
-        this.player.scene.tweens.add({
-            targets: explosion,
-            scaleX: 1.5,
-            scaleY: 1.5,
-            alpha: 0,
-            duration: 200,
-            onComplete: () => {
-                explosion.destroy();
-            }
-        });
-    }
-
 } 

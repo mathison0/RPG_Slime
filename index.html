@@ -35,6 +35,115 @@
             margin: 3px 0;
             font-weight: bold;
         }
+
+        .ranking-overlay {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            color: white;
+            font-size: 14px;
+            z-index: 1000;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 12px;
+            border: 2px solid #444;
+            min-width: 280px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .ranking-title {
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 12px;
+            color: #fff;
+            border-bottom: 2px solid #666;
+            padding-bottom: 8px;
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .ranking-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .ranking-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px;
+            margin: 4px 0;
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .ranking-item:hover {
+            transform: translateX(3px);
+            box-shadow: 0 2px 8px rgba(255, 255, 255, 0.2);
+        }
+
+        .ranking-item.rank-1 {
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(255, 215, 0, 0.1));
+            border-color: #ffd700;
+        }
+
+        .ranking-item.rank-2 {
+            background: linear-gradient(135deg, rgba(192, 192, 192, 0.3), rgba(192, 192, 192, 0.1));
+            border-color: #c0c0c0;
+        }
+
+        .ranking-item.rank-3 {
+            background: linear-gradient(135deg, rgba(205, 127, 50, 0.3), rgba(205, 127, 50, 0.1));
+            border-color: #cd7f32;
+        }
+
+        .ranking-rank {
+            font-weight: bold;
+            font-size: 16px;
+            min-width: 25px;
+            text-align: center;
+            color: #ffd700;
+        }
+
+        .ranking-info {
+            flex: 1;
+            margin-left: 10px;
+        }
+
+        .ranking-nickname {
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 2px;
+        }
+
+        .ranking-details {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        .team-red {
+            color: #ff4444;
+        }
+
+        .team-blue {
+            color: #4444ff;
+        }
+
+        .job-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            background: rgba(255, 255, 255, 0.2);
+            margin-left: 5px;
+        }
     </style>
 </head>
 <body>
@@ -47,6 +156,13 @@
                 <div id="exp">경험치: 0/100</div>
                 <div id="ping">핑: --ms</div>
             </div>
+        </div>
+        
+        <div class="ranking-overlay" id="ranking-ui" style="display: none;">
+            <div class="ranking-title">🏆 레벨 랭킹</div>
+            <ul class="ranking-list" id="ranking-list">
+                <!-- 랭킹 데이터가 여기에 동적으로 추가됩니다 -->
+            </ul>
         </div>
     </div>
     <script type="module" src="/src/main.js"></script>

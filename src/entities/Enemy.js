@@ -27,8 +27,16 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.vx = 0;
         this.vy = 0;
         
+        // 방향 추적 (오른쪽: true, 왼쪽: false)
+        this.facingRight = false;
+        
         // 상태 플래그
         this.isDead = false;
+        
+        // Tint 상태 관리 (우선순위: 피격 > 기절 > 슬로우)
+        this.isDamaged = false;        // 피격 상태 (0xff0000)
+        this.isStunnedTint = false;    // 기절 상태 (0x888888)
+        this.isSlowedTint = false;     // 슬로우 상태 (0x87ceeb)
         
         // UI 요소
         this.healthBar = null;
@@ -81,18 +89,37 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 몬스터 타입에 따른 스프라이트 키 반환
+     * 몬스터 타입과 방향에 따른 스프라이트 키 반환
+     * @param {string} type - 몬스터 타입 (basic, charge, elite)
+     * @param {boolean} facingRight - 오른쪽을 바라보는지 여부 (true: 오른쪽, false: 왼쪽)
      */
-    static getSpriteKeyForType(type) {
+    static getSpriteKeyForType(type, facingRight = false) {
+        const suffix = facingRight ? '_right' : '';
         switch (type) {
             case 'basic':
-                return 'enemy_basic';
+                return `enemy_basic${suffix}`;
             case 'charge':
-                return 'enemy_charge';
+                return `enemy_charge${suffix}`;
             case 'elite':
-                return 'enemy_elite';
+                return `enemy_elite${suffix}`;
             default:
-                return 'enemy_basic'; // 기본값
+                return `enemy_basic${suffix}`; // 기본값
+        }
+    }
+    
+    /**
+     * 방향 업데이트 및 스프라이트 변경
+     * @param {number} vx - x축 속도
+     */
+    updateDirection(vx) {
+        // x축 이동 속도를 기준으로 방향 결정
+        const newFacingRight = vx >= 0;
+        
+        // 방향이 바뀐 경우에만 스프라이트 업데이트
+        if (this.facingRight !== newFacingRight) {
+            this.facingRight = newFacingRight;
+            const newSpriteKey = Enemy.getSpriteKeyForType(this.type, this.facingRight);
+            this.setTexture(newSpriteKey);
         }
     }
     
@@ -176,7 +203,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         // 어그로 표시 위치 업데이트 (한 번 더 정확한 위치로 조정)
         this.updateAggroIndicatorPosition();
     }
-    ㅇ
+    
     /**
      * 어그로 표시 제거
      */
@@ -260,10 +287,13 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.vx = effectiveVx;
         this.vy = effectiveVy;
         
+        // 방향 업데이트 (x축 속도 기준)
+        this.updateDirection(this.vx);
+        
         // 몬스터 타입 업데이트 (새로운 타입이면 스프라이트 변경)
         if (enemyData.type && enemyData.type !== this.type) {
             this.type = enemyData.type;
-            const newSpriteKey = Enemy.getSpriteKeyForType(this.type);
+            const newSpriteKey = Enemy.getSpriteKeyForType(this.type, this.facingRight);
             this.setTexture(newSpriteKey);
         }
         
@@ -278,18 +308,6 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         // 크기 적용
         if (enemyData.size) {
             this.applyServerSize(enemyData.size);
-        }
-        
-        // 기절 상태 적용
-        if (enemyData.isStunned !== undefined) {
-            this.isStunned = enemyData.isStunned;
-            if (this.isStunned) {
-                // 기절 상태일 때 색상 변경
-                this.setTint(0x888888);
-            } else {
-                // 기절 해제 시 색상 복구
-                this.clearTint();
-            }
         }
         
         // 어그로 정보 처리
@@ -333,6 +351,41 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
                 if (this.active) {
                     this.destroy();
                 }
+            }
+        });
+    }
+    
+    /**
+     * Tint 상태를 우선순위에 따라 업데이트
+     * 우선순위: 피격 > 기절 > 슬로우
+     */
+    updateTint() {
+        // 우선순위에 따라 tint 결정
+        if (this.isDamaged) {
+            this.setTint(0xff0000); // 빨간색 (피격)
+        } else if (this.isStunnedTint) {
+            this.setTint(0x888888); // 회색 (기절)
+        } else if (this.isSlowedTint) {
+            this.setTint(0x87ceeb); // 하늘색 (슬로우)
+        } else {
+            this.clearTint(); // 모든 효과가 없으면 원래 색상
+        }
+    }
+    
+    /**
+     * 피격 효과 처리
+     * @param {number} damage - 데미지 양 (옵션)
+     */
+    takeDamage(damage = 0) {
+        // 피격 상태 설정
+        this.isDamaged = true;
+        this.updateTint();
+        
+        // 200ms 후 피격 상태 해제
+        this.scene.time.delayedCall(200, () => {
+            if (this && this.active && !this.isDead) {
+                this.isDamaged = false;
+                this.updateTint();
             }
         });
     }

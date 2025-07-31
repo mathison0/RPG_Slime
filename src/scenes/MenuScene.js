@@ -28,16 +28,9 @@ export default class MenuScene extends Phaser.Scene {
         this.createNicknameInput(width, height);
 
         // 조작법
-        this.add.text(width / 2, height * 0.85, 'WASD: 이동 | SPACE: 스킬 | Q: 전직 | M: 맵', {
+        this.add.text(width / 2, height * 0.85, 'WASD: 이동 | QER: 스킬 | SPACE: 점프 | M: 맵', {
             fontSize: '16px',
             fill: '#95a5a6',
-            fontFamily: 'Arial'
-        }).setOrigin(0.5);
-
-        // 추가 정보
-        this.add.text(width / 2, height * 0.9, '여러 탭을 열어서 멀티플레이어를 테스트해보세요!', {
-            fontSize: '14px',
-            fill: '#7f8c8d',
             fontFamily: 'Arial'
         }).setOrigin(0.5);
     }

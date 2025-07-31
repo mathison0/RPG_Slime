@@ -63,8 +63,6 @@ class SupporterJob extends BaseJob {
         const wardX = this.player.x;
         const wardY = this.player.y - 80;
 
-        console.log(`힐러 와드 설치! 위치: (${wardX}, ${wardY}), 지속시간: ${skillInfo.duration}ms`);
-
         return {
             success: true,
             skillType: 'ward',
@@ -107,51 +105,36 @@ class SupporterJob extends BaseJob {
         // 쿨타임 설정
         this.setSkillCooldown('buff_field');
 
-        // 버프 장판 범위 내 아군들에게 버프 적용
-        const range = skillInfo.range;
-        const affectedTargets = [];
-
-        if (options.gameStateManager) {
-            const allPlayers = options.gameStateManager.getAllPlayers();
-            
-            allPlayers.forEach(targetPlayer => {
-                if (targetPlayer.team === this.player.team && 
-                    !targetPlayer.isDead) {
-                    
-                    const distance = this.calculateDistance(
-                        this.player.x, this.player.y,
-                        targetPlayer.x, targetPlayer.y
-                    );
-                    
-                    if (distance <= range) {
-                        affectedTargets.push({
-                            playerId: targetPlayer.id,
-                            effect: 'speed_attack_boost'
-                        });
-                        
-                        // 이동속도와 공격속도 증가 효과 적용
-                        targetPlayer.activeEffects.add('speed_boost');
-                        targetPlayer.activeEffects.add('attack_speed_boost');
-                        
-                        // 지속시간 후 효과 해제
-                        setTimeout(() => {
-                            targetPlayer.activeEffects.delete('speed_boost');
-                            targetPlayer.activeEffects.delete('attack_speed_boost');
-                        }, skillInfo.duration);
-                    }
-                }
-            });
+        // 목표 위치 계산 (마우스 위치 기준)
+        const targetX = options.targetX || this.player.x;
+        const targetY = options.targetY || this.player.y;
+        
+        console.log(`버프 장판 목표 위치: targetX=${targetX}, targetY=${targetY}, playerX=${this.player.x}, playerY=${this.player.y}`);
+        
+        // 최대 시전 사거리 적용 (JobClasses에서 설정)
+        const maxCastRange = skillInfo.castRange || 200;
+        const distance = Math.sqrt(
+            Math.pow(targetX - this.player.x, 2) + 
+            Math.pow(targetY - this.player.y, 2)
+        );
+        
+        let finalX = targetX;
+        let finalY = targetY;
+        
+        if (distance > maxCastRange) {
+            const angle = Math.atan2(targetY - this.player.y, targetX - this.player.x);
+            finalX = this.player.x + Math.cos(angle) * maxCastRange;
+            finalY = this.player.y + Math.sin(angle) * maxCastRange;
         }
-
-        console.log(`힐러 버프 장판 발동! 범위: ${range}, 지속시간: ${skillInfo.duration}ms, 적중: ${affectedTargets.length}명`);
 
         return {
             success: true,
             skillType: 'buff_field',
-            range: range,
+            x: finalX,  // 실제 시전 위치
+            y: finalY,  // 실제 시전 위치
+            range: skillInfo.range,
             duration: skillInfo.duration,
             effect: skillInfo.effect,
-            affectedTargets: affectedTargets,
             caster: {
                 id: this.player.id,
                 x: this.player.x,
@@ -187,49 +170,36 @@ class SupporterJob extends BaseJob {
         // 쿨타임 설정
         this.setSkillCooldown('heal_field');
 
-        // 힐 장판 범위 내 아군들에게 즉시 힐 적용
-        const range = skillInfo.range;
-        const healAmount = skillInfo.heal || 20;
-        const affectedTargets = [];
-
-        if (options.gameStateManager) {
-            const allPlayers = options.gameStateManager.getAllPlayers();
-            
-            allPlayers.forEach(targetPlayer => {
-                if (targetPlayer.team === this.player.team && 
-                    !targetPlayer.isDead &&
-                    targetPlayer.hp < targetPlayer.maxHp) {
-                    
-                    const distance = this.calculateDistance(
-                        this.player.x, this.player.y,
-                        targetPlayer.x, targetPlayer.y
-                    );
-                    
-                    if (distance <= range) {
-                        const result = options.gameStateManager.heal(this.player, targetPlayer, healAmount);
-                        
-                        if (result.success) {
-                            affectedTargets.push({
-                                playerId: targetPlayer.id,
-                                healAmount: result.actualHeal,
-                                oldHp: result.newHp - result.actualHeal,
-                                newHp: result.newHp
-                            });
-                        }
-                    }
-                }
-            });
+        // 목표 위치 계산 (마우스 위치 기준)
+        const targetX = options.targetX || this.player.x;
+        const targetY = options.targetY || this.player.y;
+        
+        console.log(`힐 장판 목표 위치: targetX=${targetX}, targetY=${targetY}, playerX=${this.player.x}, playerY=${this.player.y}`);
+        
+        // 최대 시전 사거리 적용 (JobClasses에서 설정)
+        const maxCastRange = skillInfo.castRange || 250;
+        const distance = Math.sqrt(
+            Math.pow(targetX - this.player.x, 2) + 
+            Math.pow(targetY - this.player.y, 2)
+        );
+        
+        let finalX = targetX;
+        let finalY = targetY;
+        
+        if (distance > maxCastRange) {
+            const angle = Math.atan2(targetY - this.player.y, targetX - this.player.x);
+            finalX = this.player.x + Math.cos(angle) * maxCastRange;
+            finalY = this.player.y + Math.sin(angle) * maxCastRange;
         }
-
-        console.log(`힐러 힐 장판 발동! 범위: ${range}, 회복량: ${healAmount}, 적중: ${affectedTargets.length}명`);
 
         return {
             success: true,
             skillType: 'heal_field',
-            range: range,
+            x: finalX,  // 실제 시전 위치
+            y: finalY,  // 실제 시전 위치
+            range: skillInfo.range,
             duration: skillInfo.duration,
-            healAmount: healAmount,
-            affectedTargets: affectedTargets,
+            healAmount: skillInfo.heal || 20,
             caster: {
                 id: this.player.id,
                 x: this.player.x,
@@ -275,8 +245,6 @@ class SupporterJob extends BaseJob {
         const finalY = this.player.y + Math.sin(angle) * maxDistance;
         
         const damage = this.player.attack;
-
-        console.log(`힐러 기본 공격 발동! 데미지: ${damage}, 각도: ${angle}`);
 
         return {
             success: true,

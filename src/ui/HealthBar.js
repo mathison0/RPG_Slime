@@ -94,8 +94,9 @@ export default class HealthBar {
         const offsetX = -(this.config.barWidth - newWidth) / 2;
         this.healthBar.setPosition(offsetX, 0);
         
-        // 체력이 0이면 체력바 숨기기
-        this.container.setVisible(currentHp > 0);
+        // 체력이 0이거나 은신 중이면 체력바 숨기기
+        const shouldHide = currentHp <= 0 || (this.entity.isStealth && this.entity.visibleToEnemies === false);
+        this.container.setVisible(!shouldHide);
     }
     
     /**

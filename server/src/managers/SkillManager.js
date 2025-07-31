@@ -1,4 +1,4 @@
-const { getSkillInfo } = require('../../shared/JobClasses.js');
+const { getJobInfo, getSkillInfo } = require('../../shared/JobClasses.js');
 const gameConfig = require('../config/GameConfig');
 const MonsterConfig = require('../../shared/MonsterConfig');
 
@@ -10,19 +10,44 @@ class SkillManager {
   constructor(gameStateManager, projectileManager = null) {
     this.gameStateManager = gameStateManager;
     this.projectileManager = projectileManager;
+    this.delayedDamageCallbacks = new Map(); // 지연된 데미지 콜백 저장
+    this.socketEventManager = null;
+    this.activeFields = []; // 활성화된 장판들을 추적
+    this.fieldTickInterval = null; // 장판 데미지 처리 인터벌
+    this.startFieldTick(); // 장판 틱 시작
+  }
+
+  /**
+   * 지연된 데미지 콜백 등록
+   */
+  setDelayedDamageCallback(playerId, skillType, callback) {
+    const key = `${playerId}_${skillType}`;
+    this.delayedDamageCallbacks.set(key, callback);
+  }
+
+  /**
+   * 지연된 데미지 콜백 호출
+   */
+  callDelayedDamageCallback(playerId, skillType, damageResult) {
+    const key = `${playerId}_${skillType}`;
+    const callback = this.delayedDamageCallbacks.get(key);
+    if (callback) {
+      callback(damageResult);
+      this.delayedDamageCallbacks.delete(key);
+    }
   }
 
   /**
    * 스킬 사용 시도
    */
-  useSkill(player, skillType, targetX = null, targetY = null) {
+  useSkill(player, skillType, targetX = null, targetY = null, options = {}) {
     // 죽은 플레이어는 스킬 사용 불가
     if (player.isDead) {
       return { success: false, error: 'Cannot use skills while dead' };
     }
 
-    // 기절 상태에서는 스킬 사용 불가
-    if (player.isStunned) {
+    // 기절 상태에서는 스킬 사용 불가 (보호막 제외)
+    if (player.isStunned && skillType !== 'shield') {
       return { success: false, error: 'Cannot use skills while stunned' };
     }
 
@@ -68,10 +93,12 @@ class SkillManager {
       return { success: false, error: 'Cannot use skill while in after delay' };
     }
 
-    // 스킬 사용 처리 (endTime 저장)
-    player.skillCooldowns[skillType] = now + skillInfo.cooldown;
+    // 스킬 사용 처리 (endTime 저장) - 목긋기는 나중에 설정
+    if (skillType !== 'backstab') {
+      player.skillCooldowns[skillType] = now + skillInfo.cooldown;
+    }
     
-    // 액션 상태 업데이트 (와드 스킬은 설치형이므로 액션 상태 설정하지 않음)
+    // 액션 상태 업데이트 (버프/장판 스킬은 액션 상태 설정하지 않음)
     const duration = skillInfo.duration || 0;
     const delay = skillInfo.delay || 0;
     const afterDelay = skillInfo.afterDelay || 0;
@@ -79,8 +106,9 @@ class SkillManager {
     // 전체 스킬 완료 시간 = 시전시간 + 지속시간 + 후딜레이
     const totalSkillTime = Math.max(duration, delay) + afterDelay;
     
-    // 와드 스킬은 설치형이므로 액션 상태를 설정하지 않음 (서포터와 마법사 모두)
-    if (skillType !== 'ward' && (duration > 0 || delay > 0 || afterDelay > 0)) {
+    // 버프/장판 스킬이 아닌 경우에만 액션 상태 설정
+    const isBuffOrFieldSkill = this.isBuffOrFieldSkill(skillType);
+    if (!isBuffOrFieldSkill && (duration > 0 || delay > 0 || afterDelay > 0)) {
       player.currentActions.skills.set(skillType, {
         startTime: now,
         duration: duration,
@@ -136,7 +164,8 @@ class SkillManager {
       y: player.y,
       targetX,
       targetY,
-      skillInfo: completeSkillInfo
+      skillInfo: completeSkillInfo,
+      options: options // options 객체 추가
     };
     
     // 와드 스킬의 경우 추가 정보 설정 (서포터만)
@@ -150,24 +179,68 @@ class SkillManager {
       if (player.wardList.length >= 2) {
         const oldestWard = player.wardList.shift();
         console.log(`기존 와드 제거: ${oldestWard.id}`);
-        result.removedWard = oldestWard;
       }
       
       // 새 와드 정보 생성
+      let wardX, wardY;
+      
+      if (targetX !== null && targetY !== null) {
+        // 마우스 위치가 지정된 경우 사정거리 체크 및 클램핑
+        const castRange = skillInfo.castRange || 300; // 기본 사정거리 300
+        const deltaX = targetX - player.x;
+        const deltaY = targetY - player.y;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        if (distance > castRange) {
+          // 사정거리 초과 시 방향은 유지하되 최대 거리로 클램핑
+          const ratio = castRange / distance;
+          wardX = player.x + deltaX * ratio;
+          wardY = player.y + deltaY * ratio;
+        } else {
+          // 사정거리 내에 있으면 마우스 위치에 설치
+          wardX = targetX;
+          wardY = targetY;
+        }
+      } else {
+        // 마우스 위치가 지정되지 않은 경우 플레이어 위치에 설치
+        wardX = player.x;
+        wardY = player.y;
+      }
+      
       const newWard = {
         id: Date.now() + Math.random(), // 고유 ID
-        x: targetX || player.x,
-        y: targetY || player.y,
+        x: wardX,
+        y: wardY,
         range: completeSkillInfo.range,
         duration: completeSkillInfo.duration,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        playerId: player.id,
+        team: player.team
       };
       
       // 와드 리스트에 추가
       player.wardList.push(newWard);
-      result.wardId = newWard.id;
       
-      console.log(`서포터 와드 설치! 위치: (${newWard.x}, ${newWard.y}), 현재 와드 개수: ${player.wardList.length}`);
+    }
+    
+    // 직업별 스킬 사용 로직 호출 (구르기, 집중 등)
+    console.log(`플레이어 job 확인: job=${player.job}, jobClass=${player.jobClass}`);
+    if (player.job && player.job.useSkill) {
+      console.log(`직업별 스킬 사용 로직 호출: ${skillType}`);
+      // targetX, targetY, gameStateManager를 options에 포함시켜서 전달
+      const extendedOptions = {
+        ...options,
+        targetX: targetX,
+        targetY: targetY,
+        gameStateManager: this.gameStateManager
+      };
+      const jobResult = player.job.useSkill(skillType, extendedOptions);
+      if (jobResult && jobResult.success) {
+        // 직업별 결과와 기본 결과 병합
+        Object.assign(result, jobResult);
+      }
+    } else {
+      console.log(`직업별 스킬 사용 로직 호출 실패: job=${player.job}, useSkill=${player.job ? player.job.useSkill : 'undefined'}`);
     }
     
     return result;
@@ -253,15 +326,19 @@ class SkillManager {
     this.cleanupExpiredActions(player);
     
     for (const [skillType, skillAction] of player.currentActions.skills) {
+      // 버프기나 장판기는 캐스팅 상태로 간주하지 않음
+      const isBuffOrFieldSkill = this.isBuffOrFieldSkill(skillType);
+      if (isBuffOrFieldSkill) {
+        continue; // 버프/장판 스킬은 캐스팅 체크에서 제외
+      }
+      
       // 1. 시전시간 중 (delay > 0이고 아직 시전시간이 끝나지 않음)
       if (skillAction.delay > 0 && now < skillAction.startTime + skillAction.delay) {
         return true;
       }
       
-      // 2. 발동 중이지만 버프기나 장판기가 아닌 스킬들
-      // 버프기/장판기는 지속시간이 있어도 이동 가능해야 함
-      const isBuffOrFieldSkill = this.isBuffOrFieldSkill(skillType);
-      if (!isBuffOrFieldSkill && skillAction.duration > 0 && 
+      // 2. 발동 중인 스킬들 (버프/장판 제외)
+      if (skillAction.duration > 0 && 
           now >= skillAction.startTime + skillAction.delay && 
           now < skillAction.startTime + skillAction.delay + skillAction.duration) {
         return true;
@@ -285,6 +362,7 @@ class SkillManager {
       'stealth',      // 은신 (어쌔신, 닌자)
       'shield',       // 보호막 (마법사)
       'focus',        // 집중 (궁수)
+      'blade_dance',  // 칼춤 (어쌔신) - 공격력 버프
       'ward',         // 와드 (서포터)
       'buff_field',   // 버프 장판 (서포터)
       'heal_field',   // 힐 장판 (서포터)
@@ -305,8 +383,9 @@ class SkillManager {
     this.cleanupExpiredActions(player);
     
     for (const [skillType, skillAction] of player.currentActions.skills) {
-      // 와드 스킬은 후딜레이 체크에서 제외 (설치형 스킬이므로)
-      if (skillType === 'ward') {
+      // 버프기나 장판기는 후딜레이 체크에서 제외
+      const isBuffOrFieldSkill = this.isBuffOrFieldSkill(skillType);
+      if (isBuffOrFieldSkill) {
         continue;
       }
       
@@ -449,7 +528,31 @@ class SkillManager {
         
         // 기본 공격 사용 시 은신 해제
         if (player.isStealth) {
-          player.isStealth = false;
+          console.log(`어쌔신 ${player.id} 기본 공격으로 은신 해제`);
+          
+          // 스킬 정보에서 배율 가져오기
+          const stealthSkillInfo = getSkillInfo(player.jobClass, 'stealth');
+          const visionMultiplier = stealthSkillInfo?.visionMultiplier || 1.3;
+          
+          // 원본 시야 범위 저장
+          const originalVisionRange = player.originalVisionRange || Math.round(player.visionRange / visionMultiplier);
+          
+          // 서버 플레이어의 은신 상태 및 스탯 복원
+          player.job.endStealth(); 
+          
+          // 다시 모든 팀에게 보이도록 설정
+          player.visibleToEnemies = true;
+          
+          // 클라이언트에게 은신 해제 이벤트 전송
+          if (this.gameStateManager.io) {
+            this.gameStateManager.io.emit('stealth-ended', {
+              playerId: player.id,
+              endTime: Date.now(),
+              originalVisionRange: originalVisionRange
+            });
+          } else {
+            console.log('gameStateManager.io가 null입니다');
+          }
         }
         
         return result;
@@ -466,84 +569,72 @@ class SkillManager {
   }
 
   /**
-   * 어쌔신 기본 공격 데미지 적용 (연속 공격)
+   * 원거리 기본 공격 (투사체)
    */
-  applyAssassinBasicAttack(player, baseDamage, x, y, targetX, targetY) {
+  applyRangedBasicAttack(player, damage, x, y, targetX, targetY) {
     const damageResult = {
       affectedEnemies: [],
       affectedPlayers: [],
       totalDamage: 0
     };
 
-    const enemies = this.gameStateManager.enemies;
-    const players = this.gameStateManager.players;
-    const attackRange = 40;
-    const angleOffset = Math.PI / 6; // 30도
-
-    // 첫 번째 공격
-    const firstAttackResult = this.applyMeleeSweepDamage(player, baseDamage * 0.5, x, y, targetX, targetY, attackRange, angleOffset);
-    damageResult.affectedEnemies.push(...firstAttackResult.affectedEnemies);
-    damageResult.affectedPlayers.push(...firstAttackResult.affectedPlayers);
-    damageResult.totalDamage += firstAttackResult.totalDamage;
-
-    // 두 번째 공격 (즉시 실행)
-    const secondAttackResult = this.applyMeleeSweepDamage(player, baseDamage * 0.5, x, y, targetX, targetY, attackRange, angleOffset);
-    damageResult.affectedEnemies.push(...secondAttackResult.affectedEnemies);
-    damageResult.affectedPlayers.push(...secondAttackResult.affectedPlayers);
-    damageResult.totalDamage += secondAttackResult.totalDamage;
+    if (this.projectileManager) {
+      // JobClasses에서 투사체 설정 가져오기
+      const { getJobInfo } = require('../../shared/JobClasses.js');
+      const jobInfo = getJobInfo(player.jobClass);
+      const projectileSettings = jobInfo.projectile;
+      
+      if (!projectileSettings) {
+        console.warn(`${player.jobClass}는 투사체 공격을 사용할 수 없습니다.`);
+        return damageResult;
+      }
+      
+      const projectileConfig = {
+        playerId: player.id,
+        x: x,
+        y: y,
+        targetX: targetX,
+        targetY: targetY,
+        damage: damage,
+        speed: projectileSettings.speed,
+        size: projectileSettings.size,
+        jobClass: player.jobClass,
+        attackType: 'basic'
+      };
+      
+      const projectile = this.projectileManager.createProjectile(projectileConfig);
+      
+      if (projectile) {
+        damageResult.projectileCreated = true;
+      }
+    }
 
     return damageResult;
   }
 
   /**
-   * 근접 기본 공격 데미지 적용
+   * 근접 기본 공격 (부채꼴)
    */
-  applyMeleeBasicAttack(player, baseDamage, x, y, targetX, targetY) {
-    const attackRanges = {
-      'warrior': 60,
-      'supporter': 55,
-      'mechanic': 50
-    };
-    
-    const attackRange = attackRanges[player.jobClass] || 50;
-    const angleOffset = Math.PI / 6; // 30도
-
-    // 전사는 직사각형 공격, 나머지는 부채꼴 공격
-    if (player.jobClass === 'warrior') {
-      return this.applyWarriorRectangularAttack(player, baseDamage, x, y, targetX, targetY);
-    } else {
-      return this.applyMeleeSweepDamage(player, baseDamage, x, y, targetX, targetY, attackRange, angleOffset);
-    }
-  }
-
-  /**
-   * 근접 부채꼴 공격 데미지 적용
-   */
-  applyMeleeSweepDamage(player, baseDamage, x, y, targetX, targetY, range, angleOffset) {
+  applyMeleeBasicAttack(player, damage, x, y, targetX, targetY) {
     const damageResult = {
       affectedEnemies: [],
       affectedPlayers: [],
       totalDamage: 0
     };
 
-    const enemies = this.gameStateManager.enemies;
-    const players = this.gameStateManager.players;
-    const centerX = x;
-    const centerY = y;
-    const mouseX = targetX;
-    const mouseY = targetY;
+    const range = 80; // 근접 공격 범위
+    const angleOffset = Math.PI / 3; // 60도 부채꼴
 
-    // 적에게 데미지 적용 (Map 객체인 경우 values() 사용)
+    // 적 대상
+    const enemies = this.gameStateManager.enemies;
     const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    
     enemyArray.forEach(enemy => {
       if (enemy.isDead) return;
 
-      const enemyX = enemy.x;
-      const enemyY = enemy.y;
-      
-      // 범위 내에 있는지 확인
-      if (this.isInMeleeSweepRange(centerX, centerY, enemyX, enemyY, mouseX, mouseY, range, angleOffset)) {
-        const damage = Math.floor(baseDamage);
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = range + (enemy.size || 32) / 2;
+      if (this.isInMeleeSweepRange(x, y, enemy.x, enemy.y, targetX, targetY, effectiveRange, angleOffset)) {
         const result = this.gameStateManager.takeDamage(player, enemy, damage);
         
         if (result.success) {
@@ -552,25 +643,23 @@ class SkillManager {
             damage: damage,
             actualDamage: result.actualDamage,
             x: enemy.x,
-            y: enemy.y,
-            type: enemy.type
+            y: enemy.y
           });
           damageResult.totalDamage += result.actualDamage;
         }
       }
     });
 
-    // 다른 플레이어에게 데미지 적용 (PvP) (Map 객체인 경우 values() 사용)
+    // 다른 플레이어 대상
+    const players = this.gameStateManager.players;
     const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+    
     playerArray.forEach(targetPlayer => {
-      if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) return;
+      if (targetPlayer.isDead || targetPlayer.team === player.team || targetPlayer.id === player.id) return;
 
-      const playerX = targetPlayer.x;
-      const playerY = targetPlayer.y;
-      
-      // 범위 내에 있는지 확인
-      if (this.isInMeleeSweepRange(centerX, centerY, playerX, playerY, mouseX, mouseY, range, angleOffset)) {
-        const damage = Math.floor(baseDamage * 0.5); // PvP 데미지는 50%
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = range + (targetPlayer.size || 32) / 2;
+      if (this.isInMeleeSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, effectiveRange, angleOffset)) {
         const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
         if (result.success) {
@@ -579,8 +668,7 @@ class SkillManager {
             damage: damage,
             actualDamage: result.actualDamage,
             x: targetPlayer.x,
-            y: targetPlayer.y,
-            team: targetPlayer.team
+            y: targetPlayer.y
           });
           damageResult.totalDamage += result.actualDamage;
         }
@@ -591,55 +679,30 @@ class SkillManager {
   }
 
   /**
-   * 전사 직사각형 공격 데미지 적용
+   * 어쌔신 기본 공격 (직사각형 범위)
    */
-  applyWarriorRectangularAttack(player, baseDamage, x, y, targetX, targetY) {
+  applyAssassinBasicAttack(player, damage, x, y, targetX, targetY) {
     const damageResult = {
       affectedEnemies: [],
       affectedPlayers: [],
       totalDamage: 0
     };
 
-    const enemies = this.gameStateManager.enemies;
-    const players = this.gameStateManager.players;
-    
-    // 직사각형 공격 범위 설정
-    const width = 30;  // 직사각형 너비
-    const height = 60; // 직사각형 높이 (플레이어에서 커서까지)
-    
-    // 플레이어에서 커서까지의 각도 계산
-    const angleToMouse = Math.atan2(targetY - y, targetX - x);
-    
-    // 직사각형의 네 꼭지점 계산 (회전된)
-    const cos = Math.cos(angleToMouse);
-    const sin = Math.sin(angleToMouse);
-    const halfWidth = width / 2;
-    
-    // 회전 변환을 직접 계산 (플레이어 위치가 직사각형 하단 중심)
-    const corners = [
-      { x: 0, y: -halfWidth },        // 좌하단
-      { x: height, y: -halfWidth },   // 우하단  
-      { x: height, y: halfWidth },    // 우상단
-      { x: 0, y: halfWidth }          // 좌상단
-    ];
-    
-    // 회전된 좌표 계산
-    const rotatedCorners = corners.map(corner => ({
-      x: x + (corner.x * cos - corner.y * sin),
-      y: y + (corner.x * sin + corner.y * cos)
-    }));
+    const width = 40; // 직사각형 너비 (클라이언트 이펙트와 맞춤)
+    const height = 60; // 직사각형 높이 (클라이언트 이펙트와 맞춤)
 
-    // 적에게 데미지 적용
+    // 적 대상
+    const enemies = this.gameStateManager.enemies;
     const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    
     enemyArray.forEach(enemy => {
       if (enemy.isDead) return;
 
-      const enemyX = enemy.x;
-      const enemyY = enemy.y;
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveWidth = width + (enemy.size || 32);
+      const effectiveHeight = height + (enemy.size || 32);
       
-      // 직사각형 범위 내에 있는지 확인
-      if (this.isInRectangularRange(x, y, enemyX, enemyY, rotatedCorners)) {
-        const damage = Math.floor(baseDamage);
+      if (this.isInRectangleRange(x, y, enemy.x, enemy.y, targetX, targetY, effectiveWidth, effectiveHeight)) {
         const result = this.gameStateManager.takeDamage(player, enemy, damage);
         
         if (result.success) {
@@ -648,25 +711,25 @@ class SkillManager {
             damage: damage,
             actualDamage: result.actualDamage,
             x: enemy.x,
-            y: enemy.y,
-            type: enemy.type
+            y: enemy.y
           });
           damageResult.totalDamage += result.actualDamage;
         }
       }
     });
 
-    // 다른 플레이어에게 데미지 적용 (PvP)
+    // 다른 플레이어 대상
+    const players = this.gameStateManager.players;
     const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+    
     playerArray.forEach(targetPlayer => {
-      if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) return;
+      if (targetPlayer.isDead || targetPlayer.team === player.team || targetPlayer.id === player.id) return;
 
-      const playerX = targetPlayer.x;
-      const playerY = targetPlayer.y;
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveWidth = width + (targetPlayer.size || 32);
+      const effectiveHeight = height + (targetPlayer.size || 32);
       
-      // 직사각형 범위 내에 있는지 확인
-      if (this.isInRectangularRange(x, y, playerX, playerY, rotatedCorners)) {
-        const damage = Math.floor(baseDamage * 0.5); // PvP 데미지는 50%
+      if (this.isInRectangleRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, effectiveWidth, effectiveHeight)) {
         const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
         if (result.success) {
@@ -675,8 +738,7 @@ class SkillManager {
             damage: damage,
             actualDamage: result.actualDamage,
             x: targetPlayer.x,
-            y: targetPlayer.y,
-            team: targetPlayer.team
+            y: targetPlayer.y
           });
           damageResult.totalDamage += result.actualDamage;
         }
@@ -687,30 +749,44 @@ class SkillManager {
   }
 
   /**
-   * 직사각형 범위 내에 있는지 확인
+   * 마법 미사일 데미지 적용
    */
-  isInRectangularRange(centerX, centerY, targetX, targetY, corners) {
-    // 점이 다각형 내부에 있는지 확인하는 알고리즘
-    let inside = false;
-    const n = corners.length;
-    
-    for (let i = 0, j = n - 1; i < n; j = i++) {
-      const xi = corners[i].x;
-      const yi = corners[i].y;
-      const xj = corners[j].x;
-      const yj = corners[j].y;
+  applyMagicMissileDamage(player, x, y, targetX, targetY, damage, damageResult) {
+    if (this.projectileManager) {
+      const { getJobInfo } = require('../../shared/JobClasses.js');
+      const jobInfo = getJobInfo(player.jobClass);
+      const magicMissileSkill = jobInfo.skills.find(skill => skill.type === 'magic_missile');
+      const projectileSettings = magicMissileSkill?.projectile || jobInfo.projectile;
       
-      if (((yi > targetY) !== (yj > targetY)) && 
-          (targetX < (xj - xi) * (targetY - yi) / (yj - yi) + xi)) {
-        inside = !inside;
+      if (!projectileSettings) {
+        console.warn(`${player.jobClass}의 마법 미사일 투사체 설정을 찾을 수 없습니다.`);
+        return;
+      }
+      
+      const projectileConfig = {
+        playerId: player.id,
+        x: x,
+        y: y,
+        targetX: targetX,
+        targetY: targetY,
+        damage: damage,
+        speed: projectileSettings.speed,
+        size: projectileSettings.size,
+        jobClass: player.jobClass,
+        attackType: 'magic_missile',
+        explosionRadius: magicMissileSkill?.explosionRadius || 90
+      };
+      
+      const projectile = this.projectileManager.createProjectile(projectileConfig);
+      
+      if (projectile) {
+        damageResult.projectileCreated = true;
       }
     }
-    
-    return inside;
   }
 
   /**
-   * 근접 부채꼴 범위 내에 있는지 확인
+   * 근접 부채꼴 범위 체크
    */
   isInMeleeSweepRange(centerX, centerY, targetX, targetY, mouseX, mouseY, range, angleOffset) {
     const distance = Math.sqrt((targetX - centerX) ** 2 + (targetY - centerY) ** 2);
@@ -736,14 +812,30 @@ class SkillManager {
     // 기본 공격 쿨다운 체크 (endTime 기반)
     const { getJobInfo } = require('../../shared/JobClasses.js');
     const jobInfo = getJobInfo(player.jobClass);
-    const cooldown = jobInfo.basicAttackCooldown;
+    let cooldown = jobInfo.basicAttackCooldown;
     const basicAttackEndTime = player.skillCooldowns['basic_attack'] || 0;
     
+    // 버프 효과 적용 (서버에서도 적용)
+    if (player.hasBuff('attack_speed_boost')) {
+      const buff = player.buffs.get('attack_speed_boost');
+      if (buff && buff.effect && buff.effect.attackSpeedMultiplier) {
+        const originalCooldown = cooldown;
+        cooldown = Math.floor(cooldown / buff.effect.attackSpeedMultiplier);
+      }
+    }
+    
+    // 서포터 버프 장판 효과 적용
+    if (player.hasBuff('speed_attack_boost')) {
+      const buff = player.buffs.get('speed_attack_boost');
+      if (buff && buff.effect && buff.effect.attackSpeedMultiplier) {
+        const originalCooldown = cooldown;
+        cooldown = Math.floor(cooldown / buff.effect.attackSpeedMultiplier);
+      }
+    }
     if (now < basicAttackEndTime) {
+      const remainingTime = basicAttackEndTime - now;
       return { success: false, error: 'Basic attack on cooldown' };
     }
-
-    console.log('basic_attack now:', now, 'cooldown:', cooldown);
 
     // 기본 공격 쿨다운 설정 (endTime 저장)
     player.skillCooldowns['basic_attack'] = now + cooldown;
@@ -769,7 +861,7 @@ class SkillManager {
   /**
    * 스킬 데미지 계산 및 적용
    */
-  applySkillDamage(player, skillType, skillInfo, x, y, targetX = null, targetY = null) {
+  applySkillDamage(player, skillType, skillInfo, x, y, targetX = null, targetY = null, options = {}) {
     const damageResult = {
       affectedEnemies: [],
       affectedPlayers: [],
@@ -788,7 +880,7 @@ class SkillManager {
       case 'slime':
         return this.applySlimeSkill(player, skillType, skillInfo, x, y);
       case 'assassin':
-        return this.applyAssassinSkill(player, skillType, skillInfo, x, y, targetX, targetY);
+        return this.applyAssassinSkill(player, skillType, skillInfo, x, y, targetX, targetY, options);
       case 'ninja':
         return this.applyNinjaSkill(player, skillType, skillInfo, x, y, targetX, targetY);
       case 'mage':
@@ -806,68 +898,161 @@ class SkillManager {
   }
 
   /**
-   * 전사 스킬 처리
+   * 마법사 스킬 처리
    */
-  applyWarriorSkill(player, skillType, skillInfo, x, y, targetX, targetY) {
+  applyMageSkill(player, skillType, skillInfo, x, y, targetX, targetY) {
     const damageResult = {
       affectedEnemies: [],
       affectedPlayers: [],
       totalDamage: 0
     };
 
-    const enemies = this.gameStateManager.enemies;
-    const players = this.gameStateManager.players;
-    const range = skillInfo.range;
-    const damage = skillInfo.damage;
+    // JobClasses에서 마법사 정보 가져오기
+    const { getJobInfo } = require('../../shared/JobClasses.js');
+    const mageInfo = getJobInfo('mage');
 
     switch (skillType) {
-      case 'roar':
-        break;
-
-      case 'sweep':
-        // 휩쓸기는 지연 데미지 처리
-        const sweepDelay = skillInfo.delay || 1000; // 기본값 1초
+      case 'ice_field':
+        // 얼음 장판 사거리 클램핑 (JobClasses에서 maxCastRange 사용)
+        const iceFieldSkill = mageInfo.skills.find(skill => skill.type === 'ice_field');
+        const maxCastRange = iceFieldSkill?.maxCastRange || 300;
         
-        console.log(`휩쓸기 스킬 사용! 플레이어: ${player.id}, 지연시간: ${sweepDelay}ms`);
+        let clampedTargetX = targetX;
+        let clampedTargetY = targetY;
         
-        // 지연 시간 후 데미지 적용
-        const sweepTimeoutId = setTimeout(() => {
-          // 플레이어가 죽었는지 확인
-          if (player.isDead) {
-            console.log(`휩쓸기 스킬 취소: 플레이어 ${player.id}가 사망함`);
-            player.delayedActions.delete('sweep');
-            return;
-          }
+        if (targetX !== null && targetY !== null) {
+          const deltaX = targetX - x;
+          const deltaY = targetY - y;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
           
-          console.log(`휩쓸기 지연 데미지 적용! 플레이어: ${player.id}`);
-          this.applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo);
-          player.delayedActions.delete('sweep');
-        }, sweepDelay);
-        
-        // 지연된 액션으로 등록
-        player.delayedActions.set('sweep', sweepTimeoutId);
-        break;
-
-      case 'thrust':
-        // 찌르기는 지연 데미지 처리
-        const delay = skillInfo.delay || 1500; // 기본값 1.5초
-        
-        // 지연 시간 후 데미지 적용
-        const thrustTimeoutId = setTimeout(() => {
-          // 플레이어가 죽었는지 확인
-          if (player.isDead) {
-            console.log(`찌르기 스킬 취소: 플레이어 ${player.id}가 사망함`);
-            player.delayedActions.delete('thrust');
-            return;
+          if (distance > maxCastRange) {
+            // 사거리 초과 시 방향은 유지하되 최대 거리로 클램핑
+            const ratio = maxCastRange / distance;
+            clampedTargetX = x + deltaX * ratio;
+            clampedTargetY = y + deltaY * ratio;
+            console.log(`서버 얼음 장판 사거리 클램핑: 요청 거리=${Math.round(distance)}, 최대 거리=${maxCastRange}, 클램핑된 위치=(${Math.round(clampedTargetX)}, ${Math.round(clampedTargetY)})`);
           }
-          
-          console.log(`찌르기 지연 데미지 적용! 플레이어: ${player.id}`);
-          this.applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo);
-          player.delayedActions.delete('thrust');
-        }, delay);
+        }
         
-        // 지연된 액션으로 등록
-        player.delayedActions.set('thrust', thrustTimeoutId);
+        console.log(`얼음 장판  플레이어: ${player.id}, 위치: (${clampedTargetX}, ${clampedTargetY}), 범위: ${skillInfo.range}`);
+        // 장판 시스템에 등록 (클램핑된 좌표 사용)
+        this.addField('ice_field', player.id, clampedTargetX, clampedTargetY, skillInfo.range, skillInfo.duration, skillInfo.damage);
+        // 초기 데미지는 없음 (0.5초 후부터 적용)
+        break;
+      case 'magic_missile':
+        // 마법 미사일 사거리 클램핑 (JobClasses에서 range 사용) 
+        const magicMissileSkill = mageInfo.skills.find(skill => skill.type === 'magic_missile');
+        const magicMissileRange = magicMissileSkill?.range || 400;
+        
+        let clampedMissileX = targetX;
+        let clampedMissileY = targetY;
+        
+        if (targetX !== null && targetY !== null) {
+          const deltaX = targetX - x;
+          const deltaY = targetY - y;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+          
+          if (distance > magicMissileRange) {
+            // 사거리 초과 시 방향은 유지하되 최대 거리로 클램핑
+            const ratio = magicMissileRange / distance;
+            clampedMissileX = x + deltaX * ratio;
+            clampedMissileY = y + deltaY * ratio;
+            console.log(`서버 마법 미사일 사거리 클램핑: 요청 거리=${Math.round(distance)}, 최대 거리=${magicMissileRange}, 클램핑된 위치=(${Math.round(clampedMissileX)}, ${Math.round(clampedMissileY)})`);
+          }
+        }
+        
+        this.applyMagicMissileDamage(player, x, y, clampedMissileX, clampedMissileY, skillInfo.damage, damageResult);
+        break;
+      case 'shield':
+        // 보호막은 데미지 없음, 방어 효과만
+        break;
+    }
+
+    return damageResult;
+  }
+
+  /**
+   * 서포터 스킬 처리
+   */
+  applySupporterSkill(player, skillType, skillInfo, x, y, targetX, targetY) {
+    const damageResult = {
+      affectedEnemies: [],
+      affectedPlayers: [],
+      totalDamage: 0
+    };
+
+    // JobClasses에서 서포터 정보 가져오기
+    const { getJobInfo } = require('../../shared/JobClasses.js');
+    const supporterInfo = getJobInfo('supporter');
+
+    switch (skillType) {
+      case 'ward':
+        // 와드는 데미지 없음, 시야 효과만
+        break;
+      case 'buff_field':
+        // 버프 장판 사거리 클램핑 (JobClasses에서 castRange 사용)
+        const buffFieldSkill = supporterInfo.skills.find(skill => skill.type === 'buff_field');
+        const buffMaxCastRange = buffFieldSkill?.castRange || 200;
+        
+        let clampedBuffX = targetX;
+        let clampedBuffY = targetY;
+        
+        if (targetX !== null && targetY !== null) {
+          const deltaX = targetX - x;
+          const deltaY = targetY - y;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+          
+          if (distance > buffMaxCastRange) {
+            // 사거리 초과 시 방향은 유지하되 최대 거리로 클램핑
+            const ratio = buffMaxCastRange / distance;
+            clampedBuffX = x + deltaX * ratio;
+            clampedBuffY = y + deltaY * ratio;
+            console.log(`서버 버프 장판 사거리 클램핑: 요청 거리=${Math.round(distance)}, 최대 거리=${buffMaxCastRange}, 클램핑된 위치=(${Math.round(clampedBuffX)}, ${Math.round(clampedBuffY)})`);
+          }
+        } else {
+          // targetX, targetY가 null인 경우 플레이어 위치 사용
+          clampedBuffX = x;
+          clampedBuffY = y;
+        }
+        
+        this.addField('buff_field', player.id, clampedBuffX, clampedBuffY, skillInfo.range, skillInfo.duration);
+        
+        // 위치 정보를 결과에 포함
+        damageResult.x = clampedBuffX;
+        damageResult.y = clampedBuffY;
+        break;
+      case 'heal_field':
+        // 힐 장판 사거리 클램핑 (JobClasses에서 castRange 사용)
+        const healFieldSkill = supporterInfo.skills.find(skill => skill.type === 'heal_field');
+        const healMaxCastRange = healFieldSkill?.castRange || 250;
+        
+        let clampedHealX = targetX;
+        let clampedHealY = targetY;
+        
+        if (targetX !== null && targetY !== null) {
+          const deltaX = targetX - x;
+          const deltaY = targetY - y;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+          
+          if (distance > healMaxCastRange) {
+            // 사거리 초과 시 방향은 유지하되 최대 거리로 클램핑
+            const ratio = healMaxCastRange / distance;
+            clampedHealX = x + deltaX * ratio;
+            clampedHealY = y + deltaY * ratio;
+            console.log(`서버 힐 장판 사거리 클램핑: 요청 거리=${Math.round(distance)}, 최대 거리=${healMaxCastRange}, 클램핑된 위치=(${Math.round(clampedHealX)}, ${Math.round(clampedHealY)})`);
+          }
+        } else {
+          // targetX, targetY가 null인 경우 플레이어 위치 사용
+          clampedHealX = x;
+          clampedHealY = y;
+        }
+        
+        const healAmount = skillInfo.heal || 20;
+        this.addField('heal_field', player.id, clampedHealX, clampedHealY, skillInfo.range, skillInfo.duration, 0, healAmount);
+        
+        // 위치 정보를 결과에 포함
+        damageResult.x = clampedHealX;
+        damageResult.y = clampedHealY;
         break;
     }
 
@@ -892,9 +1077,74 @@ class SkillManager {
   }
 
   /**
+   * 전사 스킬 처리
+   */
+  applyWarriorSkill(player, skillType, skillInfo, x, y, targetX, targetY) {
+    const damageResult = {
+      affectedEnemies: [],
+      affectedPlayers: [],
+      totalDamage: 0
+    };
+
+    const enemies = this.gameStateManager.enemies;
+    const players = this.gameStateManager.players;
+    const range = skillInfo.range;
+    const damage = skillInfo.damage;
+
+    switch (skillType) {
+      case 'roar':
+        break;
+
+      case 'sweep':
+        // 휩쓸기는 지연 데미지 처리
+        const sweepDelay = skillInfo.delay || 1000;
+        
+        setTimeout(() => {
+          if (player.isDead) {
+            console.log(`휩쓸기 스킬 취소: 플레이어 ${player.id}가 사망함`);
+            return;
+          }
+          
+          const actualDamageResult = {
+            affectedEnemies: [],
+            affectedPlayers: [],
+            totalDamage: 0
+          };
+          
+          this.applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, actualDamageResult, skillInfo);
+          this.callDelayedDamageCallback(player.id, 'sweep', actualDamageResult);
+        }, sweepDelay);
+        break;
+
+      case 'thrust':
+        // 찌르기는 지연 데미지 처리
+        const thrustDelay = skillInfo.delay || 1500;
+        
+        setTimeout(() => {
+          if (player.isDead) {
+            console.log(`찌르기 스킬 취소: 플레이어 ${player.id}가 사망함`);
+            return;
+          }
+          
+          const actualDamageResult = {
+            affectedEnemies: [],
+            affectedPlayers: [],
+            totalDamage: 0
+          };
+          
+          this.applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, actualDamageResult, skillInfo);
+          this.callDelayedDamageCallback(player.id, 'thrust', actualDamageResult);
+        }, thrustDelay);
+        break;
+    }
+
+    return damageResult;
+  }
+
+  /**
    * 어쌔신 스킬 처리
    */
-  applyAssassinSkill(player, skillType, skillInfo, x, y, targetX, targetY) {
+  applyAssassinSkill(player, skillType, skillInfo, x, y, targetX, targetY, options = {}) {
     const damageResult = {
       affectedEnemies: [],
       affectedPlayers: [],
@@ -903,35 +1153,231 @@ class SkillManager {
 
     switch (skillType) {
       case 'stealth':
-        // 은신 상태 설정
+        // 은신 스킬 처리 - 직접 구현
+        if (player.isStealth) {
+          console.log('이미 은신 중입니다.');
+          return damageResult;
+        }
+        
+        // 은신 상태 활성화
         player.isStealth = true;
         player.stealthStartTime = Date.now();
-        player.stealthDuration = skillInfo.duration || 5000;
+        player.stealthDuration = skillInfo.duration;
+        player.stealthEndTime = player.stealthStartTime + skillInfo.duration;
         
-        // 은신 지속시간 후 자동 해제
-        const stealthTimeoutId = setTimeout(() => {
-          // 플레이어가 죽었는지 확인
-          if (player.isDead) {
-            console.log(`은신 스킬 취소: 플레이어 ${player.id}가 사망함`);
-            player.delayedActions.delete('stealth');
-            return;
-          }
-          
-          if (player.isStealth) {
-            player.isStealth = false;
-          }
-          player.delayedActions.delete('stealth');
-        }, player.stealthDuration);
+        // 다른 팀에게는 보이지 않도록 설정
+        player.visibleToEnemies = false;
+
+        // 스킬 정보에서 배율 가져오기
+        const speedMultiplier = skillInfo?.speedMultiplier || 1.2;
+        const visionMultiplier = skillInfo?.visionMultiplier || 1.3;
+
+        // 은신 중 이동속도 증가
+        player.originalSpeed = player.speed || 1;
+        player.speed = player.originalSpeed * speedMultiplier;
+
+        // 은신 중 시야 범위 증가
+        player.originalVisionRange = player.visionRange || 1;
+        player.visionRange = player.originalVisionRange * visionMultiplier;
+
+        console.log(`어쌔신 은신 발동! 지속시간: ${skillInfo.duration}ms, 종료시간: ${player.stealthEndTime}`);
+
+        // 은신 상태 정보를 damageResult에 포함
+        damageResult.stealthData = {
+          startTime: player.stealthStartTime,
+          endTime: player.stealthEndTime,
+          duration: skillInfo.duration,
+          speedMultiplier: speedMultiplier,
+          visionMultiplier: visionMultiplier
+        };
+        break;
         
-        // 지연된 액션으로 등록
-        player.delayedActions.set('stealth', stealthTimeoutId);
-        break;
-      case 'backstab':
-        this.applyBackstabDamage(player, x, y, targetX, targetY, skillInfo.damage, damageResult);
-        break;
       case 'blade_dance':
-        this.applyBladeDanceDamage(player, x, y, skillInfo.range, skillInfo.damage, damageResult);
+        // 칼춤 스킬 처리 - 직접 구현
+        const attackPowerMultiplier = skillInfo?.attackPowerMultiplier || 2.5;
+        
+        // 새로운 버프 시스템 사용
+        const bladeDanceEffect = {
+          attackPowerMultiplier: attackPowerMultiplier
+        };
+        player.applyBuff('attack_power_boost', skillInfo.duration, bladeDanceEffect);
+
+        // 칼춤 스킬 종료 시간 계산
+        const endTime = Date.now() + skillInfo.duration;
+
+        console.log(`어쌔신 칼춤 발동! 지속시간: ${skillInfo.duration}ms, 종료시간: ${endTime}`);
+
+        // 공격력 증가 버프 정보를 damageResult에 포함
+        damageResult.bladeDanceData = {
+          endTime: endTime,
+          duration: skillInfo.duration,
+          attackPowerMultiplier: attackPowerMultiplier
+        };
         break;
+        
+      case 'backstab':
+        // 목긋기 스킬 처리 - 서버에서 마우스 위치로 대상 찾기 및 위치 계산
+        console.log('목긋기 스킬 options 확인:', options);
+        
+        try {
+          const { mouseX, mouseY } = options;
+          if (mouseX === undefined || mouseY === undefined) {
+            console.log('목긋기: 마우스 위치 정보가 없습니다.');
+            console.log('options 객체 내용:', options);
+            return damageResult;
+          }
+
+        // 마우스 위치에서 대상 찾기 (플레이어 또는 몬스터)
+        let target = null;
+        let isMonster = false;
+        const backstabRange = skillInfo.range || 200;
+        const cursorRange = 30; // 커서 기준 범위 (픽셀 단위)
+
+        // 플레이어들 중에서 찾기
+        console.log(`목긋기: 플레이어 검색 시작 - 총 ${this.gameStateManager.players.size}명의 플레이어`);
+        for (const [playerId, otherPlayer] of this.gameStateManager.players) {
+          console.log(`목긋기: 플레이어 ${playerId} 검사 - 팀: ${otherPlayer.team}, 내 팀: ${player.team}, 사망: ${otherPlayer.isDead}`);
+          
+          if (playerId === player.id) {
+            console.log(`목긋기: 자신 제외`);
+            continue; // 자신 제외
+          }
+          if (otherPlayer.isDead) {
+            console.log(`목긋기: 사망한 플레이어 제외`);
+            continue; // 사망한 플레이어 제외
+          }
+          if (otherPlayer.team === player.team) {
+            console.log(`목긋기: 같은 팀 제외`);
+            continue; // 같은 팀 제외
+          }
+
+          // 마우스 커서와 플레이어 사이의 거리 확인
+          const cursorDistance = Math.sqrt(
+            Math.pow(mouseX - otherPlayer.x, 2) + 
+            Math.pow(mouseY - otherPlayer.y, 2)
+          );
+          
+          console.log(`목긋기: 플레이어 ${playerId} - 커서 거리: ${cursorDistance}, 커서 범위: ${cursorRange}`);
+          
+          if (cursorDistance <= cursorRange) {
+            // 목긋기 사거리 확인
+            const playerDistance = Math.sqrt(
+              Math.pow(player.x - otherPlayer.x, 2) + 
+              Math.pow(player.y - otherPlayer.y, 2)
+            );
+            
+            console.log(`목긋기: 플레이어 ${playerId} - 사거리: ${playerDistance}, 목긋기 범위: ${backstabRange}`);
+            
+                    if (playerDistance <= backstabRange) {
+          target = otherPlayer;
+          console.log(`목긋기: 플레이어 ${playerId}를 대상으로 선택!`);
+          console.log(`목긋기: 대상 객체 타입:`, typeof target);
+          console.log(`목긋기: 대상 객체 메서드들:`, Object.getOwnPropertyNames(target));
+          console.log(`목긋기: takeDamage 메서드 존재:`, typeof target.takeDamage);
+          break;
+        } else {
+          console.log(`목긋기: 플레이어 ${playerId} - 사거리 밖`);
+        }
+          } else {
+            console.log(`목긋기: 플레이어 ${playerId} - 커서 범위 밖`);
+          }
+        }
+
+        // 플레이어에서 찾지 못했으면 몬스터에서 찾기
+        if (!target) {
+          for (const [enemyId, enemy] of this.gameStateManager.enemies) {
+            if (enemy.isDead) continue; // 사망한 몬스터 제외
+
+            // 마우스 커서와 몬스터 사이의 거리 확인
+            const cursorDistance = Math.sqrt(
+              Math.pow(mouseX - enemy.x, 2) + 
+              Math.pow(mouseY - enemy.y, 2)
+            );
+            
+            if (cursorDistance <= cursorRange) {
+              // 목긋기 사거리 확인
+              const playerDistance = Math.sqrt(
+                Math.pow(player.x - enemy.x, 2) + 
+                Math.pow(player.y - enemy.y, 2)
+              );
+              
+              if (playerDistance <= backstabRange) {
+                target = enemy;
+                isMonster = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!target) {
+          console.log('목긋기: 마우스 위치에서 유효한 대상을 찾을 수 없습니다.');
+          return { success: false, error: 'No valid target found' };
+        }
+
+        console.log(`목긋기 대상 탐지 성공!`);
+        console.log(`- 대상 ID: ${target.id}`);
+        console.log(`- 대상 타입: ${isMonster ? '몬스터' : '플레이어'}`);
+        console.log(`- 대상 위치: (${target.x}, ${target.y})`);
+        console.log(`- 플레이어 현재 위치: (${player.x}, ${player.y})`);
+        console.log(`- 마우스 위치: (${mouseX}, ${mouseY})`);
+
+        // 대상의 뒤쪽 위치 계산 (대상의 반대쪽으로 이동)
+        const angleToTarget = Math.atan2(target.y - player.y, target.x - player.x);
+        const teleportDistance = skillInfo.teleportDistance || 50;
+        // 대상의 뒤쪽 = 대상 위치에서 플레이어 방향의 반대쪽
+        const newX = target.x + Math.cos(angleToTarget) * teleportDistance;
+        const newY = target.y + Math.sin(angleToTarget) * teleportDistance;
+
+        console.log(`- 계산된 이동 좌표: (${newX}, ${newY})`);
+        console.log(`- 각도: ${angleToTarget} (라디안)`);
+        console.log(`- 텔레포트 거리: ${teleportDistance}`);
+
+        // 플레이어 위치 이동
+        player.x = newX;
+        player.y = newY;
+
+        // 데미지 계산
+        let damage = player.attack * 3.0; // 기본 3배 데미지
+        
+        // 은신 중이면 보너스 데미지 추가 (은신 상태 유지)
+        if (player.isStealth) {
+          damage += player.attack * 5.0; // 은신 보너스 데미지 추가
+        }
+
+        // 대상에게 데미지 적용 (몬스터와 플레이어 구분)
+        if (isMonster) {
+          // 몬스터에게 데미지 적용
+          if (this.gameStateManager.enemyManager) {
+            this.gameStateManager.enemyManager.damageEnemy(target.id, damage, player.id);
+          }
+        } else {
+          // 플레이어에게 데미지 적용
+          const result = this.gameStateManager.takeDamage(player, target, damage);
+          console.log(`목긋기: 플레이어 데미지 적용 결과:`, result);
+        }
+   
+        console.log(`어쌔신 목긋기 발동! 대상: ${target.id} (${isMonster ? '몬스터' : '플레이어'}), 데미지: ${damage}, 새 위치: (${newX}, ${newY})`);
+
+        // 목긋기 성공 시 쿨타임 설정
+        player.skillCooldowns[skillType] = Date.now() + skillInfo.cooldown;
+        
+        // 목긋기 결과 정보를 damageResult에 포함 (모든 클라이언트에게 전송될 정보)
+        damageResult.backstabData = {
+          targetId: target.id,
+          targetX: target.x,
+          targetY: target.y,
+          newX: newX,
+          newY: newY,
+          damage: damage,
+          wasStealthAttack: player.isStealth,
+          endTime: Date.now() + 500 // 0.5초 후 이동 완료
+        };
+        break;
+      } catch (error) {
+        console.error('목긋기 스킬 처리 중 에러 발생:', error);
+        return damageResult;
+      }
     }
 
     return damageResult;
@@ -950,41 +1396,6 @@ class SkillManager {
     switch (skillType) {
       case 'stealth':
         // 은신은 데미지 없음, 상태 효과만
-        break;
-      case 'triple_throw':
-        this.applyTripleThrowDamage(player, x, y, targetX, targetY, skillInfo.damage, damageResult);
-        break;
-      case 'blink':
-        // 점멸은 데미지 없음, 이동 효과만
-        break;
-    }
-
-    return damageResult;
-  }
-
-  /**
-   * 마법사 스킬 처리
-   */
-  applyMageSkill(player, skillType, skillInfo, x, y, targetX, targetY) {
-    const damageResult = {
-      affectedEnemies: [],
-      affectedPlayers: [],
-      totalDamage: 0
-    };
-
-    switch (skillType) {
-      case 'ward':
-        // 와드는 데미지 없음, 시야 효과만
-        break;
-      case 'ice_field':
-        console.log(`얼음 장판 스킬 발사! 플레이어: ${player.id}, 위치: (${x}, ${y}), 범위: ${skillInfo.range}`);
-        this.applyIceFieldDamage(player, x, y, skillInfo.range, skillInfo.damage, damageResult);
-        break;
-      case 'magic_missile':
-        this.applyMagicMissileDamage(player, x, y, targetX, targetY, skillInfo.damage, damageResult);
-        break;
-      case 'shield':
-        // 보호막은 데미지 없음, 방어 효과만
         break;
     }
 
@@ -1006,32 +1417,53 @@ class SkillManager {
         // 구르기는 데미지 없음, 이동 효과만
         break;
       case 'focus':
-        // 집중은 데미지 없음, 버프 효과만
-        break;
-    }
-
-    return damageResult;
-  }
-
-  /**
-   * 서포터 스킬 처리
-   */
-  applySupporterSkill(player, skillType, skillInfo, x, y, targetX, targetY) {
-    const damageResult = {
-      affectedEnemies: [],
-      affectedPlayers: [],
-      totalDamage: 0
-    };
-
-    switch (skillType) {
-      case 'ward':
-        // 와드는 데미지 없음, 시야 효과만
-        break;
-      case 'buff_field':
-        // 버프 장판은 데미지 없음, 버프 효과만
-        break;
-      case 'heal_field':
-        // 힐 장판은 데미지 없음, 힐 효과만
+        // 스킬 정보에서 배율 가져오기
+        const attackSpeedMultiplier = skillInfo?.attackSpeedMultiplier || 2.0;
+        
+        // 집중 스킬 - 공격속도 증가 버프 적용
+        // JobClasses에서 버프 효과 가져오기
+        const { getJobInfo } = require('../../shared/JobClasses.js');
+        const archerInfo = getJobInfo('archer');
+        const focusSkill = archerInfo.skills.find(skill => skill.type === 'focus');
+        
+        const focusEffect = {
+          attackSpeedMultiplier: focusSkill?.attackSpeedMultiplier || 2.0 // 공격속도 증가
+        };
+        player.applyBuff('attack_speed_boost', skillInfo.duration, focusEffect);
+        
+        // 클라이언트에게 버프 이벤트 전송 (버프 효과 정보 포함)
+        if (this.gameStateManager.io) {
+          this.gameStateManager.io.emit('player-buffed', {
+            playerId: player.id,
+            buffType: 'attack_speed_boost',
+            duration: skillInfo.duration,
+            effect: focusEffect // 버프 효과 정보 추가
+          });
+        }
+        
+        // 버프 만료 시 자동 제거를 위한 타이머 설정
+        setTimeout(() => {
+          if (player.hasBuff('attack_speed_boost')) {
+            player.removeBuff('attack_speed_boost');
+            
+            // 클라이언트에게 버프 해제 이벤트 전송
+            if (this.gameStateManager.io) {
+              this.gameStateManager.io.emit('player-buff-removed', {
+                playerId: player.id,
+                buffType: 'attack_speed_boost'
+              });
+            }
+          }
+        }, skillInfo.duration);
+        
+        // 집중 스킬 정보를 damageResult에 포함
+        damageResult.focusData = {
+          endTime: Date.now() + skillInfo.duration,
+          duration: skillInfo.duration,
+          attackSpeedMultiplier: focusSkill?.attackSpeedMultiplier || 2.0
+        };
+        
+        console.log(`궁수 ${player.id} 집중 스킬 사용 - 공격속도 증가 버프 적용`);
         break;
     }
 
@@ -1049,35 +1481,32 @@ class SkillManager {
     };
 
     switch (skillType) {
-      case 'grab':
-        this.applyGrabDamage(player, x, y, targetX, targetY, skillInfo.damage, damageResult);
-        break;
-      case 'mine':
-        // 지뢰는 설치만, 폭발은 별도 처리
-        break;
-      case 'flask':
-        this.applyFlaskDamage(player, x, y, targetX, targetY, skillInfo.damage, damageResult);
+      case 'repair':
+        // 수리는 자가 회복만
         break;
     }
 
     return damageResult;
   }
 
-  // 공통 데미지 적용 메서드들
+  /**
+   * 휩쓸기 데미지 적용
+   */
   applySweepDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo = null) {
-    console.log(`applySweepDamage 호출됨! 플레이어: ${player.id}, 범위: ${range}, 데미지: ${damage}`);
-    
-    // skillInfo에서 stunDuration 가져오기 (일반화된 처리)
     const stunDuration = skillInfo?.stunDuration || 0;
-    
-    if (stunDuration > 0) {
-      console.log(`기절 지속시간: ${stunDuration}ms`);
-    }
-    
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+
     // 적들 대상
-    enemies.forEach(enemy => {
+    enemyArray.forEach(enemy => {
       if (enemy.isDead) return;
-      if (this.isInSweepRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
+      
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = range + (enemy.size || 32) / 2;
+      const angleOffset = skillInfo?.angleOffset || Math.PI / 4; // 기본 45도
+      const inRange = this.isInMeleeSweepRange(x, y, enemy.x, enemy.y, targetX, targetY, effectiveRange, angleOffset);
+      
+      if (inRange) {
         const result = this.gameStateManager.takeDamage(player, enemy, damage);
         
         if (result.success) {
@@ -1089,9 +1518,7 @@ class SkillManager {
             y: enemy.y
           };
           
-          // 기절 효과가 있는 경우에만 적용
           if (stunDuration > 0) {
-            console.log(`몬스터 ${enemy.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
             enemy.startStun(stunDuration);
             enemyData.isStunned = true;
             enemyData.stunDuration = stunDuration;
@@ -1104,9 +1531,15 @@ class SkillManager {
     });
 
     // 다른 팀 플레이어들 대상
-    players.forEach(targetPlayer => {
-      if (targetPlayer.id === player.id || targetPlayer.team === player.team || targetPlayer.hp <= 0) return;
-      if (this.isInSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
+    playerArray.forEach(targetPlayer => {
+      if (targetPlayer.isDead || targetPlayer.team === player.team || targetPlayer.id === player.id) return;
+      
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = range + (targetPlayer.size || 32) / 2;
+      const angleOffset = skillInfo?.angleOffset || Math.PI / 4; // 기본 45도
+      const inRange = this.isInMeleeSweepRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, effectiveRange, angleOffset);
+
+      if (inRange) {
         const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
         if (result.success) {
@@ -1115,13 +1548,10 @@ class SkillManager {
             damage: damage,
             actualDamage: result.actualDamage,
             x: targetPlayer.x,
-            y: targetPlayer.y,
-            team: targetPlayer.team
+            y: targetPlayer.y
           };
           
-          // 기절 효과가 있는 경우에만 적용
           if (stunDuration > 0) {
-            console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
             targetPlayer.startStun(stunDuration);
             playerData.isStunned = true;
             playerData.stunDuration = stunDuration;
@@ -1134,16 +1564,21 @@ class SkillManager {
     });
   }
 
+  /**
+   * 찌르기 데미지 적용
+   */
   applyThrustDamage(player, enemies, players, x, y, targetX, targetY, range, damage, damageResult, skillInfo = null) {
-    console.log(`applyThrustDamage 호출됨! 플레이어: ${player.id}, 범위: ${range}, 데미지: ${damage}`);
-    
-    // skillInfo에서 stunDuration 가져오기 (일반화된 처리)
     const stunDuration = skillInfo?.stunDuration || 0;
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
     
     // 적들 대상
-    enemies.forEach(enemy => {
+    enemyArray.forEach(enemy => {
       if (enemy.isDead) return;
-      if (this.isInThrustRange(x, y, enemy.x, enemy.y, targetX, targetY, range)) {
+      
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = range + (enemy.size || 32) / 2;
+      if (this.isInThrustRange(x, y, enemy.x, enemy.y, targetX, targetY, effectiveRange)) {
         const result = this.gameStateManager.takeDamage(player, enemy, damage);
         
         if (result.success) {
@@ -1155,9 +1590,7 @@ class SkillManager {
             y: enemy.y
           };
           
-          // 기절 효과가 있는 경우에만 적용
           if (stunDuration > 0) {
-            console.log(`몬스터 ${enemy.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
             enemy.startStun(stunDuration);
             enemyData.isStunned = true;
             enemyData.stunDuration = stunDuration;
@@ -1170,9 +1603,12 @@ class SkillManager {
     });
 
     // 다른 팀 플레이어들 대상
-    players.forEach(targetPlayer => {
-      if (targetPlayer.id === player.id || targetPlayer.team === player.team || targetPlayer.hp <= 0) return;
-      if (this.isInThrustRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, range)) {
+    playerArray.forEach(targetPlayer => {
+      if (targetPlayer.isDead || targetPlayer.team === player.team || targetPlayer.id === player.id) return;
+      
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = range + (targetPlayer.size || 32) / 2;
+      if (this.isInThrustRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, effectiveRange)) {
         const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
         if (result.success) {
@@ -1181,13 +1617,10 @@ class SkillManager {
             damage: damage,
             actualDamage: result.actualDamage,
             x: targetPlayer.x,
-            y: targetPlayer.y,
-            team: targetPlayer.team
+            y: targetPlayer.y
           };
           
-          // 기절 효과가 있는 경우에만 적용
           if (stunDuration > 0) {
-            console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
             targetPlayer.startStun(stunDuration);
             playerData.isStunned = true;
             playerData.stunDuration = stunDuration;
@@ -1200,25 +1633,23 @@ class SkillManager {
     });
   }
 
+  /**
+   * 퍼지기 데미지 적용
+   */
   applySpreadDamage(player, x, y, range, damage, damageResult, skillInfo = null) {
-    console.log(`applySpreadDamage 호출됨! 플레이어: ${player.id}, 범위: ${range}, 데미지: ${damage}`);
-    
-    // skillInfo에서 stunDuration 가져오기 (일반화된 처리)
     const stunDuration = skillInfo?.stunDuration || 0;
-    
-    if (stunDuration > 0) {
-      console.log(`기절 지속시간: ${stunDuration}ms`);
-    }
-    
     const enemies = this.gameStateManager.enemies;
     const players = this.gameStateManager.players;
 
     // 적들 대상
     enemies.forEach(enemy => {
       if (enemy.isDead) return;
-      // 중심점에서 적까지의 거리 계산
+      
       const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
-      if (distance <= range) {
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = range + (enemy.size || 32) / 2;
+      
+      if (distance <= effectiveRange) {
         const result = this.gameStateManager.takeDamage(player, enemy, damage);
         
         if (result.success) {
@@ -1230,9 +1661,7 @@ class SkillManager {
             y: enemy.y
           };
           
-          // 기절 효과가 있는 경우에만 적용
           if (stunDuration > 0) {
-            console.log(`몬스터 ${enemy.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
             enemy.startStun(stunDuration);
             enemyData.isStunned = true;
             enemyData.stunDuration = stunDuration;
@@ -1247,9 +1676,12 @@ class SkillManager {
     // 다른 팀 플레이어들 대상
     players.forEach(targetPlayer => {
       if (targetPlayer.id === player.id || targetPlayer.team === player.team || targetPlayer.hp <= 0) return;
-      // 중심점에서 플레이어까지의 거리 계산
+      
       const distance = Math.sqrt((targetPlayer.x - x) ** 2 + (targetPlayer.y - y) ** 2);
-      if (distance <= range) {
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = range + (targetPlayer.size || 32) / 2;
+      
+      if (distance <= effectiveRange) {
         const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
         
         if (result.success) {
@@ -1262,9 +1694,7 @@ class SkillManager {
             team: targetPlayer.team
           };
           
-          // 기절 효과가 있는 경우에만 적용
           if (stunDuration > 0) {
-            console.log(`플레이어 ${targetPlayer.id}에게 기절 효과 적용! 지속시간: ${stunDuration}ms`);
             targetPlayer.startStun(stunDuration);
             playerData.isStunned = true;
             playerData.stunDuration = stunDuration;
@@ -1277,44 +1707,494 @@ class SkillManager {
     });
   }
 
-  // 범위 계산 헬퍼 메서드들
-  isInSweepRange(centerX, centerY, targetX, targetY, mouseX, mouseY, range) {
-    const distance = Math.sqrt((targetX - centerX) ** 2 + (targetY - centerY) ** 2);
-    if (distance > range) return false;
-
-    const angleToMouse = Math.atan2(mouseY - centerY, mouseX - centerX);
-    const angleToTarget = Math.atan2(targetY - centerY, targetX - centerX);
-    
-    let angleDiff = Math.abs(angleToMouse - angleToTarget);
-    if (angleDiff > Math.PI) {
-      angleDiff = 2 * Math.PI - angleDiff;
+  /**
+   * 장판 틱 시작 (0.5초마다)
+   */
+  startFieldTick() {
+    this.fieldTickInterval = setInterval(() => {
+      this.processActiveFields();
+    }, 500); // 0.5초마다 처리
     }
     
-    // JobClasses에서 휩쓸기 스킬의 angleOffset 값 가져오기
-    const { getJobInfo } = require('../../shared/JobClasses.js');
-    const warriorJobInfo = getJobInfo('warrior');
-    const sweepSkill = warriorJobInfo.skills.find(skill => skill.type === 'sweep');
-    const angleOffset = sweepSkill ? sweepSkill.angleOffset : Math.PI / 3; // 기본값 60도
+  /**
+   * 활성 장판들 처리
+   */
+  processActiveFields() {
+    const now = Date.now();
     
-    return angleDiff <= angleOffset;
+    // 만료된 장판 제거 및 관련 효과 해제
+    this.activeFields = this.activeFields.filter(field => {
+      if (now > field.endTime) {
+        console.log(`장판 만료: ${field.type}, 위치: (${field.x}, ${field.y})`);
+        
+        // 장판 만료 시 관련 효과 해제
+        this.cleanupFieldEffects(field);
+        
+        return false;
+      }
+      return true;
+    });
+
+    // 각 장판에 대해 효과 처리
+    this.activeFields.forEach(field => {
+      switch (field.type) {
+        case 'ice_field':
+          this.processIceField(field);
+          break;
+        case 'heal_field':
+          this.processHealField(field);
+          break;
+        case 'buff_field':
+          this.processBuffField(field);
+          break;
+      }
+    });
   }
 
-  isAngleInSweepRange(centerX, centerY, targetX, targetY, mouseX, mouseY, range) {
-    const distance = Math.sqrt((targetX - centerX) ** 2 + (targetY - centerY) ** 2);
-    if (distance > range) return false;
-
-    const angleToMouse = Math.atan2(mouseY - centerY, mouseX - centerX);
-    const angleToTarget = Math.atan2(targetY - centerY, targetX - centerX);
+  /**
+   * 장판 만료 시 관련 효과 해제
+   */
+  cleanupFieldEffects(field) {
+    const players = this.gameStateManager.players;
+    const enemies = this.gameStateManager.enemies;
     
-    let angleDiff = Math.abs(angleToMouse - angleToTarget);
-    if (angleDiff > Math.PI) {
-      angleDiff = 2 * Math.PI - angleDiff;
+    switch (field.type) {
+      case 'buff_field':
+        // 버프 장판 만료 시 모든 플레이어의 버프 해제
+        Array.from(players.values()).forEach(player => {
+          if (player.isBuffed) {
+            console.log(`[cleanupFieldEffects] 장판 만료로 인한 버프 해제: ${player.id}`);
+            
+            player.isBuffed = false;
+            player.buffedUntil = undefined;
+            
+            // 실제 버프 시스템에서 제거
+            player.removeBuff('speed_attack_boost');
+            
+            // 버프 해제 이벤트 전송 (저장된 effectId 사용)
+            if (this.gameStateManager.io) {
+              const effectIdToRemove = player.currentBuffEffectId || '';
+              
+              console.log(`[cleanupFieldEffects] 플레이어 ${player.id}에게 버프 해제 이벤트 전송, effectId: ${effectIdToRemove}`);
+              this.gameStateManager.io.emit('player-buffed', {
+                playerId: player.id,
+                effectId: effectIdToRemove,
+                speedMultiplier: 1,
+                attackSpeedMultiplier: 1,
+                duration: 0
+              });
+              
+              // effectId 초기화
+              player.currentBuffEffectId = null;
+            }
+          }
+        });
+        break;
+        
+      case 'ice_field':
+        // 얼음 장판 만료 시 적들의 슬로우 해제
+        const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+        enemyArray.forEach(enemy => {
+          if (enemy.isSlowed) {
+            console.log(`[cleanupFieldEffects] 장판 만료로 인한 슬로우 해제: ${enemy.id}`);
+            enemy.isSlowed = false;
+            enemy.slowAmount = 1;
+            
+                         if (this.gameStateManager.io) {
+               this.gameStateManager.io.emit('enemy-slowed', {
+                 enemyId: enemy.id,
+                 isSlowed: false,
+                 duration: 0,
+                 speedReduction: 1
+               });
+             }
+          }
+        });
+        
+        // 플레이어들의 슬로우 해제
+        Array.from(players.values()).forEach(player => {
+          if (player.isSlowed) {
+            console.log(`[cleanupFieldEffects] 장판 만료로 인한 플레이어 슬로우 해제: ${player.id}`);
+            player.isSlowed = false;
+            player.slowAmount = 1;
+            
+            // 슬로우 해제 이벤트 전송 (저장된 effectId 사용)
+            if (this.gameStateManager.io) {
+              const effectIdToRemove = player.currentSlowEffectId || '';
+              
+              console.log(`[cleanupFieldEffects] 플레이어 ${player.id}에게 슬로우 해제 이벤트 전송, effectId: ${effectIdToRemove}`);
+              this.gameStateManager.io.emit('player-slowed', {
+                playerId: player.id,
+                effectId: effectIdToRemove,
+                speedReduction: 1,
+                duration: 0
+              });
+              
+              // effectId 초기화
+              player.currentSlowEffectId = null;
+            }
+          }
+        });
+        break;
+    }
+  }
+
+  /**
+   * 얼음 장판 처리 (0.5초마다 데미지 + 슬로우)
+   */
+  processIceField(field) {
+    const enemies = this.gameStateManager.enemies;
+    const players = this.gameStateManager.players;
+    const attacker = this.gameStateManager.getPlayer(field.playerId);
+    
+    if (!attacker) return;
+    
+    // 적에게 데미지 및 슬로우 효과 적용
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    
+    enemyArray.forEach(enemy => {
+      if (enemy.isDead) return;
+
+      const distance = Math.sqrt(
+        Math.pow(enemy.x - field.x, 2) + Math.pow(enemy.y - field.y, 2)
+      );
+      
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = field.range + (enemy.size || 32) / 2;
+      
+      if (distance <= effectiveRange) {
+        // 데미지 적용 (0.5초마다)
+        if (field.damage > 0) {
+          const result = this.gameStateManager.takeDamage(attacker, enemy, field.damage);
+        }
+        
+        // 슬로우 효과 유지/적용
+        const wasSlowed = enemy.isSlowed;
+        enemy.isSlowed = true;
+        enemy.slowedUntil = Date.now() + 600; // 0.6초 후 해제 (다음 틱 전까지 유지)
+        enemy.slowAmount = 0.5; // 50% 감소
+        
+        // 새로 슬로우가 걸린 경우에만 이벤트 전송
+        if (!wasSlowed && this.gameStateManager.io) {
+          this.gameStateManager.io.emit('enemy-slowed', {
+            enemyId: enemy.id,
+            isSlowed: true,
+            duration: 600,
+            speedReduction: 0.5
+          });
+        }
+      } else {
+        // 범위를 벗어난 경우 슬로우 해제 체크
+        if (enemy.isSlowed && (!enemy.slowedUntil || Date.now() > enemy.slowedUntil)) {
+          enemy.isSlowed = false;
+          enemy.slowAmount = 1;
+          
+          // 슬로우 해제 이벤트 전송
+          if (this.gameStateManager.io) {
+            console.log(`[processIceField] 적 ${enemy.id}에게 슬로우 해제 이벤트 전송`);
+            this.gameStateManager.io.emit('enemy-slowed', {
+              enemyId: enemy.id,
+              isSlowed: false,
+              duration: 0,
+              speedReduction: 1
+            });
+          }
+        }
+      }
+    });
+
+    // 다른 플레이어에게도 데미지 적용 (PvP가 활성화된 경우)
+    const playerArray = Array.from(players.values());
+    playerArray.forEach(targetPlayer => {
+      if (targetPlayer.id === field.playerId || targetPlayer.isDead) return;
+
+      const distance = Math.sqrt(
+        Math.pow(targetPlayer.x - field.x, 2) + Math.pow(targetPlayer.y - field.y, 2)
+      );
+      
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = field.range + (targetPlayer.size || 32) / 2;
+      
+      if (distance <= effectiveRange) {
+        // 데미지 적용
+        if (field.damage > 0) {
+          const result = this.gameStateManager.takeDamage(attacker, targetPlayer, field.damage);
+        }
+        
+        // 슬로우 효과 유지/적용
+        const wasSlowed = targetPlayer.isSlowed;
+        targetPlayer.isSlowed = true;
+        targetPlayer.slowedUntil = Date.now() + 600; // 0.6초 후 해제 (다음 틱 전까지 유지)
+        targetPlayer.slowAmount = 0.5;
+        
+        // 새로 슬로우가 걸린 경우에만 이벤트 전송
+        if (!wasSlowed && this.gameStateManager.io) {
+          const effectId = `ice_field_${field.playerId}_${Date.now()}`;
+          
+          // 플레이어의 현재 슬로우 effectId 저장
+          targetPlayer.currentSlowEffectId = effectId;
+          
+          this.gameStateManager.io.emit('player-slowed', {
+            playerId: targetPlayer.id,
+            effectId: effectId,
+            speedReduction: 0.5,
+            duration: 600
+          });
+        }
+      } else {
+        // 범위를 벗어난 경우 슬로우 해제 체크
+        if (targetPlayer.isSlowed && (!targetPlayer.slowedUntil || Date.now() > targetPlayer.slowedUntil)) {
+          targetPlayer.isSlowed = false;
+          targetPlayer.slowAmount = 1;
+        
+          // 슬로우 해제 이벤트 전송 (저장된 effectId 사용)
+          if (this.gameStateManager.io) {
+            const effectIdToRemove = targetPlayer.currentSlowEffectId || '';
+            
+            console.log(`[processIceField] 플레이어 ${targetPlayer.id}에게 슬로우 해제 이벤트 전송, effectId: ${effectIdToRemove}`);
+            this.gameStateManager.io.emit('player-slowed', {
+              playerId: targetPlayer.id,
+              effectId: effectIdToRemove,
+              speedReduction: 1,
+              duration: 0
+            });
+            
+            // effectId 초기화
+            targetPlayer.currentSlowEffectId = null;
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * 힐 장판 처리 (0.5초마다 힐)
+   */
+  processHealField(field) {
+    const players = this.gameStateManager.players;
+    const caster = players.get(field.playerId);
+    
+    // 시전자가 없으면 처리하지 않음
+    if (!caster) return;
+    
+    const playerArray = Array.from(players.values());
+    playerArray.forEach(player => {
+      if (player.isDead) return;
+      
+      // 같은 팀만 치유
+      if (player.team !== caster.team) return;
+
+      const distance = Math.sqrt(
+        Math.pow(player.x - field.x, 2) + Math.pow(player.y - field.y, 2)
+      );
+      
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = field.range + (player.size || 32) / 2;
+      
+      if (distance <= effectiveRange && player.hp < player.maxHp) {
+        // 정상적인 힐 시스템 사용 (JobClasses에서 힐량 가져오기)
+        const { getJobInfo } = require('../../shared/JobClasses.js');
+        const supporterInfo = getJobInfo('supporter');
+        const healSkill = supporterInfo.skills.find(skill => skill.type === 'heal_field');
+        
+        // parseFormula를 사용하여 힐량 계산
+        let healAmount = 20; // 기본값
+        if (healSkill?.heal) {
+          healAmount = this.parseFormula(healSkill.heal, caster.attack);
+        } else if (field.heal) {
+          healAmount = field.heal;
+        }
+        
+        const healResult = this.gameStateManager.heal(caster, player, healAmount);
+        
+        if (healResult.success) {
+          console.log(`힐 장판 효과: ${player.id}에게 ${healResult.actualHeal} 힐, 현재 HP: ${player.hp}/${player.maxHp} (힐 공식: ${healSkill?.heal}, caster attack: ${caster.attack})`);
+        }
+      }
+    });
+  }
+
+  /**
+   * 버프 장판 처리 (지속적인 버프 효과) - 얼음 장판과 동일한 로직
+   */
+  processBuffField(field) {
+    const players = this.gameStateManager.players;
+    const caster = players.get(field.playerId);
+    
+    // 시전자가 없으면 처리하지 않음
+    if (!caster) {
+      console.log(`[processBuffField] 시전자 없음: ${field.playerId}`);
+      return;
     }
     
-    const angleOffset = Math.PI / 6; // 30도 (부채꼴 각도)
-    return angleDiff <= angleOffset;
+    const playerArray = Array.from(players.values());
+    
+    playerArray.forEach(player => {
+      if (player.isDead) return;
+      
+      // 같은 팀만 버프
+      if (player.team !== caster.team) return;
+
+      const distance = Math.sqrt(
+        Math.pow(player.x - field.x, 2) + Math.pow(player.y - field.y, 2)
+      );
+      
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveRange = field.range + (player.size || 32) / 2;
+      
+      if (distance <= effectiveRange) {
+        // 버프 효과 유지/적용
+        const wasBuffed = player.isBuffed;
+        player.isBuffed = true;
+        player.buffedUntil = Date.now() + 600; // 0.6초 후 해제 (다음 틱 전까지 유지)
+        
+        console.log(`[processBuffField] 플레이어 ${player.id} 버프 적용: wasBuffed=${wasBuffed}`);
+        
+        // JobClasses에서 버프 효과 가져오기
+        const { getJobInfo } = require('../../shared/JobClasses.js');
+        const supporterInfo = getJobInfo('supporter');
+        const buffSkill = supporterInfo.skills.find(skill => skill.type === 'buff_field');
+        
+        const speedMultiplier = buffSkill?.speedMultiplier || 1.5;
+        const attackSpeedMultiplier = buffSkill?.attackSpeedMultiplier || 1.5;
+        
+        // 실제 버프 효과 적용 (첫 적용시에만)
+        if (!wasBuffed) {
+          // 실제 버프 시스템에만 등록 (직접 스탯 변경 제거)
+          player.applyBuff('speed_attack_boost', 600, {
+            speedMultiplier: speedMultiplier,
+            attackSpeedMultiplier: attackSpeedMultiplier
+          });
+          
+          console.log(`[processBuffField] 플레이어 ${player.id} 실제 버프 시스템에 등록 완료`);
+          
+          // 새로 버프가 걸린 경우에만 이벤트 전송
+          if (this.gameStateManager.io) {
+            const effectId = `buff_field_${field.playerId}_${Date.now()}`;
+            
+            // 플레이어의 현재 버프 effectId 저장
+            player.currentBuffEffectId = effectId;
+            
+            console.log(`[processBuffField] 플레이어 ${player.id}에게 버프 이벤트 전송 (신규 적용)`);
+            this.gameStateManager.io.emit('player-buffed', {
+              playerId: player.id,
+              effectId: effectId,
+              speedMultiplier: speedMultiplier,
+              attackSpeedMultiplier: attackSpeedMultiplier,
+              duration: 600
+            });
+          }
+        }
+      } else {
+        // 범위를 벗어난 경우 즉시 버프 해제
+        if (player.isBuffed) {
+          console.log(`[processBuffField] 플레이어 ${player.id} 버프 해제 (범위 벗어남)`);
+          
+          player.isBuffed = false;
+          player.buffedUntil = undefined;
+          
+          // 실제 버프 시스템에서만 제거 (직접 스탯 복원 제거)
+          player.removeBuff('speed_attack_boost');
+          
+          console.log(`[processBuffField] 플레이어 ${player.id} 실제 버프 시스템에서 제거 완료`);
+        
+          // 버프 해제 이벤트 전송 (저장된 effectId 사용)
+          if (this.gameStateManager.io) {
+            const effectIdToRemove = player.currentBuffEffectId || '';
+            
+            console.log(`[processBuffField] 플레이어 ${player.id}에게 버프 해제 이벤트 전송, effectId: ${effectIdToRemove}`);
+            this.gameStateManager.io.emit('player-buffed', {
+              playerId: player.id,
+              effectId: effectIdToRemove,
+              speedMultiplier: 1,
+              attackSpeedMultiplier: 1,
+              duration: 0
+            });
+            
+            // effectId 초기화
+            player.currentBuffEffectId = null;
+          }
+        }
+      }
+    });
   }
 
+  /**
+   * 장판 추가
+   */
+  addField(type, playerId, x, y, range, duration, damage = 0, heal = 0) {
+    const field = {
+      type,
+      playerId,
+      x,
+      y,
+      range,
+      damage,
+      heal,
+      startTime: Date.now(),
+      endTime: Date.now() + duration
+    };
+    
+    this.activeFields.push(field);
+    
+    // 장판 추가 직후 즉시 첫 번째 효과 적용
+    switch (field.type) {
+      case 'ice_field':
+        this.processIceField(field);
+        break;
+      case 'heal_field':
+        this.processHealField(field);
+        break;
+      case 'buff_field':
+        this.processBuffField(field);
+        break;
+    }
+  }
+
+  /**
+   * 소멸자 - 인터벌 정리
+   */
+  destroy() {
+    if (this.fieldTickInterval) {
+      clearInterval(this.fieldTickInterval);
+      this.fieldTickInterval = null;
+    }
+  }
+
+  /**
+   * 직사각형 범위 체크 (어쌔신용)
+   */
+  isInRectangleRange(centerX, centerY, targetX, targetY, mouseX, mouseY, width, height) {
+    // 마우스 방향으로의 각도 계산
+    const angleToMouse = Math.atan2(mouseY - centerY, mouseX - centerX);
+    
+    // 직사각형의 중심점을 마우스 방향으로 이동
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    
+    // 직사각형의 중심점 계산 (플레이어 위치에서 마우스 방향으로)
+    const rectCenterX = centerX + Math.cos(angleToMouse) * halfHeight;
+    const rectCenterY = centerY + Math.sin(angleToMouse) * halfHeight;
+    
+    // 목표점을 직사각형 중심 기준으로 변환
+    const relativeX = targetX - rectCenterX;
+    const relativeY = targetY - rectCenterY;
+    
+    // 직사각형을 마우스 방향으로 회전
+    const cos = Math.cos(-angleToMouse);
+    const sin = Math.sin(-angleToMouse);
+    
+    // 회전된 좌표 계산
+    const rotatedX = relativeX * cos - relativeY * sin;
+    const rotatedY = relativeX * sin + relativeY * cos;
+    
+    // 직사각형 범위 내에 있는지 확인
+    return Math.abs(rotatedX) <= halfWidth && Math.abs(rotatedY) <= halfHeight;
+  }
+
+  /**
+   * 찌르기 범위 체크
+   */
   isInThrustRange(centerX, centerY, targetX, targetY, mouseX, mouseY, range) {
     const distance = Math.sqrt((targetX - centerX) ** 2 + (targetY - centerY) ** 2);
     if (distance > range) return false;
@@ -1329,260 +2209,6 @@ class SkillManager {
     
     const angleTolerance = Math.PI / 6; // 30도
     return angleDiff <= angleTolerance;
-  }
-
-  // 기타 스킬 메서드들 (필요시 구현)
-  applyBackstabDamage(player, x, y, targetX, targetY, damage, damageResult) {
-    // 백스탭 데미지 로직
-  }
-
-  applyBladeDanceDamage(player, x, y, range, damage, damageResult) {
-    // 칼춤 데미지 로직
-  }
-
-  applyTripleThrowDamage(player, x, y, targetX, targetY, damage, damageResult) {
-    // 트리플 스로우 데미지 로직
-  }
-
-  applyIceFieldDamage(player, x, y, range, damage, damageResult) {
-    console.log(`applyIceFieldDamage 호출됨! 플레이어: ${player.id}, 위치: (${x}, ${y}), 범위: ${range}`);
-    // 얼음 장판 데미지 로직
-    const enemies = this.gameStateManager.enemies;
-    const players = this.gameStateManager.players;
-    
-    console.log(`enemies 객체:`, enemies);
-    console.log(`players 객체:`, players);
-    
-    // 적에게 데미지 및 슬로우 효과 적용
-    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
-    console.log(`enemyArray 길이: ${enemyArray.length}`);
-    console.log(`enemyArray:`, enemyArray);
-    
-    enemyArray.forEach(enemy => {
-      console.log(`적 처리 중: ${enemy.id}, 위치: (${enemy.x}, ${enemy.y}), isDead: ${enemy.isDead}`);
-      if (enemy.isDead) return;
-
-      const distance = Math.sqrt(
-        Math.pow(enemy.x - x, 2) + Math.pow(enemy.y - y, 2)
-      );
-      console.log(`적 ${enemy.id} 거리: ${distance}, 범위: ${range}`);
-      
-      if (distance <= range) {
-        // 데미지 적용
-        if (damage > 0) {
-          const result = this.gameStateManager.takeDamage(player, enemy, damage);
-          if (result.success) {
-            damageResult.affectedEnemies.push({
-              id: enemy.id,
-              damage: damage,
-              actualDamage: result.actualDamage,
-              x: enemy.x,
-              y: enemy.y,
-              type: enemy.type
-            });
-            damageResult.totalDamage += result.actualDamage;
-          }
-        }
-        
-        // 슬로우 효과 적용 (속도 50% 감소)
-        if (!enemy.slowEffects) {
-          enemy.slowEffects = [];
-        }
-        
-        const slowEffect = {
-          id: `ice_field_${player.id}_${Date.now()}`,
-          source: player.id,
-          speedReduction: 0.5, // 50% 감소
-          duration: 6000, // 6초 지속
-          startTime: Date.now()
-        };
-        
-        enemy.slowEffects.push(slowEffect);
-        
-        // 슬로우 효과를 클라이언트에 알림
-        console.log(`enemy-slowed 이벤트 전송:`, {
-          enemyId: enemy.id,
-          effectId: slowEffect.id,
-          speedReduction: slowEffect.speedReduction,
-          duration: slowEffect.duration
-        });
-        this.gameStateManager.io.emit('enemy-slowed', {
-          enemyId: enemy.id,
-          effectId: slowEffect.id,
-          speedReduction: slowEffect.speedReduction,
-          duration: slowEffect.duration
-        });
-      }
-    });
-
-    // 다른 플레이어에게 슬로우 효과 적용 (적팀만)
-    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
-    console.log(`playerArray 길이: ${playerArray.length}`);
-    console.log(`playerArray:`, playerArray);
-    
-    playerArray.forEach(targetPlayer => {
-      console.log(`플레이어 처리 중: ${targetPlayer.id}, 위치: (${targetPlayer.x}, ${targetPlayer.y}), 팀: ${targetPlayer.team}, 내 팀: ${player.team}, isDead: ${targetPlayer.isDead}`);
-      
-      if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) {
-        console.log(`플레이어 ${targetPlayer.id} 제외됨: 자기자신=${targetPlayer.id === player.id}, 죽음=${targetPlayer.isDead}, 같은팀=${targetPlayer.team === player.team}`);
-        return;
-      }
-
-      const distance = Math.sqrt(
-        Math.pow(targetPlayer.x - x, 2) + Math.pow(targetPlayer.y - y, 2)
-      );
-      console.log(`플레이어 ${targetPlayer.id} 거리: ${distance}, 범위: ${range}`);
-      
-      if (distance <= range) {
-        // 슬로우 효과 적용 (속도 50% 감소)
-        if (!targetPlayer.slowEffects) {
-          targetPlayer.slowEffects = [];
-        }
-        
-        const slowEffect = {
-          id: `ice_field_${player.id}_${Date.now()}`,
-          source: player.id,
-          speedReduction: 0.5, // 50% 감소
-          duration: 6000, // 6초 지속
-          startTime: Date.now()
-        };
-        
-        targetPlayer.slowEffects.push(slowEffect);
-        
-        // 슬로우 효과를 클라이언트에 알림
-        console.log(`player-slowed 이벤트 전송:`, {
-          playerId: targetPlayer.id,
-          effectId: slowEffect.id,
-          speedReduction: slowEffect.speedReduction,
-          duration: slowEffect.duration
-        });
-        this.gameStateManager.io.emit('player-slowed', {
-          playerId: targetPlayer.id,
-          effectId: slowEffect.id,
-          speedReduction: slowEffect.speedReduction,
-          duration: slowEffect.duration
-        });
-      }
-    });
-  }
-
-  applyMagicMissileDamage(player, x, y, targetX, targetY, damage) {
-    const damageResult = {
-      affectedEnemies: [],
-      affectedPlayers: [],
-      totalDamage: 0
-    };
-
-    // JobClasses에서 마법 투사체 스킬 정보 가져오기
-    const { getSkillInfo } = require('../../shared/JobClasses.js');
-    const skillInfo = getSkillInfo('mage', 'magic_missile');
-    
-    // 마법 투사체 범위 공격 처리 (원형 범위)
-    const explosionRadius = skillInfo.explosionRadius || 60;
-    const enemies = this.gameStateManager.enemies;
-    const players = this.gameStateManager.players;
-    
-    // 적에게 데미지 적용
-    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
-    enemyArray.forEach(enemy => {
-      if (enemy.isDead) return;
-
-      const distance = Math.sqrt(
-        Math.pow(enemy.x - targetX, 2) + Math.pow(enemy.y - targetY, 2)
-      );
-      
-      if (distance <= explosionRadius) {
-        // JobClasses에서 정의된 데미지 공식 사용
-        const actualDamage = this.calculateSkillDamage(player, 'magic_missile', skillInfo.damage);
-        const result = this.gameStateManager.takeDamage(player, enemy, actualDamage);
-        
-        if (result.success) {
-          damageResult.affectedEnemies.push({
-            id: enemy.id,
-            damage: actualDamage,
-            actualDamage: result.actualDamage,
-            x: enemy.x,
-            y: enemy.y,
-            type: enemy.type
-          });
-          damageResult.totalDamage += result.actualDamage;
-        }
-      }
-    });
-
-    // 다른 플레이어에게 데미지 적용 (PvP)
-    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
-    playerArray.forEach(targetPlayer => {
-      if (targetPlayer.id === player.id || targetPlayer.isDead || targetPlayer.team === player.team) return;
-
-      const distance = Math.sqrt(
-        Math.pow(targetPlayer.x - targetX, 2) + Math.pow(targetPlayer.y - targetY, 2)
-      );
-      
-      if (distance <= explosionRadius) {
-        // JobClasses에서 정의된 데미지 공식 사용 (몬스터와 동일)
-        const damage = this.calculateSkillDamage(player, 'magic_missile', skillInfo.damage);
-        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
-        
-        if (result.success) {
-          damageResult.affectedPlayers.push({
-            id: targetPlayer.id,
-            damage: damage,
-            actualDamage: result.actualDamage,
-            x: targetPlayer.x,
-            y: targetPlayer.y,
-            team: targetPlayer.team
-          });
-          damageResult.totalDamage += result.actualDamage;
-        }
-      }
-    });
-
-    return damageResult;
-  }
-
-  applyGrabDamage(player, x, y, targetX, targetY, damage, damageResult) {
-    // 그랩 데미지 로직
-  }
-
-  applyFlaskDamage(player, x, y, targetX, targetY, damage, damageResult) {
-    // 플라스크 데미지 로직
-  }
-
-  /**
-   * 원거리 기본 공격 처리 (투사체 생성)
-   */
-  applyRangedBasicAttack(player, baseDamage, x, y, targetX, targetY) {
-    const damageResult = {
-      affectedEnemies: [],
-      affectedPlayers: [],
-      totalDamage: 0
-    };
-
-    // 투사체 매니저가 없으면 빈 결과 반환
-    if (!this.projectileManager) {
-      console.warn('ProjectileManager가 없어 원거리 기본공격을 처리할 수 없습니다.');
-      return damageResult;
-    }
-
-    // 투사체 생성
-    const projectileId = this.projectileManager.createProjectile(
-      player.id, 
-      targetX, 
-      targetY, 
-      player.jobClass
-    );
-
-    if (projectileId) {
-      console.log(`원거리 기본공격 투사체 생성: ${projectileId} (${player.jobClass})`);
-      
-      // 투사체가 생성되면 ProjectileManager가 데미지를 처리하므로
-      // 여기서는 빈 결과를 반환 (실제 데미지는 투사체 충돌 시 적용됨)
-      return damageResult;
-    } else {
-      console.warn('투사체 생성 실패');
-      return damageResult;
-    }
   }
 }
 

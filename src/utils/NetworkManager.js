@@ -152,9 +152,10 @@ class NetworkManager {
             this.emit('enemies-update', data);
         });
 
-        this.socket.on('player-death', (data) => {
-            this.emit('player-death', data);
-        });
+        // player-death 이벤트는 사용되지 않음 (player-died 이벤트만 사용)
+        // this.socket.on('player-death', (data) => {
+        //     this.emit('player-death', data);
+        // });
 
         this.socket.on('monster-attack', (data) => {
             this.emit('monster-attack', data);
@@ -165,6 +166,10 @@ class NetworkManager {
             this.emit('player-damaged', data);
         });
 
+        this.socket.on('player-healed', (data) => {
+            this.emit('player-healed', data);
+        });
+
         // 플레이어 상태 업데이트 이벤트
         this.socket.on('players-state-update', (data) => {
             this.emit('players-state-update', data);
@@ -172,6 +177,10 @@ class NetworkManager {
 
         this.socket.on('player-job-changed', (data) => {
             this.emit('player-job-changed', data);
+        });
+
+        this.socket.on('player-exp-gained', (data) => {
+            this.emit('player-exp-gained', data);
         });
 
         this.socket.on('game-synced', (data) => {
@@ -194,10 +203,6 @@ class NetworkManager {
             this.emit('player-respawned', data);
         });
 
-        this.socket.on('player-state-sync', (data) => {
-            this.emit('player-state-sync', data);
-        });
-
         this.socket.on('ward-destroyed', (data) => {
             this.emit('ward-destroyed', data);
         });
@@ -206,25 +211,50 @@ class NetworkManager {
             this.emit('player-stunned', data);
         });
 
-        // 투사체 관련 이벤트 (스킬로 통합된 이후에도 필요)
         this.socket.on('projectiles-update', (data) => {
             this.emit('projectiles-update', data);
+        });
+
+        this.socket.on('wards-update', (data) => {
+            this.emit('wards-update', data);
         });
 
         this.socket.on('projectile-removed', (data) => {
             this.emit('projectile-removed', data);
         });
 
-        this.socket.on('projectile-hit-wall', (data) => {
-            this.emit('projectile-hit-wall', data);
+        // 사용되지 않는 투사체 충돌 이벤트들 제거
+        // this.socket.on('projectile-hit-wall', (data) => {
+        //     this.emit('projectile-hit-wall', data);
+        // });
+
+        // this.socket.on('projectile-hit-player', (data) => {
+        //     this.emit('projectile-hit-player', data);
+        // });
+
+        // this.socket.on('projectile-hit-enemy', (data) => {
+        //     this.emit('projectile-hit-enemy', data);
+        // });
+
+        // 누락된 필수 이벤트 리스너들 추가
+        this.socket.on('player-buffed', (data) => {
+            this.emit('player-buffed', data);
         });
 
-        this.socket.on('projectile-hit-player', (data) => {
-            this.emit('projectile-hit-player', data);
+        this.socket.on('enemy-slowed', (data) => {
+            this.emit('enemy-slowed', data);
         });
 
-        this.socket.on('projectile-hit-enemy', (data) => {
-            this.emit('projectile-hit-enemy', data);
+        this.socket.on('player-slowed', (data) => {
+            this.emit('player-slowed', data);
+        });
+
+        this.socket.on('magic-missile-explosion', (data) => {
+            this.emit('magic-missile-explosion', data);
+        });
+
+        this.socket.on('shield-removed', (data) => {
+            this.emit('shield-removed', data);
         });
 
         // 공격 무효 이벤트
@@ -250,6 +280,41 @@ class NetworkManager {
         // 자살 치트 에러 이벤트
         this.socket.on('suicide-error', (data) => {
             this.emit('suicide-error', data);
+        });
+        
+        // 직업 변경 오브 관련 이벤트들
+        this.socket.on('job-orb-spawned', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-spawned 이벤트 받음:', data);
+            this.emit('job-orb-spawned', data);
+        });
+        
+        this.socket.on('job-orb-removed', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-removed 이벤트 받음:', data);
+            this.emit('job-orb-removed', data);
+        });
+        
+        this.socket.on('job-orb-collected', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-collected 이벤트 받음:', data);
+            this.emit('job-orb-collected', data);
+        });
+        
+        this.socket.on('job-orb-collision-result', (data) => {
+            console.log('🎯 NetworkManager에서 job-orb-collision-result 이벤트 받음:', data);
+            this.emit('job-orb-collision-result', data);
+        });
+
+        // 은신 종료 이벤트
+        this.socket.on('stealth-ended', (data) => {
+            this.emit('stealth-ended', data);
+        });
+
+        // 랭킹 관련 이벤트
+        this.socket.on('ranking-data', (data) => {
+            this.emit('ranking-data', data);
+        });
+
+        this.socket.on('ranking-error', (data) => {
+            this.emit('ranking-error', data);
         });
     }
 
@@ -295,13 +360,39 @@ class NetworkManager {
     }
 
     // 스킬 사용
-    useSkill(skillType, targetX = null, targetY = null) {
+    useSkill(skillType, targetXOrOptions = null, targetY = null, direction = null, rotationDirection = null) {
         if (this.isConnected) {
-            this.socket.emit('player-skill', {
+            let actualTargetX = null;
+            let actualTargetY = null;
+            let actualDirection = direction;
+            let actualRotationDirection = rotationDirection;
+            
+            // 두 번째 파라미터가 객체인 경우 (옵션 객체)
+            if (typeof targetXOrOptions === 'object' && targetXOrOptions !== null) {
+                actualTargetX = targetXOrOptions.targetX || null;
+                actualTargetY = targetXOrOptions.targetY || null;
+                actualDirection = targetXOrOptions.direction || direction;
+                actualRotationDirection = targetXOrOptions.rotationDirection || rotationDirection;
+            } else {
+                // 기존 방식 (targetX, targetY를 개별 파라미터로 받는 경우)
+                actualTargetX = targetXOrOptions;
+                actualTargetY = targetY;
+            }
+            
+            const skillData = {
                 skillType: skillType,
-                targetX: targetX,
-                targetY: targetY
-            });
+                targetX: actualTargetX,
+                targetY: actualTargetY,
+                direction: actualDirection,
+                rotationDirection: actualRotationDirection
+            };
+            
+            // 목긋기 스킬의 경우 마우스 위치 정보 추가
+            if (skillType === 'backstab' && typeof targetXOrOptions === 'object' && targetXOrOptions !== null) {
+                skillData.mouseX = targetXOrOptions.mouseX;
+                skillData.mouseY = targetXOrOptions.mouseY;
+            }
+            this.socket.emit('player-skill', skillData);
         }
     }
 
@@ -348,6 +439,13 @@ class NetworkManager {
             this.socket.emit('player-respawn-request', {
                 timestamp: Date.now()
             });
+        }
+    }
+
+    // 랭킹 데이터 요청
+    requestRanking() {
+        if (this.isConnected) {
+            this.socket.emit('request-ranking');
         }
     }
 

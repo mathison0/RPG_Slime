@@ -34,7 +34,7 @@ export default class PingManager {
     /**
      * 핑 생성
      */
-    createPing(x, y, playerId) {
+    createPing(x, y, playerId, nickname = null) {
         // 시야 안에 있는 핑만 메인 화면에 표시
         const isInVision = this.scene.visionManager.isInVision(x, y);
         
@@ -56,8 +56,9 @@ export default class PingManager {
                 }
             });
 
-            // 핑 텍스트
-            const pingText = this.scene.add.text(x, y - 30, `PING`, {
+            // 핑 텍스트 (닉네임이 있으면 닉네임, 없으면 PING)
+            const displayText = nickname || 'PING';
+            const pingText = this.scene.add.text(x, y - 30, displayText, {
                 fontSize: '12px',
                 fill: '#ffffff',
                 stroke: '#000000',
@@ -139,14 +140,14 @@ export default class PingManager {
         this.pingCooldown = currentTime;
         
         // 로컬 핑 표시
-        this.createPing(x, y, this.scene.networkManager.playerId);
+        this.createPing(x, y, this.scene.networkManager.playerId, this.scene.playerNickname);
         this.showPingMessage('핑을 찍었습니다!');
     }
 
     /**
      * 핑 화살표 확인 및 표시
      */
-    checkAndShowPingArrow(pingX, pingY, pingId) {
+    checkAndShowPingArrow(pingX, pingY, pingId, nickname = null) {
         const cam = this.scene.cameras.main;
         const screenWidth = this.scene.scale.width;
         const screenHeight = this.scene.scale.height;
@@ -165,14 +166,14 @@ export default class PingManager {
         
         // 화면 밖이거나 시야 밖이면 화살표 표시
         if (isOffScreen || !isInVision) {
-            this.createPingArrow(pingX, pingY, pingId);
+            this.createPingArrow(pingX, pingY, pingId, nickname);
         }
     }
 
     /**
      * 핑 화살표 생성
      */
-    createPingArrow(pingX, pingY, pingId) {
+    createPingArrow(pingX, pingY, pingId, nickname = null) {
         const cam = this.scene.cameras.main;
         const screenWidth = this.scene.scale.width;
         const screenHeight = this.scene.scale.height;
@@ -196,11 +197,24 @@ export default class PingManager {
         arrow.setScale(0.5);
         arrow.setRotation(angle);
         
+        // 닉네임 텍스트 생성 (화살표 위에 표시)
+        let nicknameText = null;
+        if (nickname) {
+            nicknameText = this.scene.add.text(arrowX, arrowY - 25, nickname, {
+                fontSize: '12px',
+                fill: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 2
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(1002);
+        }
+        
         // 화살표 객체를 Map에 저장
         this.activePingArrows.set(pingId, {
             arrow: arrow,
+            nicknameText: nicknameText,
             pingX: pingX,
             pingY: pingY,
+            nickname: nickname,
             startTime: Date.now()
         });
         
@@ -216,6 +230,21 @@ export default class PingManager {
                 this.activePingPositions.delete(pingId);
             }
         });
+        
+        // 닉네임 텍스트는 2초 후 사라지도록 설정
+        if (nicknameText) {
+            this.scene.tweens.add({
+                targets: nicknameText,
+                alpha: 0,
+                duration: 2000,
+                ease: 'Power2',
+                onComplete: () => {
+                    if (nicknameText) {
+                        nicknameText.destroy();
+                    }
+                }
+            });
+        }
         
         // 미니맵에 핑 표시
         this.createMinimapPingArrow(pingX, pingY, pingId);
@@ -319,7 +348,7 @@ export default class PingManager {
 
         // 각 활성 핑 화살표 업데이트
         for (const [pingId, arrowData] of this.activePingArrows) {
-            const { arrow, pingX, pingY } = arrowData;
+            const { arrow, nicknameText, pingX, pingY } = arrowData;
             
             // 화면 좌표로 변환
             const screenX = pingX - cam.scrollX;
@@ -341,6 +370,12 @@ export default class PingManager {
                 // 화살표 위치 업데이트
                 arrow.setPosition(arrowX, arrowY);
                 
+                // 닉네임 텍스트 위치 업데이트
+                if (nicknameText) {
+                    nicknameText.setPosition(arrowX, arrowY - 25);
+                    nicknameText.setVisible(true);
+                }
+                
                 // 화살표 방향 재계산
                 const angle = Phaser.Math.Angle.Between(arrowX, arrowY, screenX, screenY);
                 arrow.setRotation(angle);
@@ -348,8 +383,11 @@ export default class PingManager {
                 // 화살표가 보이도록 설정
                 arrow.setVisible(true);
             } else {
-                // 화면 안에 있으면 화살표 숨김
+                // 화면 안에 있으면 화살표와 닉네임 숨김
                 arrow.setVisible(false);
+                if (nicknameText) {
+                    nicknameText.setVisible(false);
+                }
             }
         }
     }
@@ -412,6 +450,20 @@ export default class PingManager {
         if (this.pingMessageText) {
             this.pingMessageText.destroy();
         }
+        
+        // 활성 핑 화살표들의 닉네임 텍스트 정리
+        for (const [pingId, arrowData] of this.activePingArrows) {
+            if (arrowData.nicknameText) {
+                arrowData.nicknameText.destroy();
+            }
+        }
+        
+        // 빅맵 닉네임 텍스트들 정리
+        this.scene.children.list.forEach(child => {
+            if (child.bigMapNicknameId) {
+                child.destroy();
+            }
+        });
         
         if (this.activePingArrows) {
             this.activePingArrows.clear();

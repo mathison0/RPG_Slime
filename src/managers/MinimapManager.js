@@ -446,7 +446,7 @@ export default class MinimapManager {
         
         // 활성 핑 화살표들의 위치를 빅맵에 표시
         for (const [pingId, arrowData] of this.scene.pingManager.activePingArrows) {
-            const { pingX, pingY } = arrowData;
+            const { pingX, pingY, nickname } = arrowData;
             
             const pingMapX = pingX * scale;
             const pingMapY = pingY * scale;
@@ -460,6 +460,45 @@ export default class MinimapManager {
                 // 핑 테두리
                 this.bigMap.lineStyle(1, 0xffffff, 1.0);
                 this.bigMap.strokeCircle(pingMapX, pingMapY, 3);
+                
+                // 닉네임 표시 (팀원 핑만)
+                if (nickname) {
+                    // 기존 닉네임 텍스트 제거 (중복 방지)
+                    this.scene.children.list.forEach(child => {
+                        if (child.bigMapNicknameId === pingId) {
+                            child.destroy();
+                        }
+                    });
+                    
+                    // 닉네임 텍스트 생성
+                    const nicknameText = this.scene.add.text(
+                        this.bigMap.x + pingMapX, 
+                        this.bigMap.y + pingMapY - 15, 
+                        nickname, 
+                        {
+                            fontSize: '10px',
+                            fill: '#ffffff',
+                            stroke: '#000000',
+                            strokeThickness: 1
+                        }
+                    ).setOrigin(0.5).setScrollFactor(0).setDepth(1004);
+                    
+                    // 빅맵 닉네임 식별자 설정
+                    nicknameText.bigMapNicknameId = pingId;
+                    
+                    // 닉네임 텍스트는 2초 후 사라지도록 설정
+                    this.scene.tweens.add({
+                        targets: nicknameText,
+                        alpha: 0,
+                        duration: 2000,
+                        ease: 'Power2',
+                        onComplete: () => {
+                            if (nicknameText && nicknameText.active) {
+                                nicknameText.destroy();
+                            }
+                        }
+                    });
+                }
             }
         }
         
@@ -491,6 +530,15 @@ export default class MinimapManager {
             this.bigMapVisible = !this.bigMapVisible;
             this.bigMap.setVisible(this.bigMapVisible);
             this.minimap.setVisible(!this.bigMapVisible);
+            
+            // 빅맵이 숨겨질 때 빅맵 닉네임 텍스트들 정리
+            if (!this.bigMapVisible) {
+                this.scene.children.list.forEach(child => {
+                    if (child.bigMapNicknameId) {
+                        child.destroy();
+                    }
+                });
+            }
             
             // 빅맵이 표시될 때 핑 위치도 함께 업데이트
             if (this.bigMapVisible) {

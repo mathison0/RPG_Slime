@@ -50,6 +50,9 @@ class GameServer {
     this.enemyManager = new EnemyManager(this.io, this.gameStateManager);
     this.socketEventManager = new SocketEventManager(this.io, this.gameStateManager, this.enemyManager, this.skillManager, this.projectileManager);
     
+    // global.io 설정 - ServerPlayer의 stunned 이벤트 발송을 위해 필요
+    global.io = this.io;
+    
     // 게임 루프 타이머
     this.gameLoopInterval = null;
     
@@ -215,9 +218,11 @@ class GameServer {
       if (damagedPlayers.length > 0) {
         damagedPlayers.forEach(damageInfo => {
           this.io.emit('spawn-barrier-damage', damageInfo);
-          console.log(`스폰 배리어 데미지 이벤트 전송: ${damageInfo.playerId}, -${damageInfo.damage}HP`);
         });
       }
+      
+      // 체력 재생 처리
+      this.gameStateManager.processHealthRegeneration();
       
       // 플레이어 상태 업데이트 및 사망 처리
       this.updatePlayerStates();
@@ -226,6 +231,9 @@ class GameServer {
       
       // 투사체 정보 브로드캐스트
       this.syncProjectiles();
+      
+      // 와드 정보 브로드캐스트
+      this.syncWards();
       
     } catch (error) {
       ServerUtils.errorLog('게임 루프 오류', { error: error.message, stack: error.stack });
@@ -239,6 +247,14 @@ class GameServer {
     const allPlayers = this.gameStateManager.getAllPlayers();
     
     allPlayers.forEach(player => {
+      // 플레이어 업데이트 (은신 타이머 등)
+      if (player.job && player.job.update) {
+        player.job.update(gameConfig.SERVER.GAME_LOOP_INTERVAL);
+      }
+      
+      // 만료된 버프 정리
+      player.cleanupExpiredBuffs();
+      
       // HP가 0 이하이고 아직 사망 처리되지 않은 플레이어 처리
       if (player.hp <= 0 && !player.isDead) {
         // HP를 정확히 0으로 설정
@@ -284,16 +300,26 @@ class GameServer {
   }
 
   /**
-   * 투사체 정보 동기화
+   * 투사체 정보 브로드캐스트
    */
   syncProjectiles() {
-    const allProjectiles = this.projectileManager.getAllProjectiles();
-    if (allProjectiles.length > 0) {
+    if (this.projectileManager) {
       this.io.emit('projectiles-update', {
-        projectiles: allProjectiles,
+        projectiles: this.projectileManager.getAllProjectiles(),
         timestamp: Date.now()
       });
     }
+  }
+
+  /**
+   * 와드 정보 브로드캐스트
+   */
+  syncWards() {
+    const allWards = this.gameStateManager.getAllWards();
+    this.io.emit('wards-update', {
+      wards: allWards,
+      timestamp: Date.now()
+    });
   }
 
   /**
@@ -320,11 +346,15 @@ class GameServer {
           jobClass: player.jobClass,
           team: player.team,
           size: player.size,
+          // 은신 상태 추가
+          isStealth: player.isStealth || false,
+          visibleToEnemies: player.visibleToEnemies !== false, // 기본값은 true
           // 전체 스탯 정보 추가
           stats: {
             attack: player.attack,
             speed: player.speed,
-            visionRange: player.visionRange
+            visionRange: player.visionRange,
+            basicAttackCooldown: player.basicAttackCooldown
           },
           // 직업 정보 추가
           jobInfo: {
@@ -341,6 +371,12 @@ class GameServer {
           // 네트워크 핑 계산을 위한 타임스탬프 추가
           timestamp: Date.now()
         };
+        
+        // player.getState()에서 버프 정보를 가져와서 추가
+        const playerState = player.getState();
+        if (playerState.buffs) {
+          state.buffs = playerState.buffs;
+        }
         
         return state;
       });

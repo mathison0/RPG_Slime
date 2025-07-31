@@ -107,7 +107,6 @@ export default class WarriorJob extends BaseJob {
      */
     showRoarEffect(data = null) {
         const startTime = Date.now();
-        console.log(`[${startTime}] 울부짖기 이펙트 시작`);
         
         // 기존 울부짖기 이펙트가 있다면 제거
         if (this.player.roarEffectTimer) {
@@ -145,7 +144,6 @@ export default class WarriorJob extends BaseJob {
      * 휩쓸기 시전 이펙트
      */
     showSweepCastingEffect(mouseX, mouseY, angleOffset, range, effectEndTime, endTime) {
-        console.log('휩쓸기 시전 이펙트 시작 : [time: ' + Date.now() + '] [endTime: ' + effectEndTime + ']');
         // 부채꼴 모양의 휩쓸기 그래픽 생성 (시전 중 - 연한 색상)
         const sweepGraphics = this.player.scene.add.graphics();
         sweepGraphics.setDepth(750);
@@ -184,9 +182,6 @@ export default class WarriorJob extends BaseJob {
             if (castingText.active) {
                 castingText.destroy();
             }
-            
-            console.log('휩쓸기 시전 이펙트 종료: [time: ' + Date.now() + '] [target: ' + effectEndTime + ']');
-
             this.showSweepDamageEffect(mouseX, mouseY, angleOffset, range, endTime);
         });
         
@@ -204,8 +199,6 @@ export default class WarriorJob extends BaseJob {
      * 휩쓸기 데미지 이펙트 (실제 효과)
      */
     showSweepDamageEffect(mouseX, mouseY, angleOffset, range, endTime) {
-        console.log('휩쓸기 시전 이펙트 시작 : [time: ' + Date.now() + '] [endTime: ' + endTime + ']');
-
         const sweepGraphics = this.player.scene.add.graphics();
         sweepGraphics.setDepth(750);
         sweepGraphics.fillStyle(0xff0000, 0.7); // 더 진한 색상으로 변경
@@ -243,8 +236,6 @@ export default class WarriorJob extends BaseJob {
             if (attackText.active) {
                 attackText.destroy();
             }
-            
-            console.log('휩쓸기 데미지 이펙트 종료 [time: ' + Date.now() + '] [target: ' + endTime + ']');
         });
         
         // 호환성을 위한 타이머 객체
@@ -261,7 +252,6 @@ export default class WarriorJob extends BaseJob {
      * 찌르기 시전 이펙트
      */
     showThrustCastingEffect(mouseX, mouseY, height, width, effectEndTime, endTime) {
-        console.log('찌르기 시전 이펙트 시작 : [time: ' + Date.now() + '] [endTime: ' + effectEndTime + ']');
         // 직사각형 모양의 찌르기 그래픽 생성 (시전 중 - 연한 색상)
         const thrustGraphics = this.player.scene.add.graphics();
         thrustGraphics.fillStyle(0xff0000, 0.2); // 더 연한 색상
@@ -336,8 +326,6 @@ export default class WarriorJob extends BaseJob {
      * 찌르기 데미지 이펙트 (실제 효과)
      */
     showThrustDamageEffect(mouseX, mouseY, height, width, endTime) {
-        console.log('찌르기 데미지 이펙트 시작 : [time: ' + Date.now() + '] [endTime: ' + endTime + ']');
-        
         // 강력한 공격 이펙트 - 진한 색상
         const thrustGraphics = this.player.scene.add.graphics();
         thrustGraphics.setDepth(750); // 깊이 설정으로 다른 객체 위에 표시
@@ -403,7 +391,6 @@ export default class WarriorJob extends BaseJob {
                     this.thrustGraphics = null;
                 }
                 
-                console.log('찌르기 데미지 이펙트 종료 [time: ' + Date.now() + '] [target: ' + targetEndTime + ']');
                 return;
             }
             
@@ -468,12 +455,10 @@ export default class WarriorJob extends BaseJob {
             this.currentSweepGraphics = null;
         }
         
-        // 찢기 그래픽 정리
+        // 찌르기 그래픽 정리
         if (this.currentThrustGraphics && this.currentThrustGraphics.active) {
             this.currentThrustGraphics.destroy();
             this.currentThrustGraphics = null;
         }
-        
-        console.log('WarriorJob: 스킬 이펙트 정리 완료');
     }
 } 

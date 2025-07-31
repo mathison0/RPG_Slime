@@ -8,6 +8,7 @@ export default class CheatManager {
         
         // 치트 상태
         this.isSpeedBoostActive = false;
+        this.isCheatModeEnabled = false; // 치트 모드 활성화 여부
         
         // 키 바인딩
         this.cheatKeys = {};
@@ -23,6 +24,13 @@ export default class CheatManager {
             o: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.O),
             p: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P),
             shift: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
+            ctrl: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL),
+            alt: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ALT),
+            c: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C),
+            f: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F),
+            i: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I),
+            l: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.L),
+            t: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T),
             one: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE),
             two: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO),
             three: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE),
@@ -31,7 +39,12 @@ export default class CheatManager {
             k: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.K)
         };
         
-        console.log('디버그 치트 키 활성화됨:');
+        console.log('디버그 치트 키 정보:');
+        console.log('Ctrl+Alt+C - 치트 모드 토글');
+        console.log('--- 치트 모드 활성화 시 ---');
+        console.log('F - 직업 변경');
+        console.log('I - 무적 모드 토글');
+        console.log('L - 레벨업 테스트');
         console.log('T - 디버그 모드 토글 (몬스터 어그로 범위 표시 포함)');
         console.log('O - 전체 맵 발견 처리');
         console.log('P - 자살 (리스폰)');
@@ -46,7 +59,44 @@ export default class CheatManager {
      * 치트 키 처리
      */
     handleCheatKeys() {
-        if (!this.cheatKeys || !this.scene.player) return;
+        if (!this.cheatKeys) return;
+        
+        // Ctrl+Alt+C - 치트 모드 토글
+        if (this.cheatKeys.ctrl.isDown && this.cheatKeys.alt.isDown && 
+            Phaser.Input.Keyboard.JustDown(this.cheatKeys.c)) {
+            this.toggleCheatMode();
+        }
+        
+        // 치트 모드가 비활성화되어 있으면 다른 치트는 동작하지 않음
+        if (!this.isCheatModeEnabled || !this.scene.player) return;
+        
+        // F - 직업 변경 (치트 모드에서만)
+        if (Phaser.Input.Keyboard.JustDown(this.cheatKeys.f)) {
+            if (this.scene.player.showJobSelection) {
+                this.scene.player.showJobSelection();
+            }
+        }
+        
+        // I - 무적 모드 토글 (치트 모드에서만)
+        if (Phaser.Input.Keyboard.JustDown(this.cheatKeys.i)) {
+            if (this.scene.player.toggleInvincible) {
+                this.scene.player.toggleInvincible();
+            }
+        }
+        
+        // L - 레벨업 테스트 (치트 모드에서만)
+        if (Phaser.Input.Keyboard.JustDown(this.cheatKeys.l)) {
+            if (this.scene.player.testLevelUp) {
+                this.scene.player.testLevelUp();
+            }
+        }
+        
+        // T - 디버그 모드 토글 (치트 모드에서만)
+        if (Phaser.Input.Keyboard.JustDown(this.cheatKeys.t)) {
+            if (this.scene.player.toggleDebugMode) {
+                this.scene.player.toggleDebugMode();
+            }
+        }
         
         // O - 전체 맵 발견 처리
         if (Phaser.Input.Keyboard.JustDown(this.cheatKeys.o)) {
@@ -96,6 +146,33 @@ export default class CheatManager {
             console.log('적 디버그 정보 출력 치트 사용');
             this.debugEnemyStatus();
         }
+    }
+
+    /**
+     * 치트 모드 토글
+     */
+    toggleCheatMode() {
+        this.isCheatModeEnabled = !this.isCheatModeEnabled;
+        
+        if (this.isCheatModeEnabled) {
+            console.log('🎮 치트 모드 활성화! 디버그 기능을 사용할 수 있습니다.');
+        } else {
+            console.log('❌ 치트 모드 비활성화. 디버그 기능이 차단됩니다.');
+            // 활성화된 치트 효과들 해제
+            if (this.isSpeedBoostActive) {
+                this.isSpeedBoostActive = false;
+                if (this.scene.player && this.scene.player.deactivateSpeedBoost) {
+                    this.scene.player.deactivateSpeedBoost();
+                }
+            }
+        }
+    }
+
+    /**
+     * 치트 모드 활성화 여부 확인
+     */
+    isCheatModeActive() {
+        return this.isCheatModeEnabled;
     }
 
     /**

@@ -5,18 +5,20 @@ export default class ProjectileManager {
     constructor(scene) {
         this.scene = scene;
         this.projectiles = new Map(); // 투사체 ID -> 투사체 스프라이트
-        this.projectileConfigs = {
+        
+        // 기본 투사체 설정 (fallback용)
+        this.fallbackProjectileConfigs = {
             'ninja': {
                 sprite: 'ninja_basic_attack',
                 size: 18,
                 rotation: true
             },
-                               'mage': {
-                       sprite: null, // 원형으로 렌더링
-                       size: 4,
-                       color: 0x00ffff, // 밝은 청록색으로 변경
-                       rotation: false
-                   },
+            'mage': {
+                sprite: null, // 원형으로 렌더링  
+                size: 4,
+                color: 0x00ffff, // 밝은 청록색으로 변경
+                rotation: false
+            },
             'archer': {
                 sprite: 'archer_basic_attack',
                 size: 16,
@@ -28,57 +30,76 @@ export default class ProjectileManager {
                 rotation: true
             }
         };
+        
+        // 보간 관련 설정
+        this.interpolationEnabled = true;
+        this.lastUpdateTime = Date.now();
     }
 
     /**
-     * 서버에서 투사체 생성 이벤트 처리
+     * 투사체 설정 가져오기 (fallback만 사용)
      */
-    handleProjectileCreated(data) {
-        const { projectileId, playerId, jobClass, x, y, targetX, targetY, team } = data;
-        
-        const config = this.projectileConfigs[jobClass];
+    getProjectileConfig(jobClass) {
+        const config = this.fallbackProjectileConfigs[jobClass];
         if (!config) {
-            console.error(`지원하지 않는 직업: ${jobClass}`);
-            return;
+            console.error(`투사체 설정을 찾을 수 없음: ${jobClass}`);
+            return {
+                sprite: null,
+                size: 10,
+                color: 0xffffff,
+                rotation: false
+            };
         }
+        return config;
+    }
 
-        let projectile;
+    /**
+     * 매 프레임마다 투사체 보간 업데이트
+     */
+    update(deltaTime) {
+        if (!this.interpolationEnabled) return;
         
-        if (config.sprite) {
-            // 스프라이트 기반 투사체
-            projectile = this.scene.add.sprite(x, y, config.sprite);
-            projectile.setDisplaySize(config.size, config.size);
+        const now = Date.now();
+        const dt = Math.min(deltaTime / 1000, 1/30); // 최대 30fps로 제한
+        
+        this.projectiles.forEach((projectile) => {
+            if (!projectile.isActive || !projectile.targetPosition) return;
             
-            // 회전 설정
+            // 목표 위치와 현재 위치 간의 거리 계산
+            const dx = projectile.targetPosition.x - projectile.x;
+            const dy = projectile.targetPosition.y - projectile.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // 너무 가까우면 즉시 이동
+            if (distance < 5) {
+                projectile.x = projectile.targetPosition.x;
+                projectile.y = projectile.targetPosition.y;
+                projectile.targetPosition = null;
+                return;
+            }
+            
+            // 보간 속도 계산 (거리가 클수록 빠르게)
+            const interpolationSpeed = Math.max(200, distance * 5); // 최소 200px/s
+            const moveDistance = interpolationSpeed * dt;
+            
+            // 방향 벡터 정규화
+            const normalizedDx = dx / distance;
+            const normalizedDy = dy / distance;
+            
+            // 새 위치 계산
+            const actualMoveDistance = Math.min(moveDistance, distance);
+            projectile.x += normalizedDx * actualMoveDistance;
+            projectile.y += normalizedDy * actualMoveDistance;
+            
+            // 회전 업데이트 (방향에 따라)
+            const config = this.getProjectileConfig(projectile.jobClass);
             if (config.rotation) {
-                const angle = Math.atan2(targetY - y, targetX - x);
+                const angle = Math.atan2(dy, dx);
                 projectile.setRotation(angle);
             }
-        } else {
-            // 원형 투사체 (마법사)
-            projectile = this.scene.add.circle(x, y, config.size, config.color, 1);
-        }
-
-        // 물리 바디 추가
-        this.scene.physics.add.existing(projectile);
-        projectile.body.setCircle(config.size);
-        projectile.body.setCollideWorldBounds(false);
-        projectile.body.setBounce(0, 0);
-        projectile.body.setDrag(0, 0);
-
-        // 투사체 정보 저장
-        projectile.projectileId = projectileId;
-        projectile.playerId = playerId;
-        projectile.jobClass = jobClass;
-        projectile.team = team;
-        projectile.targetX = targetX;
-        projectile.targetY = targetY;
-
-        // 투사체를 맵에 저장
-        this.projectiles.set(projectileId, projectile);
-
-        // 투사체 이펙트 추가
-        this.addProjectileEffects(projectile, jobClass);
+        });
+        
+        this.lastUpdateTime = now;
     }
 
     /**
@@ -87,39 +108,16 @@ export default class ProjectileManager {
     handleProjectilesUpdate(data) {
         const { projectiles } = data;
         
-        // 현재 로컬 플레이어 위치
-        const localPlayer = this.scene.player;
-        if (!localPlayer) return;
-
-        // 로컬 플레이어 근처의 투사체만 렌더링
-        const renderRange = 1000;
-        const nearbyProjectiles = projectiles.filter(projectile => {
-            const distance = Math.sqrt(
-                Math.pow(projectile.x - localPlayer.x, 2) + 
-                Math.pow(projectile.y - localPlayer.y, 2)
-            );
-            return distance <= renderRange;
-        });
-
-        // 기존 투사체들 제거 (더 이상 서버에 없는 것들)
-        this.projectiles.forEach((projectile, projectileId) => {
-            const stillExists = nearbyProjectiles.some(p => p.id === projectileId);
-            if (!stillExists) {
-                this.removeProjectile(projectileId);
-            }
-        });
-
-        // 새로운 투사체들 생성 또는 업데이트
-        nearbyProjectiles.forEach(projectileData => {
+        if (!projectiles || !Array.isArray(projectiles)) return;
+        
+        const now = Date.now();
+        
+        projectiles.forEach(projectileData => {
             const existingProjectile = this.projectiles.get(projectileData.id);
             
             if (existingProjectile) {
-                // 기존 투사체 위치 업데이트
-                existingProjectile.x = projectileData.x;
-                existingProjectile.y = projectileData.y;
-                if (existingProjectile.body) {
-                    existingProjectile.body.reset(projectileData.x, projectileData.y);
-                }
+                // 기존 투사체 위치 보간 업데이트
+                this.updateProjectileInterpolation(existingProjectile, projectileData, now);
             } else {
                 // 새 투사체 생성
                 this.createProjectileFromServerData(projectileData);
@@ -128,34 +126,77 @@ export default class ProjectileManager {
     }
 
     /**
+     * 투사체 보간 업데이트
+     */
+    updateProjectileInterpolation(projectile, serverData, now) {
+        const { x, y, vx, vy } = serverData;
+        
+        // 서버 업데이트 시간 기록
+        projectile.lastServerUpdate = now;
+        
+        // 현재 위치와 서버 위치 차이 계산
+        const dx = x - projectile.x;
+        const dy = y - projectile.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // 차이가 크면 즉시 이동 (텔레포트)
+        if (distance > 100) {
+            projectile.x = x;
+            projectile.y = y;
+            projectile.targetPosition = null;
+        } else if (distance > 5) {
+            // 작은 차이는 보간으로 처리
+            projectile.targetPosition = { x, y };
+        }
+        
+        // 속도 정보로 회전 업데이트
+        const config = this.getProjectileConfig(projectile.jobClass);
+        if (config.rotation && (vx !== 0 || vy !== 0)) {
+            const angle = Math.atan2(vy, vx);
+            projectile.setRotation(angle);
+        }
+    }
+
+    /**
      * 서버 데이터로부터 투사체 생성
      */
     createProjectileFromServerData(projectileData) {
         const { id, playerId, jobClass, x, y, vx, vy, size, sprite, team } = projectileData;
         
-        const config = this.projectileConfigs[jobClass];
-        if (!config) return;
+        // 서버에서 받은 정보 우선 사용, 없으면 fallback
+        const fallbackConfig = this.getProjectileConfig(jobClass);
+        const config = {
+            sprite: sprite || fallbackConfig.sprite,
+            size: size || fallbackConfig.size,
+            color: fallbackConfig.color,
+            rotation: fallbackConfig.rotation
+        };
 
         let projectile;
         
-        if (config.sprite && sprite) {
+        if (config.sprite && config.sprite !== 'projectile') {
             // 스프라이트 기반 투사체
-            projectile = this.scene.add.sprite(x, y, sprite);
-            projectile.setDisplaySize(size, size);
-            
-            // 회전 설정
-            if (config.rotation) {
-                const angle = Math.atan2(vy, vx);
-                projectile.setRotation(angle);
+            try {
+                projectile = this.scene.add.sprite(x, y, config.sprite);
+                projectile.setDisplaySize(config.size, config.size);
+                
+                // 회전 설정
+                if (config.rotation) {
+                    const angle = Math.atan2(vy, vx);
+                    projectile.setRotation(angle);
+                }
+            } catch (error) {
+                console.warn(`스프라이트 로드 실패: ${config.sprite}, 원형으로 대체`);
+                // 스프라이트 로드 실패 시 원형으로 대체
+                projectile = this.scene.add.circle(x, y, config.size / 2, config.color || 0xffffff, 1);
             }
         } else {
-            // 원형 투사체 (마법사)
-            projectile = this.scene.add.circle(x, y, size, config.color, 1);
+            projectile = this.scene.add.circle(x, y, config.size / 2, config.color || 0xffffff, 1);
         }
 
         // 물리 바디 추가
         this.scene.physics.add.existing(projectile);
-        projectile.body.setCircle(size);
+        projectile.body.setCircle(config.size / 2);
         projectile.body.setCollideWorldBounds(false);
         projectile.body.setBounce(0, 0);
         projectile.body.setDrag(0, 0);
@@ -165,6 +206,9 @@ export default class ProjectileManager {
         projectile.playerId = playerId;
         projectile.jobClass = jobClass;
         projectile.team = team;
+        projectile.isActive = true;
+        projectile.targetPosition = null;
+        projectile.lastServerUpdate = Date.now();
 
         // 투사체를 맵에 저장
         this.projectiles.set(id, projectile);

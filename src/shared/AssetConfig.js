@@ -74,7 +74,7 @@ const AssetConfig = {
     ALPHA: {
         UI_PANEL: 0.7
     },
-    SUPPORTED_JOBS: ['slime', 'warrior', 'mage', 'assassin', 'mechanic', 'ninja', 'archer', 'supporter'],
+    SUPPORTED_JOBS: ['slime', 'warrior', 'mage', 'assassin', 'archer', 'supporter'],
     DIRECTIONS: ['front', 'back', 'left', 'right'],
     ADDITIONAL_ASSETS: [
         'ping_arrow',

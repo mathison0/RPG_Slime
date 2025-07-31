@@ -1,6 +1,15 @@
 const gameConfig = require('../config/GameConfig');
 const { getSkillInfo, calculateStats } = require('../../shared/JobClasses');
 
+// 직업별 클래스 import
+const SlimeJob = require('./jobs/SlimeJob');
+const MageJob = require('./jobs/MageJob');
+const AssassinJob = require('./jobs/AssassinJob');
+const WarriorJob = require('./jobs/WarriorJob');
+const ArcherJob = require('./jobs/ArcherJob');
+const SupporterJob = require('./jobs/SupporterJob');
+
+
 /**
  * 서버측 플레이어 클래스
  */
@@ -12,31 +21,40 @@ class ServerPlayer {
     this.team = team;
     this.level = 1;
     this.exp = 0;
-    this.expToNext = gameConfig.PLAYER.EXP.BASE_REQUIRED;
-    this.maxHp = gameConfig.PLAYER.DEFAULT_HP;
+    this.expToNext = 25;
+    this.maxHp = 100;
     this.hp = this.maxHp;
-    this.speed = gameConfig.PLAYER.DEFAULT_SPEED;
-    this.attack = gameConfig.PLAYER.DEFAULT_ATTACK;
+    this.speed = 200;
+    this.attack = 20;
     this.jobClass = 'slime';
+    this.job = null; // 직업 클래스 인스턴스
     this.direction = 'front';
     this.isJumping = false;
-    this.size = gameConfig.PLAYER.DEFAULT_SIZE;
-    this.visionRange = gameConfig.PLAYER.VISION_RANGE;
+    this.size = 32;
+    this.visionRange = 300;
     this.lastUpdate = Date.now();
     this.nickname = 'Player';
     this.isDead = false; // 사망 상태
     this.lastDamageSource = null; // 마지막 데미지 소스 추적
     
+    // 체력 재생 시스템
+    this.lastDamageTime = 0; // 마지막으로 데미지를 받은 시간
+    this.lastRegenTick = 0;  // 마지막 재생 틱 시간
+    
     // 스킬 관련
     this.skillCooldowns = {}; // 스킬별 마지막 사용 시간
     this.activeEffects = new Set(); // 활성 효과들
     
+    // 버프 시스템
+    this.buffs = new Map(); // buffType -> { startTime, duration, endTime, effect }
+    this.originalStats = {}; // 원본 스탯 저장
+
     // 액션 상태 추가
     this.currentActions = {
       jump: null,      // { startTime, duration, endTime }
       skills: new Map() // skillType -> { startTime, duration, endTime, skillInfo }
     };
-    
+
     // 지연된 액션들 (setTimeout ID 저장)
     this.delayedActions = new Map(); // actionId -> timeoutId
     
@@ -52,6 +70,56 @@ class ServerPlayer {
     
     // 무적 상태 (치트)
     this.isInvincible = false;
+    
+    // 초기 직업 인스턴스 생성
+    this.initializeJob();
+  }
+
+  /**
+   * 직업 인스턴스 초기화
+   */
+  initializeJob() {
+    try {
+      switch (this.jobClass) {
+        case 'slime':
+          this.job = new SlimeJob(this);
+          break;
+        case 'mage':
+          this.job = new MageJob(this);
+          break;
+        case 'assassin':
+          this.job = new AssassinJob(this);
+          break;
+        case 'warrior':
+          this.job = new WarriorJob(this);
+          break;
+        case 'archer':
+          this.job = new ArcherJob(this);
+          break;
+        case 'supporter':
+          this.job = new SupporterJob(this);
+          break;
+        default:
+          console.log(`알 수 없는 직업: ${this.jobClass}, 기본값 slime으로 설정`);
+          this.jobClass = 'slime';
+          this.job = new SlimeJob(this);
+          break;
+      }
+      
+      // 직업별 기본 공격 쿨다운 설정
+      if (this.job && this.job.basicAttackCooldown) {
+        this.basicAttackCooldown = this.job.basicAttackCooldown;
+      } else {
+        // 기본값 설정
+        this.basicAttackCooldown = 500;
+      }
+      
+      console.log(`플레이어 ${this.id} 직업 인스턴스 생성 완료: ${this.jobClass}, 기본공격 쿨다운: ${this.basicAttackCooldown}ms`);
+    } catch (error) {
+      console.error(`플레이어 ${this.id} 직업 인스턴스 생성 실패:`, error);
+      this.job = null;
+      this.basicAttackCooldown = 500; // 기본값
+    }
   }
 
   /**
@@ -85,7 +153,48 @@ class ServerPlayer {
     this.y = data.y;
     this.direction = data.direction;
     this.isJumping = data.isJumping;
+    
+    // 은신 상태 체크 및 자동 해제
+    this.updateStealthStatus();
+    
     this.lastUpdate = Date.now();
+  }
+
+  /**
+   * 은신 상태 업데이트 및 자동 해제
+   */
+  updateStealthStatus() {
+    if (this.isStealth && this.stealthEndTime) {
+      const now = Date.now();
+      if (now >= this.stealthEndTime) {
+        this.endStealth();
+      }
+    }
+  }
+
+  /**
+   * 은신 상태 종료
+   */
+  endStealth() {
+    console.log(`어쌔신 은신 자동 해제: ${this.id}`);
+    
+    this.isStealth = false;
+    this.stealthStartTime = 0;
+    this.stealthDuration = 0;
+    this.stealthEndTime = 0;
+    
+    // 이동속도 복원
+    if (this.originalSpeed !== undefined) {
+      this.speed = this.originalSpeed;
+    }
+    
+    // 시야 범위 복원
+    if (this.originalVisionRange !== undefined) {
+      this.visionRange = this.originalVisionRange;
+    }
+    
+    // 다시 모든 팀에게 보이도록 설정
+    this.visibleToEnemies = true;
   }
 
   /**
@@ -97,7 +206,9 @@ class ServerPlayer {
         spread: 'skill1'
       },
       assassin: {
-        stealth: 'skill1'
+        stealth: 'skill1',
+        blade_dance: 'skill2',
+        backstab: 'skill3'
       },
       ninja: {
         stealth: 'skill1'
@@ -108,9 +219,9 @@ class ServerPlayer {
         thrust: 'skill3'
       },
       mage: {
-        ward: 'skill1',
-        ice_field: 'skill2',
-        magic_missile: 'skill3'
+        ice_field: 'skill1',
+        magic_missile: 'skill2',
+        shield: 'skill3'
       },
       mechanic: {
         repair: 'skill1'
@@ -202,6 +313,8 @@ class ServerPlayer {
       }
     }
     
+    const buffState = this.getBuffState();
+    
     return {
       id: this.id,
       x: this.x,
@@ -223,7 +336,14 @@ class ServerPlayer {
       isDead: this.isDead, // 사망 상태 추가
       isInvincible: this.isInvincible, // 무적 상태 추가
       activeActions: activeActions,  // 액션 상태 정보 추가
-      skillCooldowns: this.getClientSkillCooldowns() // 클라이언트용 스킬 쿨타임 정보 추가
+      skillCooldowns: this.getClientSkillCooldowns(), // 클라이언트용 스킬 쿨타임 정보 추가
+      buffs: buffState, // 버프 상태 정보 추가
+      stats: { // 버프가 적용된 현재 스탯 정보
+        attack: this.attack,
+        speed: this.speed,
+        visionRange: this.visionRange,
+        basicAttackCooldown: this.getBasicAttackCooldown() // 버프가 적용된 기본 공격 쿨다운
+      }
     };
   }
 
@@ -236,12 +356,29 @@ class ServerPlayer {
   }
 
   /**
+   * 버프가 적용된 기본 공격 쿨다운 계산
+   */
+  getBasicAttackCooldown() {
+    let cooldown = this.basicAttackCooldown || 600; // 기본값
+    
+    // 버프 효과 적용
+    for (const [buffType, buff] of this.buffs) {
+      if (buff.effect && buff.effect.attackSpeedMultiplier) {
+        // 공격속도 증가는 쿨다운을 감소시킴 (공격속도 2배 = 쿨다운 1/2)
+        cooldown = cooldown / buff.effect.attackSpeedMultiplier;
+      }
+    }
+    
+    return Math.max(100, Math.round(cooldown)); // 최소 100ms
+  }
+
+  /**
    * 플레이어 레벨업
    */
   levelUp() {
     this.level++;
     // exp는 GameStateManager.giveExperience()에서 초과분 이월 처리하므로 여기서 0으로 초기화하지 않음
-    this.expToNext = this.level * gameConfig.PLAYER.EXP.BASE_REQUIRED * gameConfig.PLAYER.EXP.MULTIPLIER;
+    this.expToNext = gameConfig.PLAYER.EXP[this.level];
     
     // JobClasses를 사용한 올바른 스탯 계산
     const oldMaxHp = this.maxHp;
@@ -302,11 +439,14 @@ class ServerPlayer {
    * 플레이어 리스폰 (사망 상태 해제)
    */
   respawn() {
-    console.log('플레이어 리스폰');
     this.isDead = false;
     this.hp = this.maxHp;
     // 데미지 소스 추적 정보 리셋
     this.lastDamageSource = null;
+    
+    // 체력 재생 시스템 리셋
+    this.lastDamageTime = 0;
+    this.lastRegenTick = 0;
     
     // 스킬 관련 상태 초기화
     this.currentActions.skills.clear();
@@ -331,15 +471,70 @@ class ServerPlayer {
   }
 
   /**
+   * 체력 재생 처리
+   */
+  processHealthRegeneration() {
+    // 죽은 상태이거나 이미 풀피인 경우 재생하지 않음
+    if (this.isDead || this.hp >= this.maxHp) {
+      return;
+    }
+    
+    const now = Date.now();
+    const regenConfig = gameConfig.HEALTH_REGENERATION;
+    
+    // 마지막 데미지 후 충분한 시간이 지났는지 확인
+    const timeSinceLastDamage = now - this.lastDamageTime;
+    if (timeSinceLastDamage < regenConfig.DELAY_AFTER_DAMAGE) {
+      return;
+    }
+    
+    // 재생 틱 간격 확인
+    const timeSinceLastRegen = now - this.lastRegenTick;
+    if (timeSinceLastRegen < regenConfig.TICK_INTERVAL) {
+      return;
+    }
+    
+    // 체력 재생 수행
+    const regenAmount = Math.ceil(this.maxHp * regenConfig.REGENERATION_RATE);
+    const oldHp = this.hp;
+    this.hp = Math.min(this.maxHp, this.hp + regenAmount);
+    this.lastRegenTick = now;
+  }
+
+  /**
+   * 데미지 받았을 때 호출되는 메서드 (체력 재생 타이머 리셋용)
+   */
+  onDamageTaken() {
+    this.lastDamageTime = Date.now();
+  }
+
+  /**
    * 직업 변경
    */
   changeJob(newJobClass) {
+    // 현재 체력 저장 (전직 시 체력 유지)
+    const currentHp = this.hp;
+    
     this.jobClass = newJobClass;
+    
+    // 직업 변경 시 새로운 job 인스턴스 생성
+    this.initializeJob();
     
     // 직업 변경 시 즉시 스탯 업데이트
     this.initializeStatsFromJobClass();
     
-    console.log(`플레이어 ${this.id} 직업 변경: ${newJobClass}, 새로운 스탯 적용 완료`);
+    // 체력 유지 및 클램핑 처리
+    if (currentHp > this.maxHp) {
+      // 현재 체력이 새로운 최대 체력보다 높으면 최대 체력으로 클램핑
+      this.hp = this.maxHp;
+      console.log(`플레이어 ${this.id} 전직 시 체력 클램핑: ${currentHp} -> ${this.hp} (최대: ${this.maxHp})`);
+    } else {
+      // 현재 체력이 새로운 최대 체력 이하면 그대로 유지
+      this.hp = currentHp;
+      console.log(`플레이어 ${this.id} 전직 시 체력 유지: ${this.hp} (최대: ${this.maxHp})`);
+    }
+
+    console.log(`플레이어 ${this.id} 직업 변경: ${newJobClass}, 새로운 스탯 적용 완료, 기본공격 쿨다운: ${this.basicAttackCooldown}ms`);
   }
 
   /**
@@ -376,24 +571,6 @@ class ServerPlayer {
   }
 
   /**
-   * 기절 상태 종료
-   */
-  endStun() {
-    this.isStunned = false;
-    this.stunStartTime = 0;
-    this.stunDuration = 0;
-    
-    // 기절 상태 해제를 모든 클라이언트에게 즉시 알림
-    if (global.io) {
-      global.io.emit('player-stunned', {
-        playerId: this.id,
-        isStunned: false,
-        duration: 0
-      });
-    }
-  }
-
-  /**
    * 기절 상태 시작
    */
   startStun(duration) {
@@ -408,13 +585,12 @@ class ServerPlayer {
       }
     }, duration);
     
-    
     // 기절 상태 변경을 모든 클라이언트에게 즉시 알림
     if (global.io) {
+      console.log("startStun", duration);
       global.io.emit('player-stunned', {
         playerId: this.id,
-        isStunned: true,
-        duration: duration
+        isStunned: true
       });
     }
   }
@@ -431,8 +607,7 @@ class ServerPlayer {
     if (global.io) {
       global.io.emit('player-stunned', {
         playerId: this.id,
-        isStunned: false,
-        duration: 0
+        isStunned: false
       });
     }
   }
@@ -453,6 +628,152 @@ class ServerPlayer {
    */
   setSize(newSize) {
     this.size = Math.max(16, Math.min(256, newSize));
+  }
+
+  /**
+   * 버프 적용
+   */
+  applyBuff(buffType, duration, effect) {
+    const now = Date.now();
+    const endTime = now + duration;
+    
+    console.log(`[서버] applyBuff 호출됨: buffType=${buffType}, duration=${duration}ms, effect=`, effect);
+    
+    this.buffs.set(buffType, {
+      startTime: now,
+      duration: duration,
+      endTime: endTime,
+      effect: effect
+    });
+
+    // 원본 스탯 저장 (첫 번째 버프 적용 시)
+    if (!this.originalStats[buffType]) {
+      this.originalStats[buffType] = {
+        attackSpeed: this.basicAttackCooldown,
+        speed: this.speed,
+        attack: this.attack
+      };
+      console.log(`[서버] 원본 스탯 저장: ${buffType}`, this.originalStats[buffType]);
+    }
+
+    // 버프 효과 적용
+    console.log(`[서버] applyBuffEffect 호출 전: basicAttackCooldown=${this.basicAttackCooldown}ms`);
+    this.applyBuffEffect(buffType, effect);
+    console.log(`[서버] applyBuffEffect 호출 후: basicAttackCooldown=${this.basicAttackCooldown}ms`);
+    
+    console.log(`[서버] 버프 적용: ${buffType}, 지속시간: ${duration}ms`);
+  }
+
+  /**
+   * 버프 효과 적용
+   */
+  applyBuffEffect(buffType, effect) {
+    switch (buffType) {
+      case 'attack_speed_boost':
+        if (effect.attackSpeedMultiplier) {
+          const originalCooldown = this.originalStats[buffType].attackSpeed;
+          this.basicAttackCooldown = Math.floor(originalCooldown / effect.attackSpeedMultiplier);
+          console.log(`[서버] 공격속도 버프: ${originalCooldown}ms → ${this.basicAttackCooldown}ms (배율: ${effect.attackSpeedMultiplier})`);
+        }
+        break;
+      case 'attack_power_boost':
+        if (effect.attackPowerMultiplier) {
+          const originalAttack = this.originalStats[buffType].attack;
+          this.attack = Math.floor(originalAttack * effect.attackPowerMultiplier);
+          console.log(`[서버] 공격력 버프: ${originalAttack} → ${this.attack} (배율: ${effect.attackPowerMultiplier})`);
+        }
+        break;
+      case 'speed_attack_boost':
+        if (effect.speedMultiplier) {
+          this.speed = Math.floor(this.originalStats[buffType].speed * effect.speedMultiplier);
+        }
+        if (effect.attackSpeedMultiplier) {
+          const originalCooldown = this.originalStats[buffType].attackSpeed;
+          this.basicAttackCooldown = Math.floor(originalCooldown / effect.attackSpeedMultiplier);
+          console.log(`[서버] 속도+공격속도 버프: ${originalCooldown}ms → ${this.basicAttackCooldown}ms (배율: ${effect.attackSpeedMultiplier})`);
+        }
+        break;
+    }
+  }
+
+  /**
+   * 버프 제거
+   */
+  removeBuff(buffType) {
+    if (this.buffs.has(buffType)) {
+      const buff = this.buffs.get(buffType);
+      
+      // 원본 스탯으로 복원
+      if (this.originalStats[buffType]) {
+        switch (buffType) {
+          case 'attack_speed_boost':
+            this.basicAttackCooldown = this.originalStats[buffType].attackSpeed;
+            console.log(`[서버] 버프 해제 - 공격속도 복원: ${this.basicAttackCooldown}ms`);
+            break;
+          case 'attack_power_boost':
+            this.attack = this.originalStats[buffType].attack;
+            break;
+          case 'speed_attack_boost':
+            this.speed = this.originalStats[buffType].speed;
+            this.basicAttackCooldown = this.originalStats[buffType].attackSpeed;
+            console.log(`[서버] 버프 해제 - 속도 복원: ${this.speed}, 공격속도 복원: ${this.basicAttackCooldown}ms`);
+            break;
+        }
+        
+        // 원본 스탯 정보 삭제 (다음 버프 적용시 새로운 원본 저장을 위해)
+        delete this.originalStats[buffType];
+      }
+      
+      this.buffs.delete(buffType);
+      console.log(`버프 제거: ${buffType}`);
+    }
+  }
+
+  /**
+   * 만료된 버프 정리
+   */
+  cleanupExpiredBuffs() {
+    const now = Date.now();
+    const expiredBuffs = [];
+    
+    for (const [buffType, buff] of this.buffs) {
+      if (now >= buff.endTime) {
+        expiredBuffs.push(buffType);
+      }
+    }
+    
+    expiredBuffs.forEach(buffType => {
+      this.removeBuff(buffType);
+    });
+  }
+
+  /**
+   * 버프 상태 가져오기
+   */
+  getBuffState() {
+    const now = Date.now();
+    const activeBuffs = {};
+    
+    for (const [buffType, buff] of this.buffs) {
+      if (now < buff.endTime) {
+        activeBuffs[buffType] = {
+          remainingTime: buff.endTime - now,
+          effect: buff.effect
+        };
+      }
+    }
+    
+    return activeBuffs;
+  }
+
+  /**
+   * 버프가 활성화되어 있는지 확인
+   */
+  hasBuff(buffType) {
+    if (!this.buffs.has(buffType)) return false;
+    
+    const buff = this.buffs.get(buffType);
+    return Date.now() < buff.endTime;
   }
 }
 

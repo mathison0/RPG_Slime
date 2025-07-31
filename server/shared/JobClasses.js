@@ -18,29 +18,34 @@ const JobClasses = {
         name: '슬라임',
         description: '기본 직업. 균형잡힌 스탯과 범위 공격 스킬을 가지고 있습니다.',
         baseStats: {
-            hp: 100,
-            attack: 20,
+            hp: 200,
+            attack: 10,
             speed: 200,
             visionRange: 300
         },
         levelGrowth: {
             hp: 20,
-            attack: 5,
-            speed: 10
+            attack: 1,
+            speed: 0
+        },
+        projectile: {
+            speed: 150,
+            size: 12,
+            maxDistance: 250
         },
         skills: [
             {
                 name: '퍼지기',
                 description: '주변 범위에 데미지를 입히는 슬라임 스킬입니다.',
                 cooldown: 1000,
-                damage: 'attack',
+                damage: 'attack * 2.0',
                 range: 150,
                 duration: 400,
                 key: '1',
                 type: 'spread'
             },
         ],
-        basicAttackCooldown: 600,
+        basicAttackCooldown: 800,
         color: 0x00ff00,
         maxLevel: 50
     },
@@ -49,58 +54,52 @@ const JobClasses = {
         name: '어쌔신',
         description: '은신과 기습 공격에 특화된 직업입니다.',
         baseStats: {
-            hp: 80,
-            attack: 25,
+            hp: 100,
+            attack: 10,
             speed: 250,
-            visionRange: 320
+            visionRange: 450
         },
         levelGrowth: {
-            hp: 15,
-            attack: 7,
-            speed: 15
+            hp: 10,
+            attack: 1,
+            speed: 5
         },
+        projectile: null, // 근접 직업
         skills: [
             {
                 name: '은신',
                 description: '3초간 투명해져서 다음 공격에 추가 데미지를 입힙니다.',
-                cooldown: 10000,
-                damage: 50,
+                cooldown: 20000,
+                damage: 'attack * 5.0',
                 duration: 3000,
                 key: '1',
-                type: 'stealth'
-            }
-        ],
-        basicAttackCooldown: 300,
-        color: 0x000000,
-        maxLevel: 50
-    },
-
-    ninja: {
-        name: '닌자',
-        description: '빠른 은신과 치명적인 기습에 특화된 직업입니다.',
-        baseStats: {
-            hp: 75,
-            attack: 28,
-            speed: 260,
-            visionRange: 340
-        },
-        levelGrowth: {
-            hp: 12,
-            attack: 8,
-            speed: 18
-        },
-        skills: [
+                type: 'stealth',
+                visionMultiplier: 1.3, // 시야 범위 30% 증가
+                speedMultiplier: 1.2   // 이동속도 20% 증가
+            },
             {
-                name: '그림자 은신',
-                description: '3초간 투명해져서 다음 공격에 더 큰 추가 데미지를 입힙니다.',
-                cooldown: 8000,
-                damage: 60,
-                duration: 3000,
-                key: '1',
-                type: 'stealth'
+                name: '칼춤',
+                description: '일정 시간 동안 공격력을 증가시킵니다.',
+                cooldown: 30000,
+                damage: 0,
+                duration: 8000,
+                effect: 'attack_power_boost',
+                key: '2',
+                type: 'blade_dance',
+                attackPowerMultiplier: 2.0 // 공격력 2.0배 증가
+            },
+            {
+                name: '목긋기',
+                description: '특정 거리 내의 상대팀 플레이어에게 순간이동하며 뒤에서 공격합니다.',
+                cooldown: 15000,
+                damage: 'attack * 3.0',
+                range: 350,
+                key: '3',
+                type: 'backstab',
+                teleportDistance: 50 // 대상 뒤로 이동할 거리
             }
         ],
-        basicAttackCooldown: 500,
+        basicAttackCooldown: 250,
         color: 0x000000,
         maxLevel: 50
     },
@@ -109,16 +108,17 @@ const JobClasses = {
         name: '전사',
         description: '높은 체력과 방어력을 가진 근접 전투 전문가입니다.',
         baseStats: {
-            hp: 150,
-            attack: 30,
+            hp: 350,
+            attack: 10,
             speed: 180,
-            visionRange: 250
+            visionRange: 300
         },
         levelGrowth: {
-            hp: 30,
-            attack: 6,
-            speed: 8
+            hp: 35,
+            attack: 1,
+            speed: 0
         },
+        projectile: null, // 근접 직업
         skills: [
             {
                 name: '울부짖기',
@@ -133,11 +133,11 @@ const JobClasses = {
             {
                 name: '휩쓸기',
                 description: '부채꼴 범위 공격으로 적을 기절시킵니다.',
-                cooldown: 3000,
-                damage: 'attack',
-                range: 100,
+                cooldown: 7000,
+                damage: 'attack * 2.0',
+                range: 150,
                 angleOffset: Math.PI / 4, 
-                delay: 1000,
+                delay: 500,
                 afterDelay: 300,
                 stunDuration: 2500,
                 key: 'E',
@@ -146,18 +146,18 @@ const JobClasses = {
             {
                 name: '찌르기',
                 description: '직사각형 범위 공격으로 강력한 데미지를 입힙니다.',
-                cooldown: 4000,
-                damage: 'attack * 3',
+                cooldown: 10000,
+                damage: 'attack * 7.0',
                 range: 200,
                 width: 50,
                 delay: 1500,
                 afterDelay: 800,
-                stunDuration: 1000,
+                stunDuration: 1200,
                 key: 'R',
                 type: 'thrust'
             }
         ],
-        basicAttackCooldown: 800,
+        basicAttackCooldown: 1000,
         color: 0xff0000,
         maxLevel: 50
     },
@@ -166,24 +166,30 @@ const JobClasses = {
         name: '마법사',
         description: '다양한 마법 스킬과 원거리 공격에 특화된 직업입니다.',
         baseStats: {
-            hp: 70,
-            attack: 35,
-            speed: 160,
-            visionRange: 400
+            hp: 130,
+            attack: 5,
+            speed: 210,
+            visionRange: 360
         },
         levelGrowth: {
-            hp: 10,
-            attack: 8,
-            speed: 5
+            hp: 13,
+            attack: 1,
+            speed: 0
+        },
+        projectile: {
+            speed: 280,
+            size: 8,
+            maxDistance: 400
         },
         skills: [
             {
                 name: '얼음 장판',
                 description: '범위 내 적들의 속도를 감소시킵니다.',
                 cooldown: 12000,
-                damage: 0,
-                range: 100,
-                duration: 6000,
+                damage: 'attack',
+                range: 150,  // 얼음 장판의 효과 범위 (반지름)
+                maxCastRange: 300, // 최대 시전 사거리
+                duration: 3000,
                 effect: 'slow',
                 key: '1',
                 type: 'ice_field'
@@ -191,20 +197,25 @@ const JobClasses = {
             {
                 name: '마법 투사체',
                 description: '마우스 방향으로 마법 투사체를 발사합니다.',
-                cooldown: 3000,
-                damage: 'attack * 2.0',
+                cooldown: 5000,
+                damage: 'attack * 5.0',
                 range: 400,
-                explosionRadius: 60, // 폭발 범위
+                explosionRadius: 90, // 폭발 범위
                 afterDelay: 200,
                 key: '2',
-                type: 'magic_missile'
+                type: 'magic_missile',
+                projectile: {
+                    speed: 600,
+                    size: 6,
+                    maxDistance: 500
+                }
             },
             {
                 name: '보호막',
                 description: '일정 시간 동안 보호막을 생성합니다.',
-                cooldown: 15000,
+                cooldown: 20000,
                 damage: 0,
-                duration: 8000,
+                duration: 1000,
                 effect: 'shield',
                 key: '3',
                 type: 'shield'
@@ -215,92 +226,68 @@ const JobClasses = {
         maxLevel: 50
     },
 
-    mechanic: {
-        name: '메카닉',
-        description: '기계와 기술을 활용하는 다재다능한 직업입니다.',
-        baseStats: {
-            hp: 90,
-            attack: 22,
-            speed: 190,
-            visionRange: 280
-        },
-        levelGrowth: {
-            hp: 18,
-            attack: 6,
-            speed: 12
-        },
-        skills: [
-            {
-                name: '기계 수리',
-                description: '자신의 체력을 회복합니다.',
-                cooldown: 5000,
-                damage: 0,
-                heal: 50,
-                afterDelay: 600, // 수리 후 짧은 후딜레이
-                key: '1',
-                type: 'repair'
-            }
-        ],
-        basicAttackCooldown: 600,
-        color: 0x556B2F,
-        maxLevel: 50
-    },
-
     archer: {
         name: '궁수',
         description: '원거리 공격에 특화된 직업입니다.',
         baseStats: {
             hp: 85,
-            attack: 30,
-            speed: 200,
+            attack: 15,
+            speed: 160,
             visionRange: 350
         },
         levelGrowth: {
-            hp: 15,
-            attack: 8,
-            speed: 10
+            hp: 8,
+            attack: 2,
+            speed: 0
+        },
+        projectile: {
+            speed: 300,
+            size: 16,
+            maxDistance: 600
         },
         skills: [
             {
                 name: '구르기',
                 description: '빠르게 구르며 이동합니다.',
-                cooldown: 2000,
+                cooldown: 3000,
                 damage: 0,
-                range: 100,
-                afterDelay: 200,
+                range: 150,
+                afterDelay: 100,
                 key: '1',
                 type: 'roll'
             },
             {
                 name: '궁사의 집중',
                 description: '일정 시간 동안 공격 속도를 증가시킵니다.',
-                cooldown: 8000,
+                cooldown: 25000,
                 damage: 0,
                 duration: 5000,
                 effect: 'attack_speed_boost',
                 key: '2',
-                type: 'focus'
+                type: 'focus',
+                attackSpeedMultiplier: 3.0 // 공격속도 3배 증가
             }
         ],
-        basicAttackCooldown: 500,
+        basicAttackCooldown: 700,
         color: 0xFF8C00,
         maxLevel: 50
     },
 
     supporter: {
-        name: '힐러',
+        name: '서포터',
         description: '팀원을 지원하고 치유하는 서포터 직업입니다.',
         baseStats: {
-            hp: 90,
-            attack: 15,
+            hp: 150,
+            attack: 30,
             speed: 180,
             visionRange: 320
         },
         levelGrowth: {
-            hp: 20,
+            hp: 15,
             attack: 3,
-            speed: 8
+            speed: 0
         },
+        projectile: null, // 근접 직업
         skills: [
             {
                 name: '와드 설치',
@@ -308,7 +295,8 @@ const JobClasses = {
                 cooldown: 10000,
                 damage: 0,
                 range: 150,
-                duration: 20000,
+                castRange: 300, // 와드 설치 사정거리
+                duration: 200000,
                 afterDelay: 0,
                 key: '1',
                 type: 'ward'
@@ -316,27 +304,31 @@ const JobClasses = {
             {
                 name: '버프 장판',
                 description: '이동속도와 공격속도를 증가시키는 장판을 설치합니다.',
-                cooldown: 6000,
+                cooldown: 10000,
                 damage: 0,
-                range: 80,
-                duration: 4000,
+                range: 150,
+                castRange: 200, // 최대 시전 사거리
+                duration: 3000,
                 effect: 'speed_attack_boost',
+                speedMultiplier: 1.3,
+                attackSpeedMultiplier: 2,
                 key: '2',
                 type: 'buff_field'
             },
             {
                 name: '힐 장판',
                 description: '범위 내 아군의 체력을 지속적으로 회복시킵니다.',
-                cooldown: 15000,
+                cooldown: 10000,
                 damage: 0,
-                range: 100,
-                duration: 8000,
-                heal: 20,
+                range: 150,
+                castRange: 250, // 최대 시전 사거리
+                duration: 2500,
+                heal: 'attack * 0.4',
                 key: '3',
                 type: 'heal_field'
             }
         ],
-        basicAttackCooldown: 900,
+        basicAttackCooldown: 1300,
         color: 0xFFFF00,
         maxLevel: 50
     }

@@ -333,22 +333,6 @@ export default class EffectManager {
     }
 
     /**
-     * 상태 변화 이펙트 (틴트 변경)
-     * @param {Phaser.GameObjects.Sprite} target - 대상 객체
-     * @param {number} color - 틴트 색상
-     * @param {number} duration - 지속시간 (ms)
-     */
-    showStatusEffect(target, color, duration = 1000) {
-        target.setTint(color);
-        
-        this.scene.time.delayedCall(duration, () => {
-            if (target.active) {
-                target.clearTint();
-            }
-        });
-    }
-
-    /**
      * 깜빡이는 이펙트
      * @param {Phaser.GameObjects.Sprite} target - 대상 객체
      * @param {number} duration - 지속시간 (ms)

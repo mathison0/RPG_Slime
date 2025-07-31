@@ -123,10 +123,15 @@ export default class AssetLoader {
             scene.load.image(assetName, `assets/${assetName}.png`);
         });
         
-        // 몬스터 타입별 이미지 로드
+        // 몬스터 타입별 이미지 로드 (왼쪽 방향)
         scene.load.image('enemy_basic', 'assets/basic.png');
         scene.load.image('enemy_charge', 'assets/charge.png');
         scene.load.image('enemy_elite', 'assets/elite.png');
+        
+        // 몬스터 타입별 이미지 로드 (오른쪽 방향)
+        scene.load.image('enemy_basic_right', 'assets/basic_right.png');
+        scene.load.image('enemy_charge_right', 'assets/charge_right.png');
+        scene.load.image('enemy_elite_right', 'assets/elite_right.png');
     }
     
     static createAnimations(scene) {
