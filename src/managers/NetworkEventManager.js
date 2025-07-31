@@ -1240,6 +1240,7 @@ export default class NetworkEventManager {
         
         const targetPlayer = this.findPlayerById(playerId);
         if (targetPlayer) {
+            console.log(`[handlePlayerBuffed] 플레이어 ${playerId} 버프 처리 시작:`, data);
 
             if (speedMultiplier === 1 && attackSpeedMultiplier === 1 && duration === 0) {
                 
@@ -1255,9 +1256,9 @@ export default class NetworkEventManager {
                         targetPlayer.updateTint();
                     }
                     
-                    // 실제 버프 시스템에서도 제거 (메인 플레이어인 경우)
-                    if (targetPlayer === this.scene.player && targetPlayer.buffs) {
-                        targetPlayer.buffs.clear();
+                    // 실제 버프 시스템에서도 제거
+                    if (targetPlayer.removeBuff) {
+                        targetPlayer.removeBuff('speed_attack_boost');
                     }
                 }
                 
@@ -1281,15 +1282,20 @@ export default class NetworkEventManager {
                     targetPlayer.updateTint();
                 }
                 
-                // 실제 버프 시스템에도 적용 (메인 플레이어인 경우)
-                if (targetPlayer === this.scene.player && targetPlayer.applyBuff) {
+                // 실제 버프 시스템에 적용 (모든 플레이어)
+                if (targetPlayer.applyBuff) {
                     const effect = {
                         speedMultiplier: speedMultiplier,
                         attackSpeedMultiplier: attackSpeedMultiplier
                     };
                     targetPlayer.applyBuff('speed_attack_boost', duration, effect);
+                    console.log(`[handlePlayerBuffed] 플레이어 ${playerId}에게 실제 버프 적용됨:`, effect);
                 }
                 
+                // 메인 플레이어인 경우 추가 처리
+                if (targetPlayer === this.scene.player) {
+                    console.log(`[handlePlayerBuffed] 메인 플레이어 버프 적용 완료`);
+                }
             }
         } else {
             console.warn(`[handlePlayerBuffed] 대상 플레이어를 찾을 수 없음: ${playerId}`);
@@ -2045,7 +2051,6 @@ export default class NetworkEventManager {
      * 스킬 이펙트 표시 - 각 직업 클래스에 위임
      */
     showSkillEffect(player, skillType, data = null) {
-        console.log(`showSkillEffect 호출: skillType=${skillType}, player=${player?.id}, job=${player?.job?.constructor?.name}`);
         if (!player || !player.job) return;
         
         switch (skillType) {
@@ -2706,6 +2711,12 @@ export default class NetworkEventManager {
         this.scene.jobOrbGroup.add(jobOrb);
         
         console.log(`✅ 직업 변경 오브 스폰 완료: ${jobClass} (${x}, ${y}), 총 오브 수: ${this.scene.jobOrbs.size}`);
+        
+        // 오브 생성 후 충돌 감지 재설정 (혹시 모르니)
+        if (this.scene.player && this.scene.setupJobOrbCollision) {
+            console.log('🔧 오브 생성 후 충돌 감지 재설정');
+            this.scene.setupJobOrbCollision();
+        }
     }
     
     /**
@@ -2773,48 +2784,118 @@ export default class NetworkEventManager {
         if (success) {
             console.log(`✅ 오브 수집 성공: ${jobClass}, orbId: ${orbId}`);
             
-            // 성공 시 클라이언트에서도 오브 제거
+            // 성공 시 클라이언트에서 오브 수집 처리
             if (orbId && this.scene.jobOrbs && this.scene.jobOrbs.has(orbId)) {
                 const orb = this.scene.jobOrbs.get(orbId);
                 if (orb) {
+                    // 수집 상태로 설정
+                    orb.isCollected = true;
+                    orb.isProcessing = false;
+                    
+                    // 물리 바디 비활성화하여 추가 충돌 방지
+                    if (orb.body) {
+                        orb.body.enable = false;
+                    }
+                    
                     // 오브 그룹에서 제거
                     if (this.scene.jobOrbGroup) {
                         this.scene.jobOrbGroup.remove(orb);
                     }
-                    // 오브 스프라이트 제거
-                    orb.destroy();
-                    // 맵에서 제거
-                    this.scene.jobOrbs.delete(orbId);
-                    console.log(`🗑️ 클라이언트에서 오브 제거 완료: ${orbId}`);
+                    
+                    // 수집 애니메이션 시작
+                    orb.collect();
+                    
+                    // 잠시 후 완전히 제거 (애니메이션 완료 후)
+                    this.scene.time.delayedCall(500, () => {
+                        if (this.scene.jobOrbs && this.scene.jobOrbs.has(orbId)) {
+                            this.scene.jobOrbs.delete(orbId);
+                        }
+                        if (orb && orb.scene) {
+                            orb.destroy();
+                        }
+                    });
+                    
+                    console.log(`🗑️ 클라이언트에서 오브 제거 처리 시작: ${orbId}`);
                 }
             } else if (!orbId) {
                 // orbId가 없는 경우, 해당 직업의 모든 오브를 찾아서 제거
-                console.log('⚠️ orbId가 없음, 직업 기반으로 오브 찾기 시도:', jobClass);
-                const orbsToRemove = [];
-                if (this.scene.jobOrbs) {
+                if (this.scene.jobOrbs && jobClass) {
                     for (const [id, orb] of this.scene.jobOrbs.entries()) {
-                        if (orb && orb.jobClass === jobClass && orb.isCollected) {
-                            orbsToRemove.push({id, orb});
+                        if (orb.jobClass === jobClass && !orb.isCollected) {
+                            orb.isCollected = true;
+                            orb.isProcessing = false;
+                            
+                            if (orb.body) {
+                                orb.body.enable = false;
+                            }
+                            
+                            if (this.scene.jobOrbGroup) {
+                                this.scene.jobOrbGroup.remove(orb);
+                            }
+                            
+                            orb.collect();
+                            
+                            this.scene.time.delayedCall(500, () => {
+                                if (this.scene.jobOrbs && this.scene.jobOrbs.has(id)) {
+                                    this.scene.jobOrbs.delete(id);
+                                }
+                                if (orb && orb.scene) {
+                                    orb.destroy();
+                                }
+                            });
+                            
+                            console.log(`🗑️ 직업 기반 오브 제거: ${id} (${jobClass})`);
+                            break; // 첫 번째 오브만 제거
                         }
                     }
                 }
-                
-                // 찾은 오브들 제거
-                orbsToRemove.forEach(({id, orb}) => {
-                    if (this.scene.jobOrbGroup) {
-                        this.scene.jobOrbGroup.remove(orb);
-                    }
-                    orb.destroy();
-                    this.scene.jobOrbs.delete(id);
-                    console.log(`🗑️ 직업 기반으로 오브 제거 완료: ${id}`);
-                });
+            }
+            
+            // 성공 메시지 표시 (필요시)
+            if (message) {
+                console.log(`💬 오브 수집 메시지: ${message}`);
             }
             
             // 전직 선택 UI 표시
-            console.log(`🎮 전직 UI 표시 시작: ${jobClass}`);
-            this.showJobChangeUI(jobClass);
+            if (jobClass) {
+                console.log(`🎮 전직 UI 표시 시작: ${jobClass}`);
+                try {
+                    this.showJobChangeUI(jobClass);
+                } catch (error) {
+                    console.error(`❌ 전직 UI 표시 중 오류:`, error);
+                }
+            } else {
+                console.warn(`⚠️ jobClass가 없어서 전직 UI를 표시할 수 없습니다`);
+            }
         } else {
-            console.log(`오브 수집 실패: ${message}`);
+            console.log(`❌ 오브 수집 실패: ${message}, orbId: ${orbId}`);
+            
+            // 실패 시 오브 상태 복구
+            if (orbId && this.scene.jobOrbs && this.scene.jobOrbs.has(orbId)) {
+                const orb = this.scene.jobOrbs.get(orbId);
+                if (orb) {
+                    // 처리 중 플래그 해제
+                    orb.isProcessing = false;
+                    orb.isCollected = false;
+                    
+                    // 물리 바디 재활성화
+                    if (orb.body) {
+                        orb.body.enable = true;
+                    }
+                    
+                    // 오브 그룹에 다시 추가 (제거되었을 경우)
+                    if (this.scene.jobOrbGroup && !this.scene.jobOrbGroup.contains(orb)) {
+                        this.scene.jobOrbGroup.add(orb);
+                    }
+                    
+                    console.log(`🔄 오브 상태 복구 완료: ${orbId}`);
+                }
+            }
+            
+            // 실패 메시지 표시 (필요시)
+            if (message) {
+                console.log(`💬 오브 수집 실패 메시지: ${message}`);
+            }
         }
     }
     

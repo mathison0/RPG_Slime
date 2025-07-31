@@ -420,8 +420,6 @@ class GameStateManager {
           y: target.y,
           message: '보호막!'
         });
-        
-        console.log(`보호막 데미지 차단 메시지 전송: playerId=${target.id}`);
       }
       
       return { success: true, actualDamage: 0, newHp: target.hp, reason: 'shield blocked' };
@@ -820,7 +818,6 @@ class GameStateManager {
       message: `${jobOrb.jobClass} 직업 변경 오브를 획득했습니다!`
     };
     
-    console.log('📤 성공 응답 전송:', response);
     return response;
   }
 

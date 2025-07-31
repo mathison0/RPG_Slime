@@ -27,6 +27,9 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.vx = 0;
         this.vy = 0;
         
+        // 방향 추적 (오른쪽: true, 왼쪽: false)
+        this.facingRight = false;
+        
         // 상태 플래그
         this.isDead = false;
         
@@ -86,18 +89,37 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
     
     /**
-     * 몬스터 타입에 따른 스프라이트 키 반환
+     * 몬스터 타입과 방향에 따른 스프라이트 키 반환
+     * @param {string} type - 몬스터 타입 (basic, charge, elite)
+     * @param {boolean} facingRight - 오른쪽을 바라보는지 여부 (true: 오른쪽, false: 왼쪽)
      */
-    static getSpriteKeyForType(type) {
+    static getSpriteKeyForType(type, facingRight = false) {
+        const suffix = facingRight ? '_right' : '';
         switch (type) {
             case 'basic':
-                return 'enemy_basic';
+                return `enemy_basic${suffix}`;
             case 'charge':
-                return 'enemy_charge';
+                return `enemy_charge${suffix}`;
             case 'elite':
-                return 'enemy_elite';
+                return `enemy_elite${suffix}`;
             default:
-                return 'enemy_basic'; // 기본값
+                return `enemy_basic${suffix}`; // 기본값
+        }
+    }
+    
+    /**
+     * 방향 업데이트 및 스프라이트 변경
+     * @param {number} vx - x축 속도
+     */
+    updateDirection(vx) {
+        // x축 이동 속도를 기준으로 방향 결정
+        const newFacingRight = vx >= 0;
+        
+        // 방향이 바뀐 경우에만 스프라이트 업데이트
+        if (this.facingRight !== newFacingRight) {
+            this.facingRight = newFacingRight;
+            const newSpriteKey = Enemy.getSpriteKeyForType(this.type, this.facingRight);
+            this.setTexture(newSpriteKey);
         }
     }
     
@@ -181,7 +203,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         // 어그로 표시 위치 업데이트 (한 번 더 정확한 위치로 조정)
         this.updateAggroIndicatorPosition();
     }
-    ㅇ
+    
     /**
      * 어그로 표시 제거
      */
@@ -265,10 +287,13 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.vx = effectiveVx;
         this.vy = effectiveVy;
         
+        // 방향 업데이트 (x축 속도 기준)
+        this.updateDirection(this.vx);
+        
         // 몬스터 타입 업데이트 (새로운 타입이면 스프라이트 변경)
         if (enemyData.type && enemyData.type !== this.type) {
             this.type = enemyData.type;
-            const newSpriteKey = Enemy.getSpriteKeyForType(this.type);
+            const newSpriteKey = Enemy.getSpriteKeyForType(this.type, this.facingRight);
             this.setTexture(newSpriteKey);
         }
         

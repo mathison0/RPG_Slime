@@ -62,6 +62,11 @@ export default class GameScene extends Phaser.Scene {
         this.effectManager = null;
         this.projectileManager = null;
         
+        // 랭킹 시스템
+        this.rankingData = [];
+        this.lastRankingUpdate = 0;
+        this.rankingUpdateInterval = 5000; // 5초마다 업데이트
+        
         // 전직 UI용 키 바인딩 (미리 생성)
         this.jobChangeKeys = null;
     }
@@ -97,6 +102,9 @@ export default class GameScene extends Phaser.Scene {
         
         // 네트워크 이벤트 설정
         this.networkEventManager.setupNetworkListeners();
+        
+        // 랭킹 시스템 초기화
+        this.setupRanking();
         
         // 게임 입장 요청
         this.networkManager.joinGame({
@@ -671,6 +679,19 @@ export default class GameScene extends Phaser.Scene {
         
         // 전직 UI 키 입력 처리
         this.handleJobChangeUIInput();
+        
+        // 랭킹 업데이트 체크
+        this.updateRanking(time);
+        
+        // 디버깅: 오브와 플레이어 간 거리 체크 (5초마다)
+        if (this.jobOrbs && this.jobOrbs.size > 0 && time > (this.lastDistanceCheck || 0) + 5000) {
+            this.lastDistanceCheck = time;
+            console.log(`🎯 총 오브 수: ${this.jobOrbs.size}, jobOrbGroup 오브 수: ${this.jobOrbGroup?.children?.size || 0}`);
+            this.jobOrbs.forEach((orb, orbId) => {
+                const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, orb.x, orb.y);
+                console.log(`🎯 플레이어(${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}) - 오브 ${orbId}(${orb.x.toFixed(0)}, ${orb.y.toFixed(0)}) 거리: ${distance.toFixed(2)}px, 물리바디: ${orb.body?.enable ? '활성' : '비활성'}, 수집됨: ${orb.isCollected}`);
+            });
+        }
     }
     
     /**
@@ -693,8 +714,17 @@ export default class GameScene extends Phaser.Scene {
             this.jobOrbGroup = this.physics.add.group();
         }
         
+        console.log('🔧 플레이어 상태:', this.player ? '존재함' : '없음');
+        console.log('🔧 jobOrbGroup 상태:', this.jobOrbGroup ? `존재함 (오브 수: ${this.jobOrbGroup.children.size})` : '없음');
+        console.log('🔧 jobOrbs Map 상태:', this.jobOrbs ? `존재함 (오브 수: ${this.jobOrbs.size})` : '없음');
+        
+        // 기존 충돌 감지 제거 (중복 방지)
+        if (this.jobOrbCollider) {
+            this.jobOrbCollider.destroy();
+        }
+        
         // 플레이어와 오브 그룹 간의 충돌 감지 설정
-        this.physics.add.overlap(this.player, this.jobOrbGroup, (player, orb) => {
+        this.jobOrbCollider = this.physics.add.overlap(this.player, this.jobOrbGroup, (player, orb) => {
             console.log('🎯 오브와 플레이어 충돌 감지:', orb.orbId);
             this.handleJobOrbPickup(orb);
         });
@@ -708,27 +738,14 @@ export default class GameScene extends Phaser.Scene {
     handleJobOrbPickup(orb) {
         console.log(`직업 변경 오브 픽업 시도: ${orb.orbId}`);
         
-        // 이미 수집된 오브인지 확인
-        if (orb.isCollected) {
-            console.log(`이미 수집된 오브입니다: ${orb.orbId}`);
+        // 이미 수집된 오브이거나 처리 중인 오브인지 확인
+        if (orb.isCollected || orb.isProcessing) {
+            console.log(`이미 수집되었거나 처리 중인 오브입니다: ${orb.orbId}`);
             return;
         }
         
-        // 즉시 수집 상태로 설정하여 중복 처리 방지
-        orb.isCollected = true;
-        
-        // 물리 바디 비활성화하여 추가 충돌 방지
-        if (orb.body) {
-            orb.body.enable = false;
-        }
-        
-        // 오브 그룹에서 즉시 제거
-        if (this.jobOrbGroup) {
-            this.jobOrbGroup.remove(orb);
-        }
-        
-        // 수집 애니메이션 시작
-        orb.collect();
+        // 처리 중 플래그 설정하여 중복 처리 방지
+        orb.isProcessing = true;
         
         // 서버에 충돌 이벤트 전송
         if (this.networkManager && this.networkManager.socket) {
@@ -737,17 +754,7 @@ export default class GameScene extends Phaser.Scene {
             });
         }
         
-        // 잠시 후 완전히 제거 (애니메이션 완료 후)
-        this.time.delayedCall(500, () => {
-            if (this.jobOrbs && this.jobOrbs.has(orb.orbId)) {
-                this.jobOrbs.delete(orb.orbId);
-            }
-            if (orb && orb.scene) {
-                orb.destroy();
-            }
-        });
-        
-        console.log(`직업 변경 오브 픽업 완료: ${orb.orbId}`);
+        console.log(`직업 변경 오브 픽업 요청 전송: ${orb.orbId}`);
     }
     
     /**
@@ -1259,5 +1266,92 @@ export default class GameScene extends Phaser.Scene {
         });
 
         console.log('=== 디버그 정보 끝 ===');
+    }
+
+    /**
+     * 랭킹 시스템 초기화
+     */
+    setupRanking() {
+        // 랭킹 데이터 수신 이벤트 리스너
+        this.networkManager.on('ranking-data', (data) => {
+            this.rankingData = data.players;
+            this.updateRankingUI();
+        });
+
+        // 랭킹 에러 처리
+        this.networkManager.on('ranking-error', (error) => {
+            console.error('랭킹 데이터 오류:', error);
+        });
+
+        // 게임 UI가 표시된 후 랭킹 UI도 표시
+        this.time.delayedCall(1000, () => {
+            const rankingUI = document.getElementById('ranking-ui');
+            if (rankingUI) {
+                rankingUI.style.display = 'block';
+            }
+        });
+    }
+
+    /**
+     * 랭킹 업데이트 체크 및 요청
+     */
+    updateRanking(time) {
+        if (time > this.lastRankingUpdate + this.rankingUpdateInterval) {
+            this.lastRankingUpdate = time;
+            this.networkManager.requestRanking();
+        }
+    }
+
+    /**
+     * 랭킹 UI 업데이트
+     */
+    updateRankingUI() {
+        const rankingList = document.getElementById('ranking-list');
+        if (!rankingList) return;
+
+        // 기존 내용 제거
+        rankingList.innerHTML = '';
+
+        // 랭킹 데이터가 없으면 빈 상태 표시
+        if (!this.rankingData || this.rankingData.length === 0) {
+            rankingList.innerHTML = '<li style="text-align: center; opacity: 0.6; padding: 20px;">플레이어가 없습니다</li>';
+            return;
+        }
+
+        // 각 플레이어에 대해 랭킹 아이템 생성
+        this.rankingData.forEach((player, index) => {
+            const rank = index + 1;
+            const listItem = document.createElement('li');
+            listItem.className = `ranking-item rank-${rank}`;
+
+            // 팀 색상 클래스
+            const teamClass = player.team === 'red' ? 'team-red' : 'team-blue';
+
+            // 직업 이름 변환
+            const jobNames = {
+                'slime': '슬라임',
+                'mage': '마법사',
+                'assassin': '어쌔신',
+                'warrior': '전사',
+                'archer': '궁수',
+                'ninja': '닌자',
+                'supporter': '서포터',
+                'mechanic': '메카닉'
+            };
+            const jobDisplayName = jobNames[player.jobClass] || player.jobClass;
+
+            listItem.innerHTML = `
+                <div class="ranking-rank">${rank}</div>
+                <div class="ranking-info">
+                    <div class="ranking-nickname ${teamClass}">${player.nickname}</div>
+                    <div class="ranking-details">
+                        레벨 ${player.level}
+                        <span class="job-badge">${jobDisplayName}</span>
+                    </div>
+                </div>
+            `;
+
+            rankingList.appendChild(listItem);
+        });
     }
 }

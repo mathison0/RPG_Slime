@@ -301,10 +301,20 @@ class NetworkManager {
         this.socket.on('job-orb-collision-result', (data) => {
             console.log('🎯 NetworkManager에서 job-orb-collision-result 이벤트 받음:', data);
             this.emit('job-orb-collision-result', data);
+        });
 
         // 은신 종료 이벤트
         this.socket.on('stealth-ended', (data) => {
             this.emit('stealth-ended', data);
+        });
+
+        // 랭킹 관련 이벤트
+        this.socket.on('ranking-data', (data) => {
+            this.emit('ranking-data', data);
+        });
+
+        this.socket.on('ranking-error', (data) => {
+            this.emit('ranking-error', data);
         });
     }
 
@@ -382,14 +392,6 @@ class NetworkManager {
                 skillData.mouseX = targetXOrOptions.mouseX;
                 skillData.mouseY = targetXOrOptions.mouseY;
             }
-            console.log(`NetworkManager useSkill 전송:`, skillData);
-            console.log(`목긋기 스킬 데이터 확인:`, {
-              skillType: skillData.skillType,
-              mouseX: skillData.mouseX,
-              mouseY: skillData.mouseY,
-              targetXOrOptions: targetXOrOptions,
-              fullSkillData: skillData
-            });
             this.socket.emit('player-skill', skillData);
         }
     }
@@ -437,6 +439,13 @@ class NetworkManager {
             this.socket.emit('player-respawn-request', {
                 timestamp: Date.now()
             });
+        }
+    }
+
+    // 랭킹 데이터 요청
+    requestRanking() {
+        if (this.isConnected) {
+            this.socket.emit('request-ranking');
         }
     }
 

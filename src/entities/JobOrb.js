@@ -12,6 +12,7 @@ export default class JobOrb extends Phaser.Physics.Arcade.Sprite {
         this.orbId = orbId;
         this.jobClass = jobClass;
         this.isCollected = false; // 수집 상태 플래그 추가
+        this.isProcessing = false; // 처리 중 상태 플래그 추가
 
         // 직업별 색상 매핑 (닌자, 메카닉 제외)
         this.jobColors = {
@@ -22,6 +23,11 @@ export default class JobOrb extends Phaser.Physics.Arcade.Sprite {
             supporter: 0xF9CA24,  // 노랑
             slime: 0x6C5CE7       // 보라 (실제로는 사용되지 않음)
         };
+        
+        // 애니메이션 참조 저장용
+        this.glowTween = null;
+        this.floatingTween = null;
+        this.rotationTween = null;
         
         // 씬에 추가
         this.scene.add.existing(this);
@@ -96,8 +102,8 @@ export default class JobOrb extends Phaser.Physics.Arcade.Sprite {
         this.glowEffect.x = this.x;
         this.glowEffect.y = this.y;
         
-        // 글로우 애니메이션
-        this.scene.tweens.add({
+        // 글로우 애니메이션 (참조 저장)
+        this.glowTween = this.scene.tweens.add({
             targets: this.glowEffect,
             alpha: { from: 0.3, to: 0.8 },
             scaleX: { from: 1.0, to: 1.5 },
@@ -131,8 +137,8 @@ export default class JobOrb extends Phaser.Physics.Arcade.Sprite {
      * 부유 애니메이션 생성
      */
     createFloatingAnimation() {
-        // 위아래 부유 움직임
-        this.scene.tweens.add({
+        // 위아래 부유 움직임 (참조 저장)
+        this.floatingTween = this.scene.tweens.add({
             targets: this,
             y: this.y - 5,
             duration: 2000,
@@ -141,8 +147,8 @@ export default class JobOrb extends Phaser.Physics.Arcade.Sprite {
             ease: 'Sine.easeInOut'
         });
         
-        // 회전 효과
-        this.scene.tweens.add({
+        // 회전 효과 (참조 저장)
+        this.rotationTween = this.scene.tweens.add({
             targets: this,
             rotation: Math.PI * 2,
             duration: 4000,
@@ -166,6 +172,22 @@ export default class JobOrb extends Phaser.Physics.Arcade.Sprite {
             this.body.enable = false;
         }
         
+        // 모든 기존 애니메이션 정지 및 제거
+        if (this.glowTween) {
+            this.glowTween.destroy();
+            this.glowTween = null;
+        }
+        
+        if (this.floatingTween) {
+            this.floatingTween.destroy();
+            this.floatingTween = null;
+        }
+        
+        if (this.rotationTween) {
+            this.rotationTween.destroy();
+            this.rotationTween = null;
+        }
+        
         // 수집 애니메이션 - 크기를 줄이면서 투명도 증가
         this.scene.tweens.add({
             targets: this,
@@ -180,12 +202,25 @@ export default class JobOrb extends Phaser.Physics.Arcade.Sprite {
             }
         });
         
-        // 글로우 효과도 페이드아웃
+        // 글로우 효과도 즉시 정지하고 페이드아웃
         if (this.glowEffect) {
+            // 기존 글로우 tween이 있다면 정지
+            this.scene.tweens.killTweensOf(this.glowEffect);
+            
+            // 페이드아웃 애니메이션
             this.scene.tweens.add({
                 targets: this.glowEffect,
                 alpha: 0,
-                duration: 300
+                scaleX: 0.1,
+                scaleY: 0.1,
+                duration: 300,
+                ease: 'Power2',
+                onComplete: () => {
+                    if (this.glowEffect) {
+                        this.glowEffect.destroy();
+                        this.glowEffect = null;
+                    }
+                }
             });
         }
     }
@@ -205,9 +240,30 @@ export default class JobOrb extends Phaser.Physics.Arcade.Sprite {
      * 오브 제거
      */
     destroy() {
-        if (this.glowEffect) {
-            this.glowEffect.destroy();
+        // 모든 애니메이션 정리
+        if (this.glowTween) {
+            this.glowTween.destroy();
+            this.glowTween = null;
         }
+        
+        if (this.floatingTween) {
+            this.floatingTween.destroy();
+            this.floatingTween = null;
+        }
+        
+        if (this.rotationTween) {
+            this.rotationTween.destroy();
+            this.rotationTween = null;
+        }
+        
+        // 글로우 이펙트 제거
+        if (this.glowEffect) {
+            // 글로우 이펙트의 모든 tween 정리
+            this.scene.tweens.killTweensOf(this.glowEffect);
+            this.glowEffect.destroy();
+            this.glowEffect = null;
+        }
+        
         super.destroy();
     }
     

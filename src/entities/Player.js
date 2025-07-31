@@ -638,18 +638,12 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 if (this.lastPressedKey === 'left') {
                     rotationDirection = 'counterclockwise'; // 왼쪽 키를 마지막으로 눌렀으면 반시계방향
                 }
-                
-                console.log(`구르기 스킬 이동 방향 결정: ${skillDirection}, 회전 방향: ${rotationDirection}`);
-                
-                // 회전 방향 정보를 서버로 전송
-                console.log(`구르기 스킬 서버 전송: skillDirection=${skillDirection}, rotationDirection=${rotationDirection}`);
                 this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y, skillDirection, rotationDirection);
                 return; // 여기서 함수 종료
             }
             
                              // 목긋기 스킬의 경우 마우스 커서 위치만 전송 (서버에서 대상 찾기)
                  if (skillType === 'skill3' && this.jobClass === 'assassin') {
-                     console.log(`목긋기 스킬 요청: 마우스 위치 (${worldPoint.x}, ${worldPoint.y})`);
                      this.networkManager.useSkill('backstab', {
                          mouseX: worldPoint.x,
                          mouseY: worldPoint.y
@@ -1613,6 +1607,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         
         console.log(`버프 적용: ${buffType}, 지속시간: ${duration}ms, 효과:`, effect);
         
+        // 버프 효과를 실제 스탯에 적용
+        this.applyBuffEffects();
+        
         // 버프 UI 업데이트
         this.updateBuffUI();
         this.updateTint();
@@ -1636,9 +1633,55 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.buffs.delete(buffType);
             console.log(`버프 제거: ${buffType}`);
             
-            // 버프 UI 업데이트
+            // 버프 효과를 실제 스탯에서 제거
+            this.applyBuffEffects();
+            
             this.updateBuffUI();
+            this.updateTint();
         }
+    }
+    
+    /**
+     * 버프 효과를 실제 스탯에 적용
+     */
+    applyBuffEffects() {
+        // 원본 스탯 저장 (최초 1회만)
+        if (!this.originalStats) {
+            this.originalStats = {
+                speed: this.speed,
+                basicAttackCooldown: this.basicAttackCooldown
+            };
+        }
+        
+        // 기본 스탯으로 초기화
+        this.speed = this.originalStats.speed;
+        this.basicAttackCooldown = this.originalStats.basicAttackCooldown;
+        
+        // 모든 활성 버프 효과 적용
+        let totalSpeedMultiplier = 1;
+        let totalAttackSpeedMultiplier = 1;
+        
+        for (const [buffType, buff] of this.buffs) {
+            if (Date.now() < buff.endTime && buff.effect) {
+                if (buff.effect.speedMultiplier) {
+                    totalSpeedMultiplier *= buff.effect.speedMultiplier;
+                }
+                if (buff.effect.attackSpeedMultiplier) {
+                    totalAttackSpeedMultiplier *= buff.effect.attackSpeedMultiplier;
+                }
+            }
+        }
+        
+        // 스탯 적용
+        this.speed = Math.round(this.originalStats.speed * totalSpeedMultiplier);
+        this.basicAttackCooldown = Math.round(this.originalStats.basicAttackCooldown / totalAttackSpeedMultiplier);
+        
+        // 물리 바디 속도도 업데이트
+        if (this.body) {
+            this.body.setMaxSpeed(this.speed);
+        }
+        
+        console.log(`버프 효과 적용: 이동속도=${this.speed} (배율=${totalSpeedMultiplier.toFixed(2)}), 공격속도=${this.basicAttackCooldown}ms (배율=${totalAttackSpeedMultiplier.toFixed(2)})`);
     }
 
     /**
@@ -1675,8 +1718,9 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             }
         }
         
-        // 만료된 버프가 있으면 UI 업데이트
+        // 만료된 버프가 있으면 스탯 재계산 및 UI 업데이트
         if (hasExpiredBuff) {
+            this.applyBuffEffects(); // 스탯 재계산
             this.updateBuffUI();
             this.updateTint();
         }

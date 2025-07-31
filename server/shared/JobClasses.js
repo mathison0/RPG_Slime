@@ -173,7 +173,7 @@ const JobClasses = {
         },
         levelGrowth: {
             hp: 13,
-            attack: 0.5,
+            attack: 1,
             speed: 0
         },
         projectile: {
@@ -236,8 +236,8 @@ const JobClasses = {
             visionRange: 350
         },
         levelGrowth: {
-            hp: 8.5,
-            attack: 1.5,
+            hp: 8,
+            attack: 2,
             speed: 0
         },
         projectile: {

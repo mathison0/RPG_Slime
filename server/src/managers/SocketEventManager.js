@@ -41,6 +41,7 @@ class SocketEventManager {
       this.setupGameSyncHandler(socket);
       this.setupPlayerRespawnHandler(socket);
       this.setupPingTestHandler(socket); // 핑 테스트 핸들러 추가
+      this.setupRankingHandler(socket); // 랭킹 요청 핸들러 추가
       this.setupDisconnectHandler(socket);
     });
   }
@@ -199,12 +200,14 @@ class SocketEventManager {
         socket.emit('job-orb-collision-result', {
           success: true,
           jobClass: result.jobClass,
+          orbId: result.orbId,
           message: result.message
         });
       } else {
         // 오브 수집 실패 시 에러 응답
         socket.emit('job-orb-collision-result', {
           success: false,
+          orbId: result.orbId,
           message: result.message
         });
       }
@@ -252,30 +255,10 @@ class SocketEventManager {
         rotationDirection: data.rotationDirection // 회전 방향 정보 추가
       };
       
-      // 목긋기 스킬의 경우 마우스 위치 정보 추가
-      console.log('목긋기 조건 체크:', {
-        actualSkillType: actualSkillType,
-        isBackstab: actualSkillType === 'backstab',
-        mouseX: data.mouseX,
-        mouseY: data.mouseY,
-        mouseXDefined: data.mouseX !== undefined,
-        mouseYDefined: data.mouseY !== undefined
-      });
-      
       if (actualSkillType === 'backstab' && data.mouseX !== undefined && data.mouseY !== undefined) {
         skillOptions.mouseX = data.mouseX;
         skillOptions.mouseY = data.mouseY;
-        console.log('목긋기 skillOptions 업데이트:', skillOptions);
       }
-      
-      console.log(`스킬 사용 옵션:`, skillOptions);
-      console.log(`목긋기 서버 수신 데이터:`, {
-        skillType: data.skillType,
-        mouseX: data.mouseX,
-        mouseY: data.mouseY,
-        actualSkillType: actualSkillType,
-        fullData: data
-      });
 
       const skillResult = this.skillManager.useSkill(
         player,
@@ -358,7 +341,6 @@ class SocketEventManager {
   handleImmediateSkill(socket, player, skillResult) {
     // 즉시 데미지/효과 적용
     const options = skillResult.options || {};
-    console.log('handleImmediateSkill options:', options);
     
     const damageResult = this.skillManager.applySkillDamage(
       player, 
@@ -1068,6 +1050,41 @@ class SocketEventManager {
     socket.on('ping-test', (clientTimestamp) => {
       // 즉시 응답 (서버 처리 시간 최소화)
       socket.emit('ping-response', clientTimestamp);
+    });
+  }
+
+  /**
+   * 랭킹 요청 핸들러 설정
+   */
+  setupRankingHandler(socket) {
+    socket.on('request-ranking', () => {
+      try {
+        // 모든 플레이어 데이터를 레벨 기준으로 정렬
+        const players = Array.from(this.gameStateManager.players.values())
+          .filter(player => !player.isDead) // 죽은 플레이어 제외
+          .sort((a, b) => {
+            // 레벨 기준 내림차순 정렬, 같으면 경험치 기준
+            if (b.level !== a.level) {
+              return b.level - a.level;
+            }
+            return b.exp - a.exp;
+          })
+          .slice(0, 5) // 상위 5명만
+          .map(player => ({
+            id: player.id,
+            nickname: player.nickname,
+            level: player.level,
+            exp: player.exp,
+            jobClass: player.jobClass,
+            team: player.team
+          }));
+
+        // 랭킹 데이터 전송
+        socket.emit('ranking-data', { players });
+      } catch (error) {
+        console.error('랭킹 데이터 처리 중 오류:', error);
+        socket.emit('ranking-error', { error: 'Failed to fetch ranking data' });
+      }
     });
   }
 }
