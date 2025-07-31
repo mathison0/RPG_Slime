@@ -313,6 +313,14 @@ class SocketEventManager {
       skillResult.targetY
     );
 
+    // skillResult의 추가 데이터를 damageResult에 병합 (focus 스킬의 attackSpeedMultiplier 등)
+    if (skillResult.attackSpeedMultiplier) {
+      damageResult.attackSpeedMultiplier = skillResult.attackSpeedMultiplier;
+    }
+    if (skillResult.attackPowerMultiplier) {
+      damageResult.attackPowerMultiplier = skillResult.attackPowerMultiplier;
+    }
+
     // 클라이언트에 브로드캐스트
     this.broadcastSkillUsed(socket, player, skillResult, damageResult);
     
@@ -383,6 +391,8 @@ class SocketEventManager {
    * 스킬 사용 브로드캐스트
    */
   broadcastSkillUsed(socket, player, skillResult, damageResult) {
+    console.log(`[서버] broadcastSkillUsed 호출 - skillType: ${skillResult.skillType}, damageResult:`, damageResult);
+    
     const broadcastData = {
       playerId: socket.id,
       skillType: skillResult.skillType,
@@ -489,10 +499,18 @@ class SocketEventManager {
 
     // 집중 스킬 정보 (궁수)
     if (skillType === 'focus') {
+      console.log('[서버] 집중 스킬 브로드캐스트 데이터:', {
+        focusData: damageResult.focusData,
+        endTime: skillResult.endTime,
+        duration: skillResult.duration,
+        attackSpeedMultiplier: damageResult.attackSpeedMultiplier || damageResult.focusData?.attackSpeedMultiplier || skillResult.attackSpeedMultiplier
+      });
+      console.log('[서버] damageResult 전체:', damageResult);
+      console.log('[서버] skillResult 전체:', skillResult);
       broadcastData.focusData = damageResult.focusData;
       broadcastData.endTime = skillResult.endTime;
       broadcastData.duration = skillResult.duration;
-      broadcastData.attackSpeedMultiplier = skillResult.attackSpeedMultiplier;
+      broadcastData.attackSpeedMultiplier = damageResult.attackSpeedMultiplier || damageResult.focusData?.attackSpeedMultiplier || skillResult.attackSpeedMultiplier;
     }
   }
 
