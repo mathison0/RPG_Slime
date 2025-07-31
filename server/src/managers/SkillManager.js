@@ -93,8 +93,10 @@ class SkillManager {
       return { success: false, error: 'Cannot use skill while in after delay' };
     }
 
-    // 스킬 사용 처리 (endTime 저장)
-    player.skillCooldowns[skillType] = now + skillInfo.cooldown;
+    // 스킬 사용 처리 (endTime 저장) - 목긋기는 나중에 설정
+    if (skillType !== 'backstab') {
+      player.skillCooldowns[skillType] = now + skillInfo.cooldown;
+    }
     
     // 액션 상태 업데이트 (버프/장판 스킬은 액션 상태 설정하지 않음)
     const duration = skillInfo.duration || 0;
@@ -162,7 +164,8 @@ class SkillManager {
       y: player.y,
       targetX,
       targetY,
-      skillInfo: completeSkillInfo
+      skillInfo: completeSkillInfo,
+      options: options // options 객체 추가
     };
     
     // 와드 스킬의 경우 추가 정보 설정 (서포터만)
@@ -359,6 +362,7 @@ class SkillManager {
       'stealth',      // 은신 (어쌔신, 닌자)
       'shield',       // 보호막 (마법사)
       'focus',        // 집중 (궁수)
+      'blade_dance',  // 칼춤 (어쌔신) - 공격력 버프
       'ward',         // 와드 (서포터)
       'buff_field',   // 버프 장판 (서포터)
       'heal_field',   // 힐 장판 (서포터)
@@ -524,7 +528,31 @@ class SkillManager {
         
         // 기본 공격 사용 시 은신 해제
         if (player.isStealth) {
-          player.isStealth = false;
+          console.log(`어쌔신 ${player.id} 기본 공격으로 은신 해제`);
+          
+          // 스킬 정보에서 배율 가져오기
+          const stealthSkillInfo = getSkillInfo(player.jobClass, 'stealth');
+          const visionMultiplier = stealthSkillInfo?.visionMultiplier || 1.3;
+          
+          // 원본 시야 범위 저장
+          const originalVisionRange = player.originalVisionRange || Math.round(player.visionRange / visionMultiplier);
+          
+          // 서버 플레이어의 은신 상태 및 스탯 복원
+          player.job.endStealth(); 
+          
+          // 다시 모든 팀에게 보이도록 설정
+          player.visibleToEnemies = true;
+          
+          // 클라이언트에게 은신 해제 이벤트 전송
+          if (this.gameStateManager.io) {
+            this.gameStateManager.io.emit('stealth-ended', {
+              playerId: player.id,
+              endTime: Date.now(),
+              originalVisionRange: originalVisionRange
+            });
+          } else {
+            console.log('gameStateManager.io가 null입니다');
+          }
         }
         
         return result;
@@ -651,7 +679,7 @@ class SkillManager {
   }
 
   /**
-   * 어쌔신 기본 공격 (연속 공격)
+   * 어쌔신 기본 공격 (직사각형 범위)
    */
   applyAssassinBasicAttack(player, damage, x, y, targetX, targetY) {
     const damageResult = {
@@ -660,16 +688,62 @@ class SkillManager {
       totalDamage: 0
     };
 
-    const range = 100; // 어쌔신 기본 공격 범위
-    const angleOffset = Math.PI / 4; // 45도 부채꼴
+    const width = 40; // 직사각형 너비 (클라이언트 이펙트와 맞춤)
+    const height = 60; // 직사각형 높이 (클라이언트 이펙트와 맞춤)
 
-    // 근접 부채꼴 공격 적용
-    const meleeResult = this.applyMeleeBasicAttack(player, damage, x, y, targetX, targetY);
+    // 적 대상
+    const enemies = this.gameStateManager.enemies;
+    const enemyArray = Array.isArray(enemies) ? enemies : Array.from(enemies.values());
+    
+    enemyArray.forEach(enemy => {
+      if (enemy.isDead) return;
 
-    // 결과 복사
-    damageResult.affectedEnemies = meleeResult.affectedEnemies;
-    damageResult.affectedPlayers = meleeResult.affectedPlayers;
-    damageResult.totalDamage = meleeResult.totalDamage;
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveWidth = width + (enemy.size || 32);
+      const effectiveHeight = height + (enemy.size || 32);
+      
+      if (this.isInRectangleRange(x, y, enemy.x, enemy.y, targetX, targetY, effectiveWidth, effectiveHeight)) {
+        const result = this.gameStateManager.takeDamage(player, enemy, damage);
+        
+        if (result.success) {
+          damageResult.affectedEnemies.push({
+            id: enemy.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: enemy.x,
+            y: enemy.y
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
+
+    // 다른 플레이어 대상
+    const players = this.gameStateManager.players;
+    const playerArray = Array.isArray(players) ? players : Array.from(players.values());
+    
+    playerArray.forEach(targetPlayer => {
+      if (targetPlayer.isDead || targetPlayer.team === player.team || targetPlayer.id === player.id) return;
+
+      // 캐릭터 크기를 고려한 충돌 검사
+      const effectiveWidth = width + (targetPlayer.size || 32);
+      const effectiveHeight = height + (targetPlayer.size || 32);
+      
+      if (this.isInRectangleRange(x, y, targetPlayer.x, targetPlayer.y, targetX, targetY, effectiveWidth, effectiveHeight)) {
+        const result = this.gameStateManager.takeDamage(player, targetPlayer, damage);
+        
+        if (result.success) {
+          damageResult.affectedPlayers.push({
+            id: targetPlayer.id,
+            damage: damage,
+            actualDamage: result.actualDamage,
+            x: targetPlayer.x,
+            y: targetPlayer.y
+          });
+          damageResult.totalDamage += result.actualDamage;
+        }
+      }
+    });
 
     return damageResult;
   }
@@ -787,7 +861,7 @@ class SkillManager {
   /**
    * 스킬 데미지 계산 및 적용
    */
-  applySkillDamage(player, skillType, skillInfo, x, y, targetX = null, targetY = null) {
+  applySkillDamage(player, skillType, skillInfo, x, y, targetX = null, targetY = null, options = {}) {
     const damageResult = {
       affectedEnemies: [],
       affectedPlayers: [],
@@ -806,7 +880,7 @@ class SkillManager {
       case 'slime':
         return this.applySlimeSkill(player, skillType, skillInfo, x, y);
       case 'assassin':
-        return this.applyAssassinSkill(player, skillType, skillInfo, x, y, targetX, targetY);
+        return this.applyAssassinSkill(player, skillType, skillInfo, x, y, targetX, targetY, options);
       case 'ninja':
         return this.applyNinjaSkill(player, skillType, skillInfo, x, y, targetX, targetY);
       case 'mage':
@@ -1070,7 +1144,7 @@ class SkillManager {
   /**
    * 어쌔신 스킬 처리
    */
-  applyAssassinSkill(player, skillType, skillInfo, x, y, targetX, targetY) {
+  applyAssassinSkill(player, skillType, skillInfo, x, y, targetX, targetY, options = {}) {
     const damageResult = {
       affectedEnemies: [],
       affectedPlayers: [],
@@ -1079,17 +1153,231 @@ class SkillManager {
 
     switch (skillType) {
       case 'stealth':
+        // 은신 스킬 처리 - 직접 구현
+        if (player.isStealth) {
+          console.log('이미 은신 중입니다.');
+          return damageResult;
+        }
+        
+        // 은신 상태 활성화
         player.isStealth = true;
         player.stealthStartTime = Date.now();
-        player.stealthDuration = skillInfo.duration || 5000;
+        player.stealthDuration = skillInfo.duration;
+        player.stealthEndTime = player.stealthStartTime + skillInfo.duration;
         
-        setTimeout(() => {
-          if (player.isDead) return;
-          if (player.isStealth) {
-            player.isStealth = false;
-          }
-        }, player.stealthDuration);
+        // 다른 팀에게는 보이지 않도록 설정
+        player.visibleToEnemies = false;
+
+        // 스킬 정보에서 배율 가져오기
+        const speedMultiplier = skillInfo?.speedMultiplier || 1.2;
+        const visionMultiplier = skillInfo?.visionMultiplier || 1.3;
+
+        // 은신 중 이동속도 증가
+        player.originalSpeed = player.speed || 1;
+        player.speed = player.originalSpeed * speedMultiplier;
+
+        // 은신 중 시야 범위 증가
+        player.originalVisionRange = player.visionRange || 1;
+        player.visionRange = player.originalVisionRange * visionMultiplier;
+
+        console.log(`어쌔신 은신 발동! 지속시간: ${skillInfo.duration}ms, 종료시간: ${player.stealthEndTime}`);
+
+        // 은신 상태 정보를 damageResult에 포함
+        damageResult.stealthData = {
+          startTime: player.stealthStartTime,
+          endTime: player.stealthEndTime,
+          duration: skillInfo.duration,
+          speedMultiplier: speedMultiplier,
+          visionMultiplier: visionMultiplier
+        };
         break;
+        
+      case 'blade_dance':
+        // 칼춤 스킬 처리 - 직접 구현
+        const attackPowerMultiplier = skillInfo?.attackPowerMultiplier || 2.5;
+        
+        // 새로운 버프 시스템 사용
+        const bladeDanceEffect = {
+          attackPowerMultiplier: attackPowerMultiplier
+        };
+        player.applyBuff('attack_power_boost', skillInfo.duration, bladeDanceEffect);
+
+        // 칼춤 스킬 종료 시간 계산
+        const endTime = Date.now() + skillInfo.duration;
+
+        console.log(`어쌔신 칼춤 발동! 지속시간: ${skillInfo.duration}ms, 종료시간: ${endTime}`);
+
+        // 공격력 증가 버프 정보를 damageResult에 포함
+        damageResult.bladeDanceData = {
+          endTime: endTime,
+          duration: skillInfo.duration,
+          attackPowerMultiplier: attackPowerMultiplier
+        };
+        break;
+        
+      case 'backstab':
+        // 목긋기 스킬 처리 - 서버에서 마우스 위치로 대상 찾기 및 위치 계산
+        console.log('목긋기 스킬 options 확인:', options);
+        
+        try {
+          const { mouseX, mouseY } = options;
+          if (mouseX === undefined || mouseY === undefined) {
+            console.log('목긋기: 마우스 위치 정보가 없습니다.');
+            console.log('options 객체 내용:', options);
+            return damageResult;
+          }
+
+        // 마우스 위치에서 대상 찾기 (플레이어 또는 몬스터)
+        let target = null;
+        let isMonster = false;
+        const backstabRange = skillInfo.range || 200;
+        const cursorRange = 30; // 커서 기준 범위 (픽셀 단위)
+
+        // 플레이어들 중에서 찾기
+        console.log(`목긋기: 플레이어 검색 시작 - 총 ${this.gameStateManager.players.size}명의 플레이어`);
+        for (const [playerId, otherPlayer] of this.gameStateManager.players) {
+          console.log(`목긋기: 플레이어 ${playerId} 검사 - 팀: ${otherPlayer.team}, 내 팀: ${player.team}, 사망: ${otherPlayer.isDead}`);
+          
+          if (playerId === player.id) {
+            console.log(`목긋기: 자신 제외`);
+            continue; // 자신 제외
+          }
+          if (otherPlayer.isDead) {
+            console.log(`목긋기: 사망한 플레이어 제외`);
+            continue; // 사망한 플레이어 제외
+          }
+          if (otherPlayer.team === player.team) {
+            console.log(`목긋기: 같은 팀 제외`);
+            continue; // 같은 팀 제외
+          }
+
+          // 마우스 커서와 플레이어 사이의 거리 확인
+          const cursorDistance = Math.sqrt(
+            Math.pow(mouseX - otherPlayer.x, 2) + 
+            Math.pow(mouseY - otherPlayer.y, 2)
+          );
+          
+          console.log(`목긋기: 플레이어 ${playerId} - 커서 거리: ${cursorDistance}, 커서 범위: ${cursorRange}`);
+          
+          if (cursorDistance <= cursorRange) {
+            // 목긋기 사거리 확인
+            const playerDistance = Math.sqrt(
+              Math.pow(player.x - otherPlayer.x, 2) + 
+              Math.pow(player.y - otherPlayer.y, 2)
+            );
+            
+            console.log(`목긋기: 플레이어 ${playerId} - 사거리: ${playerDistance}, 목긋기 범위: ${backstabRange}`);
+            
+                    if (playerDistance <= backstabRange) {
+          target = otherPlayer;
+          console.log(`목긋기: 플레이어 ${playerId}를 대상으로 선택!`);
+          console.log(`목긋기: 대상 객체 타입:`, typeof target);
+          console.log(`목긋기: 대상 객체 메서드들:`, Object.getOwnPropertyNames(target));
+          console.log(`목긋기: takeDamage 메서드 존재:`, typeof target.takeDamage);
+          break;
+        } else {
+          console.log(`목긋기: 플레이어 ${playerId} - 사거리 밖`);
+        }
+          } else {
+            console.log(`목긋기: 플레이어 ${playerId} - 커서 범위 밖`);
+          }
+        }
+
+        // 플레이어에서 찾지 못했으면 몬스터에서 찾기
+        if (!target) {
+          for (const [enemyId, enemy] of this.gameStateManager.enemies) {
+            if (enemy.isDead) continue; // 사망한 몬스터 제외
+
+            // 마우스 커서와 몬스터 사이의 거리 확인
+            const cursorDistance = Math.sqrt(
+              Math.pow(mouseX - enemy.x, 2) + 
+              Math.pow(mouseY - enemy.y, 2)
+            );
+            
+            if (cursorDistance <= cursorRange) {
+              // 목긋기 사거리 확인
+              const playerDistance = Math.sqrt(
+                Math.pow(player.x - enemy.x, 2) + 
+                Math.pow(player.y - enemy.y, 2)
+              );
+              
+              if (playerDistance <= backstabRange) {
+                target = enemy;
+                isMonster = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!target) {
+          console.log('목긋기: 마우스 위치에서 유효한 대상을 찾을 수 없습니다.');
+          return { success: false, error: 'No valid target found' };
+        }
+
+        console.log(`목긋기 대상 탐지 성공!`);
+        console.log(`- 대상 ID: ${target.id}`);
+        console.log(`- 대상 타입: ${isMonster ? '몬스터' : '플레이어'}`);
+        console.log(`- 대상 위치: (${target.x}, ${target.y})`);
+        console.log(`- 플레이어 현재 위치: (${player.x}, ${player.y})`);
+        console.log(`- 마우스 위치: (${mouseX}, ${mouseY})`);
+
+        // 대상의 뒤쪽 위치 계산 (대상의 반대쪽으로 이동)
+        const angleToTarget = Math.atan2(target.y - player.y, target.x - player.x);
+        const teleportDistance = skillInfo.teleportDistance || 50;
+        // 대상의 뒤쪽 = 대상 위치에서 플레이어 방향의 반대쪽
+        const newX = target.x + Math.cos(angleToTarget) * teleportDistance;
+        const newY = target.y + Math.sin(angleToTarget) * teleportDistance;
+
+        console.log(`- 계산된 이동 좌표: (${newX}, ${newY})`);
+        console.log(`- 각도: ${angleToTarget} (라디안)`);
+        console.log(`- 텔레포트 거리: ${teleportDistance}`);
+
+        // 플레이어 위치 이동
+        player.x = newX;
+        player.y = newY;
+
+        // 데미지 계산
+        let damage = player.attack * 3.0; // 기본 3배 데미지
+        
+        // 은신 중이면 보너스 데미지 추가 (은신 상태 유지)
+        if (player.isStealth) {
+          damage += player.attack * 5.0; // 은신 보너스 데미지 추가
+        }
+
+        // 대상에게 데미지 적용 (몬스터와 플레이어 구분)
+        if (isMonster) {
+          // 몬스터에게 데미지 적용
+          if (this.gameStateManager.enemyManager) {
+            this.gameStateManager.enemyManager.damageEnemy(target.id, damage, player.id);
+          }
+        } else {
+          // 플레이어에게 데미지 적용
+          const result = this.gameStateManager.takeDamage(player, target, damage);
+          console.log(`목긋기: 플레이어 데미지 적용 결과:`, result);
+        }
+   
+        console.log(`어쌔신 목긋기 발동! 대상: ${target.id} (${isMonster ? '몬스터' : '플레이어'}), 데미지: ${damage}, 새 위치: (${newX}, ${newY})`);
+
+        // 목긋기 성공 시 쿨타임 설정
+        player.skillCooldowns[skillType] = Date.now() + skillInfo.cooldown;
+        
+        // 목긋기 결과 정보를 damageResult에 포함 (모든 클라이언트에게 전송될 정보)
+        damageResult.backstabData = {
+          targetId: target.id,
+          targetX: target.x,
+          targetY: target.y,
+          newX: newX,
+          newY: newY,
+          damage: damage,
+          wasStealthAttack: player.isStealth,
+          endTime: Date.now() + 500 // 0.5초 후 이동 완료
+        };
+        break;
+      } catch (error) {
+        console.error('목긋기 스킬 처리 중 에러 발생:', error);
+        return damageResult;
+      }
     }
 
     return damageResult;
@@ -1129,6 +1417,9 @@ class SkillManager {
         // 구르기는 데미지 없음, 이동 효과만
         break;
       case 'focus':
+        // 스킬 정보에서 배율 가져오기
+        const attackSpeedMultiplier = skillInfo?.attackSpeedMultiplier || 2.0;
+        
         // 집중 스킬 - 공격속도 증가 버프 적용
         // JobClasses에서 버프 효과 가져오기
         const { getJobInfo } = require('../../shared/JobClasses.js');
@@ -1164,6 +1455,13 @@ class SkillManager {
             }
           }
         }, skillInfo.duration);
+        
+        // 집중 스킬 정보를 damageResult에 포함
+        damageResult.focusData = {
+          endTime: Date.now() + skillInfo.duration,
+          duration: skillInfo.duration,
+          attackSpeedMultiplier: focusSkill?.attackSpeedMultiplier || 2.0
+        };
         
         console.log(`궁수 ${player.id} 집중 스킬 사용 - 공격속도 증가 버프 적용`);
         break;
@@ -1861,6 +2159,37 @@ class SkillManager {
       clearInterval(this.fieldTickInterval);
       this.fieldTickInterval = null;
     }
+  }
+
+  /**
+   * 직사각형 범위 체크 (어쌔신용)
+   */
+  isInRectangleRange(centerX, centerY, targetX, targetY, mouseX, mouseY, width, height) {
+    // 마우스 방향으로의 각도 계산
+    const angleToMouse = Math.atan2(mouseY - centerY, mouseX - centerX);
+    
+    // 직사각형의 중심점을 마우스 방향으로 이동
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    
+    // 직사각형의 중심점 계산 (플레이어 위치에서 마우스 방향으로)
+    const rectCenterX = centerX + Math.cos(angleToMouse) * halfHeight;
+    const rectCenterY = centerY + Math.sin(angleToMouse) * halfHeight;
+    
+    // 목표점을 직사각형 중심 기준으로 변환
+    const relativeX = targetX - rectCenterX;
+    const relativeY = targetY - rectCenterY;
+    
+    // 직사각형을 마우스 방향으로 회전
+    const cos = Math.cos(-angleToMouse);
+    const sin = Math.sin(-angleToMouse);
+    
+    // 회전된 좌표 계산
+    const rotatedX = relativeX * cos - relativeY * sin;
+    const rotatedY = relativeX * sin + relativeY * cos;
+    
+    // 직사각형 범위 내에 있는지 확인
+    return Math.abs(rotatedX) <= halfWidth && Math.abs(rotatedY) <= halfHeight;
   }
 
   /**

@@ -153,7 +153,48 @@ class ServerPlayer {
     this.y = data.y;
     this.direction = data.direction;
     this.isJumping = data.isJumping;
+    
+    // 은신 상태 체크 및 자동 해제
+    this.updateStealthStatus();
+    
     this.lastUpdate = Date.now();
+  }
+
+  /**
+   * 은신 상태 업데이트 및 자동 해제
+   */
+  updateStealthStatus() {
+    if (this.isStealth && this.stealthEndTime) {
+      const now = Date.now();
+      if (now >= this.stealthEndTime) {
+        this.endStealth();
+      }
+    }
+  }
+
+  /**
+   * 은신 상태 종료
+   */
+  endStealth() {
+    console.log(`어쌔신 은신 자동 해제: ${this.id}`);
+    
+    this.isStealth = false;
+    this.stealthStartTime = 0;
+    this.stealthDuration = 0;
+    this.stealthEndTime = 0;
+    
+    // 이동속도 복원
+    if (this.originalSpeed !== undefined) {
+      this.speed = this.originalSpeed;
+    }
+    
+    // 시야 범위 복원
+    if (this.originalVisionRange !== undefined) {
+      this.visionRange = this.originalVisionRange;
+    }
+    
+    // 다시 모든 팀에게 보이도록 설정
+    this.visibleToEnemies = true;
   }
 
   /**
@@ -165,7 +206,9 @@ class ServerPlayer {
         spread: 'skill1'
       },
       assassin: {
-        stealth: 'skill1'
+        stealth: 'skill1',
+        blade_dance: 'skill2',
+        backstab: 'skill3'
       },
       ninja: {
         stealth: 'skill1'
@@ -633,6 +676,13 @@ class ServerPlayer {
           console.log(`[서버] 공격속도 버프: ${originalCooldown}ms → ${this.basicAttackCooldown}ms (배율: ${effect.attackSpeedMultiplier})`);
         }
         break;
+      case 'attack_power_boost':
+        if (effect.attackPowerMultiplier) {
+          const originalAttack = this.originalStats[buffType].attack;
+          this.attack = Math.floor(originalAttack * effect.attackPowerMultiplier);
+          console.log(`[서버] 공격력 버프: ${originalAttack} → ${this.attack} (배율: ${effect.attackPowerMultiplier})`);
+        }
+        break;
       case 'speed_attack_boost':
         if (effect.speedMultiplier) {
           this.speed = Math.floor(this.originalStats[buffType].speed * effect.speedMultiplier);
@@ -659,6 +709,9 @@ class ServerPlayer {
           case 'attack_speed_boost':
             this.basicAttackCooldown = this.originalStats[buffType].attackSpeed;
             console.log(`[서버] 버프 해제 - 공격속도 복원: ${this.basicAttackCooldown}ms`);
+            break;
+          case 'attack_power_boost':
+            this.attack = this.originalStats[buffType].attack;
             break;
           case 'speed_attack_boost':
             this.speed = this.originalStats[buffType].speed;

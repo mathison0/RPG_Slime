@@ -647,10 +647,91 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
                 return; // 여기서 함수 종료
             }
             
-            this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y, skillDirection);
+                             // 목긋기 스킬의 경우 마우스 커서 위치만 전송 (서버에서 대상 찾기)
+                 if (skillType === 'skill3' && this.jobClass === 'assassin') {
+                     console.log(`목긋기 스킬 요청: 마우스 위치 (${worldPoint.x}, ${worldPoint.y})`);
+                     this.networkManager.useSkill('backstab', {
+                         mouseX: worldPoint.x,
+                         mouseY: worldPoint.y
+                     });
+            } else {
+                this.networkManager.useSkill(skillType, worldPoint.x, worldPoint.y, skillDirection);
+            }
         }
     }
     
+             /**
+          * 마우스 커서 위치의 타겟 찾기 (상대팀 플레이어 또는 몬스터)
+          */
+         findTargetPlayerAtMouse(mouseX, mouseY) {
+             const backstabRange = 200; // 목긋기 사거리
+             
+             // 상대팀 플레이어 찾기
+             if (this.scene && this.scene.otherPlayers) {
+                 const otherPlayers = this.scene.otherPlayers.getChildren();
+                 
+                 for (const player of otherPlayers) {
+                     // 상대팀 플레이어인지 확인
+                     if (player.team === this.team) {
+                         continue;
+                     }
+             
+                     // 플레이어가 사망했는지 확인
+                     if (player.isDead) {
+                         continue;
+                     }
+             
+                     // 거리 계산
+                     const distance = Math.sqrt(
+                         Math.pow(this.x - player.x, 2) + 
+                         Math.pow(this.y - player.y, 2)
+                     );
+             
+                     // 사거리 내에 있는지 확인
+                     if (distance > backstabRange) {
+                         continue;
+                     }
+             
+                     // 마우스 커서가 플레이어 위에 있는지 확인
+                     const playerBounds = player.getBounds();
+                     if (playerBounds.contains(mouseX, mouseY)) {
+                         return player;
+                     }
+                 }
+             }
+             
+             // 몬스터 찾기
+             if (this.scene && this.scene.enemies) {
+                 const enemies = this.scene.enemies.getChildren();
+                 
+                 for (const enemy of enemies) {
+                     // 몬스터가 사망했는지 확인
+                     if (enemy.isDead) {
+                         continue;
+                     }
+             
+                     // 거리 계산
+                     const distance = Math.sqrt(
+                         Math.pow(this.x - enemy.x, 2) + 
+                         Math.pow(this.y - enemy.y, 2)
+                     );
+             
+                     // 사거리 내에 있는지 확인
+                     if (distance > backstabRange) {
+                         continue;
+                     }
+             
+                     // 마우스 커서가 몬스터 위에 있는지 확인
+                     const enemyBounds = enemy.getBounds();
+                     if (enemyBounds.contains(mouseX, mouseY)) {
+                         return enemy;
+                     }
+                 }
+             }
+       
+             return null;
+         }
+
     /**
      * 직업 변경 요청 (서버 권한 방식)
      */
@@ -1409,8 +1490,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             },
             'assassin': {
                 'stealth': 'skill1',
-                'backstab': 'skill2',
-                'blade_dance': 'skill3'
+                'blade_dance': 'skill2'
             },
             'ninja': {
                 'stealth': 'skill1',

@@ -79,6 +79,9 @@ class SocketEventManager {
       // 플레이어 생성
       const player = this.gameStateManager.addPlayer(playerId, spawnPoint.x, spawnPoint.y, team, nickname);
       
+      // 플레이어에게 소켓 참조 설정
+      player.socket = socket;
+      
               // JobClasses를 사용한 올바른 초기 스탯 설정
         player.initializeStatsFromJobClass();
         
@@ -226,14 +229,21 @@ class SocketEventManager {
       }
 
       // 스킬 타입을 직업별 스킬로 매핑
-      const actualSkillType = this.mapSkillType(player.jobClass, data.skillType);
+      let actualSkillType = this.mapSkillType(player.jobClass, data.skillType);
       
+      // 매핑이 실패했지만, 직접 전송된 스킬 타입이 유효한 스킬인지 확인
       if (!actualSkillType) {
-        socket.emit('skill-error', { 
-          error: 'Invalid skill type',
-          skillType: data.skillType 
-        });
-        return;
+        // 직접 전송된 스킬 타입이 유효한 스킬인지 확인 (예: backstab)
+        const validDirectSkills = ['backstab', 'stealth', 'blade_dance', 'spread', 'roar', 'sweep', 'thrust', 'ice_field', 'magic_missile', 'shield', 'repair', 'roll', 'focus', 'ward', 'buff_field', 'heal_field'];
+        if (validDirectSkills.includes(data.skillType)) {
+          actualSkillType = data.skillType;
+        } else {
+          socket.emit('skill-error', { 
+            error: 'Invalid skill type',
+            skillType: data.skillType 
+          });
+          return;
+        }
       }
 
       // 서버에서 스킬 사용 검증 및 처리 (모든 조건 체크는 SkillManager에서 수행)
@@ -241,6 +251,31 @@ class SocketEventManager {
         direction: data.direction, // 클라이언트에서 받은 방향 정보 전달
         rotationDirection: data.rotationDirection // 회전 방향 정보 추가
       };
+      
+      // 목긋기 스킬의 경우 마우스 위치 정보 추가
+      console.log('목긋기 조건 체크:', {
+        actualSkillType: actualSkillType,
+        isBackstab: actualSkillType === 'backstab',
+        mouseX: data.mouseX,
+        mouseY: data.mouseY,
+        mouseXDefined: data.mouseX !== undefined,
+        mouseYDefined: data.mouseY !== undefined
+      });
+      
+      if (actualSkillType === 'backstab' && data.mouseX !== undefined && data.mouseY !== undefined) {
+        skillOptions.mouseX = data.mouseX;
+        skillOptions.mouseY = data.mouseY;
+        console.log('목긋기 skillOptions 업데이트:', skillOptions);
+      }
+      
+      console.log(`스킬 사용 옵션:`, skillOptions);
+      console.log(`목긋기 서버 수신 데이터:`, {
+        skillType: data.skillType,
+        mouseX: data.mouseX,
+        mouseY: data.mouseY,
+        actualSkillType: actualSkillType,
+        fullData: data
+      });
 
       const skillResult = this.skillManager.useSkill(
         player,
@@ -322,6 +357,9 @@ class SocketEventManager {
    */
   handleImmediateSkill(socket, player, skillResult) {
     // 즉시 데미지/효과 적용
+    const options = skillResult.options || {};
+    console.log('handleImmediateSkill options:', options);
+    
     const damageResult = this.skillManager.applySkillDamage(
       player, 
       skillResult.skillType, 
@@ -329,8 +367,17 @@ class SocketEventManager {
       skillResult.x, 
       skillResult.y, 
       skillResult.targetX, 
-      skillResult.targetY
+      skillResult.targetY,
+      options
     );
+
+    // skillResult의 추가 데이터를 damageResult에 병합 (focus 스킬의 attackSpeedMultiplier 등)
+    if (skillResult.attackSpeedMultiplier) {
+      damageResult.attackSpeedMultiplier = skillResult.attackSpeedMultiplier;
+    }
+    if (skillResult.attackPowerMultiplier) {
+      damageResult.attackPowerMultiplier = skillResult.attackPowerMultiplier;
+    }
 
     // 클라이언트에 브로드캐스트
     this.broadcastSkillUsed(socket, player, skillResult, damageResult);
@@ -402,6 +449,8 @@ class SocketEventManager {
    * 스킬 사용 브로드캐스트
    */
   broadcastSkillUsed(socket, player, skillResult, damageResult) {
+    console.log(`[서버] broadcastSkillUsed 호출 - skillType: ${skillResult.skillType}, damageResult:`, damageResult);
+    
     const broadcastData = {
       playerId: socket.id,
       skillType: skillResult.skillType,
@@ -487,6 +536,56 @@ class SocketEventManager {
       broadcastData.targetX = skillResult.targetX;
       broadcastData.targetY = skillResult.targetY;
     }
+
+    // 은신 스킬 정보
+    if (skillType === 'stealth') {
+      broadcastData.stealthData = skillResult.stealthData;
+    }
+    
+    // 목긋기 스킬 정보
+    if (skillType === 'backstab' && damageResult.backstabData) {
+      broadcastData.backstabData = damageResult.backstabData;
+      console.log('목긋기 데이터 브로드캐스트에 추가:', damageResult.backstabData);
+    }
+    
+    // 은신 스킬 정보
+    if (skillType === 'stealth') {
+      broadcastData.startTime = skillResult.startTime;
+      broadcastData.endTime = skillResult.endTime;
+      broadcastData.duration = skillResult.duration;
+      broadcastData.speedMultiplier = skillResult.speedMultiplier;
+      broadcastData.visionMultiplier = skillResult.visionMultiplier;
+    }
+
+    // 칼춤 스킬 정보
+    if (skillType === 'blade_dance') {
+      broadcastData.bladeDanceData = damageResult.bladeDanceData;
+      broadcastData.endTime = skillResult.endTime;
+      broadcastData.duration = skillResult.duration;
+      broadcastData.attackPowerMultiplier = skillResult.attackPowerMultiplier;
+    }
+
+    // 집중 스킬 정보 (궁수)
+    if (skillType === 'focus') {
+      console.log('[서버] 집중 스킬 브로드캐스트 데이터:', {
+        focusData: damageResult.focusData,
+        endTime: skillResult.endTime,
+        duration: skillResult.duration,
+        attackSpeedMultiplier: damageResult.attackSpeedMultiplier || damageResult.focusData?.attackSpeedMultiplier || skillResult.attackSpeedMultiplier
+      });
+      console.log('[서버] damageResult 전체:', damageResult);
+      console.log('[서버] skillResult 전체:', skillResult);
+      broadcastData.focusData = damageResult.focusData;
+      broadcastData.endTime = skillResult.endTime;
+      broadcastData.duration = skillResult.duration;
+      broadcastData.attackSpeedMultiplier = damageResult.attackSpeedMultiplier || damageResult.focusData?.attackSpeedMultiplier || skillResult.attackSpeedMultiplier;
+    }
+    
+    // 목긋기 스킬 정보
+    if (skillType === 'backstab' && damageResult.backstabData) {
+      broadcastData.backstabData = damageResult.backstabData;
+      console.log('목긋기 데이터 브로드캐스트에 추가:', damageResult.backstabData);
+    }
   }
 
   /**
@@ -521,7 +620,9 @@ class SocketEventManager {
         skill1: 'spread'
       },
       assassin: {
-        skill1: 'stealth'
+        skill1: 'stealth',
+        skill2: 'blade_dance',
+        skill3: 'backstab'
       },
       ninja: {
         skill1: 'stealth'
@@ -633,6 +734,7 @@ class SocketEventManager {
         const pingData = {
           playerId: socket.id,
           team: player.team,
+          nickname: player.nickname,
           x: data.x,
           y: data.y
         };

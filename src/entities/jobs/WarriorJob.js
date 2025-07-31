@@ -455,7 +455,7 @@ export default class WarriorJob extends BaseJob {
             this.currentSweepGraphics = null;
         }
         
-        // 찢기 그래픽 정리
+        // 찌르기 그래픽 정리
         if (this.currentThrustGraphics && this.currentThrustGraphics.active) {
             this.currentThrustGraphics.destroy();
             this.currentThrustGraphics = null;

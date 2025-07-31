@@ -38,6 +38,8 @@ export default class NetworkEventManager {
             return;
         }
         
+        console.log('NetworkEventManager: networkManager 확인됨, 이벤트 리스너 등록 시작');
+        
         // 먼저 기존 리스너들 제거 (중복 방지)
         this.networkManager.off('game-joined');
         this.networkManager.off('player-joined');
@@ -70,6 +72,8 @@ export default class NetworkEventManager {
         this.networkManager.off('job-orb-collected');
         this.networkManager.off('job-orb-collision-result');
         
+        this.networkManager.off('stealth-ended');
+      
         // 게임 입장 완료
         this.networkManager.on('game-joined', (data) => {
             this.handleGameJoined(data);
@@ -189,6 +193,13 @@ export default class NetworkEventManager {
             this.handlePlayerStunned(data);
         });
 
+        // 은신 종료 이벤트
+        console.log('NetworkEventManager: stealth-ended 이벤트 리스너 등록');
+        this.networkManager.on('stealth-ended', (data) => {
+            console.log('NetworkEventManager: stealth-ended 이벤트 수신됨:', data);
+            this.handleStealthEnded(data);
+        });
+
         // 투사체 업데이트 (스킬로 통합된 이후에도 필요)
         this.networkManager.on('projectiles-update', (data) => {
             this.handleProjectilesUpdate(data);
@@ -221,6 +232,8 @@ export default class NetworkEventManager {
         this.networkManager.on('player-update-error', (data) => {
             this.handlePlayerUpdateError(data);
         });
+        
+        console.log('NetworkEventManager: 모든 이벤트 리스너 등록 완료');
     }
 
     /**
@@ -525,6 +538,8 @@ export default class NetworkEventManager {
             }
         }
 
+        // 칼춤 스킬 처리는 showSkillEffect에서 직접 처리
+
         // 본인 플레이어인 경우 쿨타임 설정 (서버 endTime 기반)
         if (data.playerId === this.networkManager.playerId && player.job) {
             // 서버에서 온 쿨타임 정보 사용
@@ -571,14 +586,28 @@ export default class NetworkEventManager {
         // 후딜레이 완료 시간 계산
         const effectEndTime = endTime - afterDelay; // 실제 스킬 효과 종료 시간
         
-        // 스킬이 이미 완료된 경우 스킵
-        if (timeUntilEnd < 0) {
+        // 스킬이 이미 완료된 경우 스킵 (목긋기는 제외)
+        if (timeUntilEnd < 0 && data.skillType !== 'backstab') {
             return;
         }
 
         if (delay > 0) {
             // 시전시간이 있는 스킬 (전사 휩쓸기, 찌르기 등)
             this.handleDelayedSkill(player, data, delay, duration, afterDelay, endTime, effectEndTime);
+        } else if (duration > 0 && data.skillType === 'blade_dance') {
+            // 칼춤 스킬은 showSkillEffect에서만 처리 (입력 차단 없음)
+            this.showSkillEffect(player, data.skillType, {
+                ...data,
+                endTime: endTime,
+                effectEndTime: effectEndTime
+            });
+        } else if (data.skillType === 'backstab') {
+            // 목긋기 스킬은 즉시 처리 (순간이동)
+            this.showSkillEffect(player, data.skillType, {
+                ...data,
+                endTime: endTime,
+                effectEndTime: effectEndTime
+            });
         } else if (duration > 0) {
             // 즉시 시작되는 지속 스킬 (은신, 와드 등)
             this.handleDurationSkill(player, data, duration, afterDelay, endTime, effectEndTime);
@@ -969,7 +998,17 @@ export default class NetworkEventManager {
                 // 개별 속성도 호환성을 위해 유지
                 this.scene.player.attack = myPlayerState.stats.attack;
                 this.scene.player.speed = myPlayerState.stats.speed;
-                this.scene.player.visionRange = myPlayerState.stats.visionRange;
+                
+                // 은신 해제 후 일정 시간 동안 시야 범위 업데이트 무시
+                const currentTime = Date.now();
+                const visionRestoreTime = this.scene.player.job?.visionRestoreTime || 0;
+                const shouldIgnoreVisionUpdate = currentTime - visionRestoreTime < 1000; // 1초 동안 무시
+                
+                if (!shouldIgnoreVisionUpdate) {
+                    this.scene.player.visionRange = myPlayerState.stats.visionRange;
+                } else {
+                    console.log('NetworkEventManager: 은신 해제 후 시야 범위 업데이트 무시됨 (경과시간:', currentTime - visionRestoreTime, 'ms)');
+                }
             }
             
             // 직업 정보 저장 (UI에서 사용)
@@ -1071,6 +1110,44 @@ export default class NetworkEventManager {
                     
                     // 스킬 시전 중 상태
                     otherPlayer.isCasting = playerState.isCasting;
+                    
+                    // 은신 상태 처리
+                    if (playerState.isStealth !== undefined) {
+                        otherPlayer.isStealth = playerState.isStealth;
+                    }
+                    
+                    // 다른 팀에게 보이는지 여부 처리
+                    if (playerState.visibleToEnemies !== undefined) {
+                        otherPlayer.visibleToEnemies = playerState.visibleToEnemies;
+                        
+                        // 다른 팀 플레이어가 은신 중이면 숨김 처리
+                        if (this.scene.player && this.scene.player.team !== otherPlayer.team) {
+                            if (!otherPlayer.visibleToEnemies && otherPlayer.isStealth) {
+                                otherPlayer.setVisible(false);
+                                // 닉네임과 체력바도 숨김
+                                if (otherPlayer.nameText) {
+                                    otherPlayer.nameText.setVisible(false);
+                                }
+                                if (otherPlayer.healthBar) {
+                                    otherPlayer.healthBar.setVisible(false);
+                                }
+                            } else {
+                                otherPlayer.setVisible(true);
+                                // 닉네임과 체력바도 다시 표시
+                                if (otherPlayer.nameText) {
+                                    otherPlayer.nameText.setVisible(true);
+                                }
+                                if (otherPlayer.healthBar) {
+                                    otherPlayer.healthBar.setVisible(true);
+                                }
+                            }
+                        }
+                        
+                        // 체력바 강제 업데이트 (은신 상태 반영)
+                        if (otherPlayer.healthBar) {
+                            otherPlayer.healthBar.updateHealth(otherPlayer.hp, otherPlayer.maxHp);
+                        }
+                    }
                     
                     // size 정보 업데이트 추가
                     if (playerState.size !== undefined && playerState.size !== otherPlayer.size) {
@@ -1629,12 +1706,12 @@ export default class NetworkEventManager {
      */
     handlePlayerPing(data) {
         if (data.team === this.scene.player.team && data.playerId !== this.networkManager.playerId) {
-            this.scene.pingManager.createPing(data.x, data.y, data.playerId);
+            this.scene.pingManager.createPing(data.x, data.y, data.playerId, data.nickname);
             this.scene.pingManager.showPingMessage('팀원이 핑을 찍었습니다!');
             
             const pingId = `${data.playerId}_${Date.now()}`;
             this.scene.pingManager.activePingPositions.set(pingId, { x: data.x, y: data.y });
-            this.scene.pingManager.checkAndShowPingArrow(data.x, data.y, pingId);
+            this.scene.pingManager.checkAndShowPingArrow(data.x, data.y, pingId, data.nickname);
         }
     }
     
@@ -1968,6 +2045,7 @@ export default class NetworkEventManager {
      * 스킬 이펙트 표시 - 각 직업 클래스에 위임
      */
     showSkillEffect(player, skillType, data = null) {
+        console.log(`showSkillEffect 호출: skillType=${skillType}, player=${player?.id}, job=${player?.job?.constructor?.name}`);
         if (!player || !player.job) return;
         
         switch (skillType) {
@@ -1975,8 +2053,8 @@ export default class NetworkEventManager {
                 this.showBasicAttackEffect(player, data);
                 break;
             case 'stealth':
-                if (player.job.showStealthEffect) {
-                    player.job.showStealthEffect(data);
+                if (player.job && player.job.startStealth) {
+                    player.job.startStealth(data);
                 }
                 break;
             case 'jump':
@@ -2015,12 +2093,34 @@ export default class NetworkEventManager {
                 if (player.job.showFocusEffect) {
                     player.job.showFocusEffect(data);
                 }
-                // 클라이언트에서도 버프 적용
+                // 서버에서 받은 배율 사용
                 if (data.skillInfo && data.skillInfo.duration) {
                     const focusEffect = {
-                        attackSpeedMultiplier: 2.0 // 공격속도 2배 증가
+                        attackSpeedMultiplier: data.attackSpeedMultiplier || 2.0
                     };
                     player.applyBuff('attack_speed_boost', data.skillInfo.duration, focusEffect);
+                }
+                break;
+            case 'blade_dance':
+                if (player.job.showBladeDanceEffect) {
+                    player.job.showBladeDanceEffect(data);
+                }
+                // 서버에서 받은 배율 사용
+                if (data.skillInfo && data.skillInfo.duration) {
+                    const bladeDanceEffect = {
+                        attackPowerMultiplier: data.attackPowerMultiplier || 2.5
+                    };
+                    player.applyBuff('attack_power_boost', data.skillInfo.duration, bladeDanceEffect);
+                }
+                break;
+            case 'backstab':
+                console.log('목긋기 케이스 처리:', data);
+                console.log('목긋기 backstabData:', data.backstabData);
+                if (player.job.showBackstabEffect) {
+                    console.log('showBackstabEffect 호출');
+                    player.job.showBackstabEffect(data.backstabData || data);
+                } else {
+                    console.log('showBackstabEffect 메서드가 없습니다');
                 }
                 break;
             case 'heal_field':
@@ -2119,6 +2219,17 @@ export default class NetworkEventManager {
             }
         });
     }
+
+    /**
+     * 은신 종료 이벤트 처리
+     */
+         handleStealthEnded(data) {
+         const player = this.findPlayerById(data.playerId);
+         
+         if (player && player.job && player.job.endStealth) {
+             player.job.endStealth(data);
+         }
+     }
 
     /**
      * 정리 작업

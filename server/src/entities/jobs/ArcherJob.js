@@ -171,9 +171,12 @@ class ArcherJob extends BaseJob {
         // 쿨타임 설정
         this.setSkillCooldown('focus');
 
+        // 스킬 정보에서 배율 가져오기
+        const attackSpeedMultiplier = skillInfo?.attackSpeedMultiplier || 2.0;
+        
         // 새로운 버프 시스템 사용
         const focusEffect = {
-            attackSpeedMultiplier: 3.0 // 공격속도 4배 증가
+            attackSpeedMultiplier: attackSpeedMultiplier
         };
         this.player.applyBuff('attack_speed_boost', skillInfo.duration, focusEffect);
 
@@ -189,6 +192,7 @@ class ArcherJob extends BaseJob {
             endTime: endTime,
             effect: skillInfo.effect,
             skillInfo: skillInfo,
+            attackSpeedMultiplier: attackSpeedMultiplier,
             caster: {
                 id: this.player.id,
                 x: this.player.x,

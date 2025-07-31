@@ -73,7 +73,30 @@ const JobClasses = {
                 damage: 'attack * 5.0',
                 duration: 3000,
                 key: '1',
-                type: 'stealth'
+                type: 'stealth',
+                visionMultiplier: 1.3, // 시야 범위 30% 증가
+                speedMultiplier: 1.2   // 이동속도 20% 증가
+            },
+            {
+                name: '칼춤',
+                description: '일정 시간 동안 공격력을 증가시킵니다.',
+                cooldown: 30000,
+                damage: 0,
+                duration: 8000,
+                effect: 'attack_power_boost',
+                key: '2',
+                type: 'blade_dance',
+                attackPowerMultiplier: 2.0 // 공격력 2.0배 증가
+            },
+            {
+                name: '목긋기',
+                description: '특정 거리 내의 상대팀 플레이어에게 순간이동하며 뒤에서 공격합니다.',
+                cooldown: 15000,
+                damage: 'attack * 3.0',
+                range: 350,
+                key: '3',
+                type: 'backstab',
+                teleportDistance: 50 // 대상 뒤로 이동할 거리
             }
         ],
         basicAttackCooldown: 250,
@@ -241,7 +264,8 @@ const JobClasses = {
                 duration: 5000,
                 effect: 'attack_speed_boost',
                 key: '2',
-                type: 'focus'
+                type: 'focus',
+                attackSpeedMultiplier: 3.0 // 공격속도 3배 증가
             }
         ],
         basicAttackCooldown: 700,
