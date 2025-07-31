@@ -478,6 +478,22 @@ class SocketEventManager {
       broadcastData.speedMultiplier = skillResult.speedMultiplier;
       broadcastData.visionMultiplier = skillResult.visionMultiplier;
     }
+
+    // 칼춤 스킬 정보
+    if (skillType === 'blade_dance') {
+      broadcastData.bladeDanceData = damageResult.bladeDanceData;
+      broadcastData.endTime = skillResult.endTime;
+      broadcastData.duration = skillResult.duration;
+      broadcastData.attackPowerMultiplier = skillResult.attackPowerMultiplier;
+    }
+
+    // 집중 스킬 정보 (궁수)
+    if (skillType === 'focus') {
+      broadcastData.focusData = damageResult.focusData;
+      broadcastData.endTime = skillResult.endTime;
+      broadcastData.duration = skillResult.duration;
+      broadcastData.attackSpeedMultiplier = skillResult.attackSpeedMultiplier;
+    }
   }
 
   /**

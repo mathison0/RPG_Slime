@@ -67,7 +67,7 @@ export default class SkillCooldownUI {
             'slime': 1,
             'mage': 3,
             'warrior': 3,
-            'assassin': 1,
+            'assassin': 2,
             'ninja': 1,
             'mechanic': 1,
             'archer': 2,

@@ -360,6 +360,7 @@ class SkillManager {
       'stealth',      // 은신 (어쌔신, 닌자)
       'shield',       // 보호막 (마법사)
       'focus',        // 집중 (궁수)
+      'blade_dance',  // 칼춤 (어쌔신) - 공격력 버프
       'ward',         // 와드 (서포터)
       'buff_field',   // 버프 장판 (서포터)
       'heal_field',   // 힐 장판 (서포터)
@@ -1169,6 +1170,18 @@ class SkillManager {
           };
         }
         break;
+      case 'blade_dance':
+        // 칼춤 스킬 처리
+        const bladeDanceResult = player.job.useSkill('blade_dance');
+        if (bladeDanceResult.success) {
+          // 공격력 증가 버프 정보를 damageResult에 포함
+          damageResult.bladeDanceData = {
+            endTime: bladeDanceResult.endTime,
+            duration: bladeDanceResult.duration,
+            attackPowerMultiplier: bladeDanceResult.attackPowerMultiplier
+          };
+        }
+        break;
     }
 
     return damageResult;
@@ -1246,6 +1259,13 @@ class SkillManager {
             }
           }
         }, skillInfo.duration);
+        
+        // 집중 스킬 정보를 damageResult에 포함
+        damageResult.focusData = {
+          endTime: Date.now() + skillInfo.duration,
+          duration: skillInfo.duration,
+          attackSpeedMultiplier: focusSkill?.attackSpeedMultiplier || 2.0
+        };
         
         console.log(`궁수 ${player.id} 집중 스킬 사용 - 공격속도 증가 버프 적용`);
         break;

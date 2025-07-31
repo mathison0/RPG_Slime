@@ -169,7 +169,8 @@ class ServerPlayer {
         spread: 'skill1'
       },
       assassin: {
-        stealth: 'skill1'
+        stealth: 'skill1',
+        blade_dance: 'skill2'
       },
       ninja: {
         stealth: 'skill1'
@@ -558,6 +559,13 @@ class ServerPlayer {
           console.log(`[서버] 공격속도 버프: ${originalCooldown}ms → ${this.basicAttackCooldown}ms (배율: ${effect.attackSpeedMultiplier})`);
         }
         break;
+      case 'attack_power_boost':
+        if (effect.attackPowerMultiplier) {
+          const originalAttack = this.originalStats[buffType].attack;
+          this.attack = Math.floor(originalAttack * effect.attackPowerMultiplier);
+          console.log(`[서버] 공격력 버프: ${originalAttack} → ${this.attack} (배율: ${effect.attackPowerMultiplier})`);
+        }
+        break;
       case 'speed_attack_boost':
         if (effect.speedMultiplier) {
           this.speed = Math.floor(this.originalStats[buffType].speed * effect.speedMultiplier);
@@ -583,6 +591,9 @@ class ServerPlayer {
         switch (buffType) {
           case 'attack_speed_boost':
             this.basicAttackCooldown = this.originalStats[buffType].attackSpeed;
+            break;
+          case 'attack_power_boost':
+            this.attack = this.originalStats[buffType].attack;
             break;
           case 'speed_attack_boost':
             this.speed = this.originalStats[buffType].speed;

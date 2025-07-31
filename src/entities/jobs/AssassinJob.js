@@ -1,5 +1,6 @@
 import BaseJob from './BaseJob.js';
 import EffectManager from '../../effects/EffectManager.js';
+import { getGlobalTimerManager } from '../../managers/AbsoluteTimerManager.js';
 
 /**
  * 클라이언트용 어쌔신 직업 클래스
@@ -79,12 +80,21 @@ export default class AssassinJob extends BaseJob {
     }
 
     /**
-     * 스킬 2 (미구현)
+     * 칼춤 스킬 (스킬 2)
+     * @param {Object} options - 스킬 옵션
      */
     useSkill2(options = {}) {
-        console.log('AssassinJob: 스킬 2 사용 (미구현)');
+        // 쿨타임 체크
+        if (!this.isSkillAvailable('skill2')) {
+            console.log('AssassinJob: 칼춤 스킬 쿨다운 중');
+            return;
+        }
+
+        console.log('AssassinJob: 칼춤 스킬 사용 요청');
+        
+        // 서버에 스킬 사용 요청
         if (this.player.networkManager) {
-            this.player.networkManager.useSkill('skill2');
+            this.player.networkManager.useSkill('blade_dance');
         }
     }
 
@@ -259,14 +269,7 @@ export default class AssassinJob extends BaseJob {
      * 기본 공격 이펙트
      */
     showBasicAttackEffect(targetX, targetY) {
-        if (!this.scene) return;
-        
-        // 어쌔신 기본 공격 메시지 (플레이어 머리 위에 표시)
-        this.effectManager.showSkillMessage(
-            this.player.x,
-            this.player.y - 60,
-            '어쌔신 공격!'
-        );
+        if (!this.scene) return;    
         
         // 어쌔신 쌍단검 공격 이펙트 (검은색으로 빠르게 두 번 공격)
         const width = 40;  // 직사각형 너비 (서버와 동일)
@@ -376,9 +379,127 @@ export default class AssassinJob extends BaseJob {
             case 'stealth_end':
                 this.showStealthEndEffect();
                 break;
+            case 'blade_dance':
+                this.showBladeDanceEffect(data);
+                break;
             default:
                 console.log('AssassinJob: 알 수 없는 스킬 이펙트:', skillType);
         }
+    }
+
+    /**
+     * 칼춤 이펙트 표시
+     */
+    showBladeDanceEffect(data = null) {
+        if (!this.player || !this.scene) return;
+        
+        const startTime = Date.now();
+        console.log(`[${startTime}] 어쌔신의 칼춤 이펙트 시작`);
+        
+        // 기존 칼춤 이펙트가 있다면 제거
+        if (this.player.bladeDanceEffect) {
+            this.player.bladeDanceEffect.destroy();
+            this.player.bladeDanceEffect = null;
+        }
+        
+        // 기존 칼춤 타이머가 있다면 제거
+        if (this.player.bladeDanceTimer) {
+            if (this.player.bladeDanceTimer.remove) {
+                this.player.bladeDanceTimer.remove();
+            }
+            this.player.bladeDanceTimer = null;
+        }
+        
+        // 서버에서 받은 스킬 정보 사용
+        const skillInfo = data.skillInfo;
+        const endTime = data.endTime; // 서버에서 받은 절대 종료 시간
+        
+        console.log(`[${startTime}] 어쌔신의 칼춤 스킬 정보 (서버에서 받음): endTime=${endTime}`);
+        
+        // EffectManager를 사용한 칼춤 스킬 메시지 표시
+        this.effectManager.showSkillMessage(
+            this.player.x, 
+            this.player.y, 
+            '칼춤!', 
+            {
+                fontSize: '16px',
+                fill: '#FF0000'
+            }
+        );
+        
+        // 칼춤 효과 (빨간색 오라) - 플레이어를 따라다니도록 설정
+        const bladeDanceAura = this.player.scene.add.circle(this.player.x, this.player.y, 40, 0xFF0000, 0.4);
+        this.player.bladeDanceEffect = bladeDanceAura;
+        
+        // 플레이어를 따라다니도록 설정 (깜빡임 없이 고정 투명도)
+        this.player.scene.tweens.add({
+            targets: bladeDanceAura,
+            alpha: 0.4, // 고정 투명도
+            duration: 100,
+            onComplete: () => {
+                // 플레이어 위치에 고정
+                bladeDanceAura.setPosition(this.player.x, this.player.y);
+            }
+        });
+        
+        // 다른 플레이어들도 이펙트를 볼 수 있도록 설정
+        bladeDanceAura.setDepth(1); // 플레이어 위에 표시
+        
+        // 플레이어 업데이트 시 오라 위치도 업데이트 (모든 플레이어에 적용)
+        const originalUpdate = this.player.update;
+        this.player.update = function(time, delta) {
+            originalUpdate.call(this, time, delta);
+            if (bladeDanceAura.active) {
+                bladeDanceAura.setPosition(this.x, this.y);
+            }
+        };
+        
+        // 다른 플레이어의 경우 추가적인 위치 추적 설정
+        let originalSetPosition = null;
+        if (this.player.isOtherPlayer) {
+            // 다른 플레이어의 경우, 위치 업데이트 시 이펙트도 함께 이동
+            originalSetPosition = this.player.setPosition;
+            this.player.setPosition = function(x, y) {
+                originalSetPosition.call(this, x, y);
+                if (bladeDanceAura.active) {
+                    bladeDanceAura.setPosition(x, y);
+                }
+            };
+        }
+        
+        // 절대 시간 기준으로 효과 종료 타이머 설정
+        const timerManager = getGlobalTimerManager();
+        const eventId = timerManager.addEvent(endTime, () => {
+            const actualEndTime = Date.now();
+            const actualDuration = actualEndTime - startTime;
+            
+            // 칼춤 효과 제거
+            if (bladeDanceAura.active) {
+                bladeDanceAura.destroy();
+                console.log(`[${actualEndTime}] 어쌔신의 칼춤 효과 제거 (실제 지속시간: ${actualDuration}ms)`);
+            }
+            
+            // 플레이어 참조 정리
+            if (this.player.bladeDanceEffect === bladeDanceAura) {
+                this.player.bladeDanceEffect = null;
+            }
+            
+            // 플레이어 업데이트 함수 복원
+            this.player.update = originalUpdate;
+            
+            // 다른 플레이어의 경우 setPosition 함수도 복원
+            if (this.player.isOtherPlayer && originalSetPosition !== null) {
+                this.player.setPosition = originalSetPosition;
+            }
+            
+            // 타이머 참조 정리
+            this.player.bladeDanceTimer = null;
+        });
+        
+        // 호환성을 위한 타이머 객체
+        this.player.bladeDanceTimer = {
+            remove: () => timerManager.removeEvent(eventId)
+        };
     }
 
     /**
@@ -409,6 +530,20 @@ export default class AssassinJob extends BaseJob {
         this.stealthStartTime = 0;
         this.stealthDuration = 0;
         this.stealthEndTime = 0;
+        
+        // 칼춤 이펙트 정리
+        if (this.player.bladeDanceEffect) {
+            this.player.bladeDanceEffect.destroy();
+            this.player.bladeDanceEffect = null;
+        }
+        
+        // 칼춤 타이머 정리
+        if (this.player.bladeDanceTimer) {
+            if (this.player.bladeDanceTimer.remove) {
+                this.player.bladeDanceTimer.remove();
+            }
+            this.player.bladeDanceTimer = null;
+        }
     }
 
     /**

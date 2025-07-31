@@ -22,6 +22,8 @@ class AssassinJob extends BaseJob {
         switch (skillType) {
             case 'stealth':
                 return this.useStealth(options);
+            case 'blade_dance':
+                return this.useBladeDance(options);
             default:
                 console.log('AssassinJob: 알 수 없는 스킬 타입:', skillType);
                 return { success: false, reason: 'Unknown skill type' };
@@ -93,6 +95,63 @@ class AssassinJob extends BaseJob {
             bonusDamage: skillInfo.damage,
             speedMultiplier: speedMultiplier,
             visionMultiplier: visionMultiplier,
+            caster: {
+                id: this.player.id,
+                x: this.player.x,
+                y: this.player.y
+            }
+        };
+    }
+
+    /**
+     * 칼춤 스킬 (서버에서 처리)
+     * @param {Object} options - 스킬 옵션
+     * @returns {Object} - 스킬 사용 결과
+     */
+    useBladeDance(options = {}) {
+        // 쿨타임 체크
+        if (!this.isSkillAvailable('blade_dance')) {
+            return { 
+                success: false, 
+                reason: 'cooldown'
+            };
+        }
+
+        // 죽은 상태면 스킬 사용 불가
+        if (this.player.isDead) {
+            return { success: false, reason: 'dead' };
+        }
+
+        const skillInfo = this.getSkillInfo('blade_dance');
+        if (!skillInfo) {
+            return { success: false, reason: 'skill not found' };
+        }
+
+        // 쿨타임 설정
+        this.setSkillCooldown('blade_dance');
+
+        // 스킬 정보에서 배율 가져오기
+        const attackPowerMultiplier = skillInfo?.attackPowerMultiplier || 2.5;
+        
+        // 새로운 버프 시스템 사용
+        const bladeDanceEffect = {
+            attackPowerMultiplier: attackPowerMultiplier
+        };
+        this.player.applyBuff('attack_power_boost', skillInfo.duration, bladeDanceEffect);
+
+        // 칼춤 스킬 종료 시간 계산
+        const endTime = Date.now() + skillInfo.duration;
+
+        console.log(`어쌔신 칼춤 발동! 지속시간: ${skillInfo.duration}ms, 종료시간: ${endTime}`);
+
+        return {
+            success: true,
+            skillType: 'blade_dance',
+            duration: skillInfo.duration,
+            endTime: endTime,
+            effect: skillInfo.effect,
+            skillInfo: skillInfo,
+            attackPowerMultiplier: attackPowerMultiplier,
             caster: {
                 id: this.player.id,
                 x: this.player.x,

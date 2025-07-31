@@ -523,6 +523,8 @@ export default class NetworkEventManager {
             }
         }
 
+        // 칼춤 스킬 처리는 showSkillEffect에서 직접 처리
+
         // 본인 플레이어인 경우 쿨타임 설정 (서버 endTime 기반)
         if (data.playerId === this.networkManager.playerId && player.job) {
             // 서버에서 온 쿨타임 정보 사용
@@ -578,6 +580,13 @@ export default class NetworkEventManager {
         if (delay > 0) {
             // 시전시간이 있는 스킬 (전사 휩쓸기, 찌르기 등)
             this.handleDelayedSkill(player, data, delay, duration, afterDelay, endTime, effectEndTime);
+        } else if (duration > 0 && data.skillType === 'blade_dance') {
+            // 칼춤 스킬은 showSkillEffect에서만 처리 (입력 차단 없음)
+            this.showSkillEffect(player, data.skillType, {
+                ...data,
+                endTime: endTime,
+                effectEndTime: effectEndTime
+            });
         } else if (duration > 0) {
             // 즉시 시작되는 지속 스킬 (은신, 와드 등)
             this.handleDurationSkill(player, data, duration, afterDelay, endTime, effectEndTime);
@@ -2199,6 +2208,18 @@ export default class NetworkEventManager {
                         attackSpeedMultiplier: data.attackSpeedMultiplier || 2.0
                     };
                     player.applyBuff('attack_speed_boost', data.skillInfo.duration, focusEffect);
+                }
+                break;
+            case 'blade_dance':
+                if (player.job.showBladeDanceEffect) {
+                    player.job.showBladeDanceEffect(data);
+                }
+                // 서버에서 받은 배율 사용
+                if (data.skillInfo && data.skillInfo.duration) {
+                    const bladeDanceEffect = {
+                        attackPowerMultiplier: data.attackPowerMultiplier || 2.5
+                    };
+                    player.applyBuff('attack_power_boost', data.skillInfo.duration, bladeDanceEffect);
                 }
                 break;
             case 'heal_field':

@@ -76,6 +76,17 @@ const JobClasses = {
                 type: 'stealth',
                 visionMultiplier: 1.3, // 시야 범위 30% 증가
                 speedMultiplier: 1.2   // 이동속도 20% 증가
+            },
+            {
+                name: '칼춤',
+                description: '일정 시간 동안 공격력을 증가시킵니다.',
+                cooldown: 30000,
+                damage: 0,
+                duration: 8000,
+                effect: 'attack_power_boost',
+                key: '2',
+                type: 'blade_dance',
+                attackPowerMultiplier: 2.0 // 공격력 2.0배 증가
             }
         ],
         basicAttackCooldown: 250,

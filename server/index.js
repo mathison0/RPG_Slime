@@ -249,6 +249,9 @@ class GameServer {
         player.job.update(gameConfig.SERVER.GAME_LOOP_INTERVAL);
       }
       
+      // 만료된 버프 정리
+      player.cleanupExpiredBuffs();
+      
       // HP가 0 이하이고 아직 사망 처리되지 않은 플레이어 처리
       if (player.hp <= 0 && !player.isDead) {
         // HP를 정확히 0으로 설정
