@@ -2,6 +2,9 @@
 
 Phaser 3과 Socket.io를 사용한 실시간 멀티플레이어 RPG 게임입니다.
 
+## 게임 소개 링크
+https://countingbeats.notion.site/madcamp-project4-slime-rpg?source=copy_link
+
 ## 게임 특징
 
 - 🎮 **실시간 멀티플레이어**: 최대 100명 동시 접속
